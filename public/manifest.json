@@ -1,0 +1,10 @@
+{
+  "name": "Hearth & Bone",
+  "short_name": "Hearth & Bone",
+  "description": "Cozy mobile roguelike dungeon crawler set in a warm Guild Hall and procedural Whispering Graveyard.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#121017",
+  "theme_color": "#121017"
+}

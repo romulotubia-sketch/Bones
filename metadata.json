@@ -1,0 +1,6 @@
+{
+  "name": "Hearth & Bone",
+  "description": "A cozy Soul Knight-inspired roguelike dungeon crawler featuring a customizable Zombie hero, a warm Guild Hall for character progression, and procedurally generated Graveyard runs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
