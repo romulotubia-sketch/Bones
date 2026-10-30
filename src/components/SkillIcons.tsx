@@ -335,6 +335,81 @@ export const NormalSkillIcon: React.FC<{ id: NormalSkillId; className?: string }
           <path d="M6 15.5H18" stroke="#FDBA74" strokeWidth="2" strokeLinecap="round" />
         </svg>
       );
+
+    // Ghost Normal Skills
+    case NormalSkillId.SpectralBolt:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <path
+            d="M3 12H15M12 6L21 12L12 18L15 12L12 6Z"
+            fill="#67E8F9"
+            fillOpacity="0.28"
+            stroke="#67E8F9"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path d="M4 8.5H10M4 15.5H10" stroke="#C084FC" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      );
+    case NormalSkillId.PhantomDash:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <path
+            d="M4 15C7.5 15 9 9 13 9C16.5 9 17.5 12 20 12"
+            stroke="#C084FC"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+          />
+          <path
+            d="M3 10.5H9M6 18.5H14"
+            stroke="#67E8F9"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeDasharray="2.5 2.5"
+          />
+          <circle cx="18.5" cy="12" r="2.6" fill="#E879F9" />
+        </svg>
+      );
+    case NormalSkillId.SoulDrain:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <circle cx="12" cy="12" r="3.5" fill="#C084FC" fillOpacity="0.35" stroke="#C084FC" strokeWidth="2" />
+          <path
+            d="M4 6C7.5 6 8.5 10 10.5 11M20 6C16.5 6 15.5 10 13.5 11M4 18C7.5 18 8.5 14 10.5 13M20 18C16.5 18 15.5 14 13.5 13"
+            stroke="#67E8F9"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+          />
+        </svg>
+      );
+    case NormalSkillId.WailingScream:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <circle cx="8" cy="12" r="3.5" stroke="#E879F9" strokeWidth="2" />
+          <path
+            d="M13.5 8.5C15.2 10.2 15.2 13.8 13.5 15.5M17 5.5C20 8.8 20 15.2 17 18.5"
+            stroke="#C084FC"
+            strokeWidth="2.1"
+            strokeLinecap="round"
+          />
+        </svg>
+      );
+    case NormalSkillId.HauntedPossession:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <path
+            d="M7 19V11C7 7.8 9.2 5.5 12 5.5C14.8 5.5 17 7.8 17 11V19L14.5 17L12 19L9.5 17L7 19Z"
+            fill="#818CF8"
+            fillOpacity="0.25"
+            stroke="#C084FC"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+          <circle cx="10" cy="11" r="1.4" fill="#67E8F9" />
+          <circle cx="14" cy="11" r="1.4" fill="#67E8F9" />
+        </svg>
+      );
   }
 };
 
@@ -504,6 +579,40 @@ export const UltimateSkillIcon: React.FC<{ id: UltimateSkillId; className?: stri
           <path d="M12 3V8M5 7L8 10M19 7L16 10" stroke="#FED7AA" strokeWidth="2" strokeLinecap="round" />
         </svg>
       );
+
+    // Ghost Ultimates
+    case UltimateSkillId.EternalNightmare:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <path
+            d="M3 12C5.8 7.5 8.8 6 12 6C15.2 6 18.2 7.5 21 12C18.2 16.5 15.2 18 12 18C8.8 18 5.8 16.5 3 12Z"
+            fill="#A855F7"
+            fillOpacity="0.26"
+            stroke="#C084FC"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+          <circle cx="12" cy="12" r="2.8" fill="#67E8F9" />
+        </svg>
+      );
+    case UltimateSkillId.SpiritLegion:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <circle cx="12" cy="12" r="7.5" stroke="#C084FC" strokeWidth="1.6" strokeDasharray="3 3" />
+          <circle cx="12" cy="4.5" r="2.3" fill="#67E8F9" />
+          <circle cx="19" cy="15.5" r="2.3" fill="#E879F9" />
+          <circle cx="5" cy="15.5" r="2.3" fill="#67E8F9" />
+          <circle cx="12" cy="12" r="2.2" fill="#F8FAFC" />
+        </svg>
+      );
+    case UltimateSkillId.DeathsPassage:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <ellipse cx="12" cy="13" rx="8.5" ry="5" stroke="#C084FC" strokeWidth="2" />
+          <ellipse cx="12" cy="13" rx="4.5" ry="2.6" fill="#67E8F9" fillOpacity="0.3" stroke="#67E8F9" strokeWidth="1.8" />
+          <path d="M12 4V10M8 6L10.5 9.5M16 6L13.5 9.5" stroke="#E879F9" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
   }
 };
 
@@ -606,6 +715,32 @@ export const PassiveSkillIcon: React.FC<{ id: PassiveSkillId; className?: string
             strokeLinecap="round"
             strokeLinejoin="round"
           />
+        </svg>
+      );
+    case PassiveSkillId.EtherealBody:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <path
+            d="M7 19V10.5C7 7.5 9.2 5 12 5C14.8 5 17 7.5 17 10.5V19L14.5 16.8L12 19L9.5 16.8L7 19Z"
+            fill="#C084FC"
+            fillOpacity="0.22"
+            stroke="#C084FC"
+            strokeWidth="2"
+            strokeDasharray="3 2"
+          />
+        </svg>
+      );
+    case PassiveSkillId.RestlessSpirit:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <path
+            d="M12 3C15.5 7 17.5 10 17.5 13.5C17.5 16.8 15 19.5 12 19.5C9 19.5 6.5 16.8 6.5 13.5C6.5 10 8.5 7 12 3Z"
+            fill="#67E8F9"
+            fillOpacity="0.24"
+            stroke="#67E8F9"
+            strokeWidth="2"
+          />
+          <circle cx="12" cy="14" r="2.2" fill="#C084FC" />
         </svg>
       );
   }

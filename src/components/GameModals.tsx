@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Crown,
+  Download,
   Maximize2,
   Minimize2,
   RotateCcw,
@@ -33,8 +34,19 @@ export const TitleScreenOverlay: React.FC<TitleScreenOverlayProps> = ({
 }) => {
   return (
     <div className="absolute inset-0 z-30 pointer-events-none flex flex-col justify-between safe-hud-insets bg-gradient-to-t from-[#0D0A12]/85 via-[#0D0A12]/25 to-[#0D0A12]/55">
-      {/* Top-right mobile Full Screen + Mute controls (>= 44x44px) */}
+      {/* Top-right mobile Download + Full Screen + Mute controls (>= 44x44px) */}
       <div className="flex justify-end items-center gap-2 pointer-events-auto">
+        <a
+          href="/hearth-and-bone-playable.zip"
+          download="Hearth-and-Bone-Playable.zip"
+          onClick={() => soundEngine.playUiClick(560)}
+          aria-label="Download playable game archive"
+          className="min-h-[44px] px-3.5 rounded-xl bg-[#181421]/95 border border-[#322B43] text-[#F5F0E6] text-xs font-semibold active:scale-95 flex items-center gap-1.5 whitespace-nowrap shrink-0 no-underline"
+        >
+          <Download className="w-4 h-4 text-[#C084FC]" />
+          <span>Download</span>
+        </a>
+
         <button
           type="button"
           onClick={() => {
@@ -72,7 +84,7 @@ export const TitleScreenOverlay: React.FC<TitleScreenOverlayProps> = ({
         <HearthAndBoneTitleSvg className="w-full max-w-[330px] sm:max-w-[410px] h-auto drop-shadow-lg" />
 
         <p className="text-xs sm:text-sm text-[#D6D0C4] mt-2 max-w-md leading-relaxed [text-wrap:balance]">
-          Choose the Zombie, Skeleton, Goblin, or Gnome in the Guild House, equip your skills, and step out the North Door into the Whispering Graveyard.
+          Choose the Zombie, Skeleton, Goblin, Gnome, or Ghost in the Guild House, equip your skills, and step out the North Door into the Whispering Graveyard.
         </p>
 
         <button
@@ -115,12 +127,15 @@ export const BlessingModal: React.FC<BlessingModalProps> = ({
   const isSkeleton = activeCharacter === CharacterId.Skeleton;
   const isGoblin = activeCharacter === CharacterId.Goblin;
   const isGnome = activeCharacter === CharacterId.Gnome;
+  const isGhost = activeCharacter === CharacterId.Ghost;
   const selectAccentClass = isSkeleton
     ? 'text-[#38BDF8]'
     : isGoblin
     ? 'text-[#FBBF24]'
     : isGnome
     ? 'text-[#FB923C]'
+    : isGhost
+    ? 'text-[#D8B4FE]'
     : 'text-[#4ADE80]';
   const activeBorderClass = isSkeleton
     ? 'active:border-[#38BDF8]'
@@ -128,6 +143,8 @@ export const BlessingModal: React.FC<BlessingModalProps> = ({
     ? 'active:border-[#F59E0B]'
     : isGnome
     ? 'active:border-[#FB923C]'
+    : isGhost
+    ? 'active:border-[#C084FC]'
     : 'active:border-[#4ADE80]';
 
   const handleSelect = (id: string) => {

@@ -73,18 +73,27 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
   const isSkeleton = hud.activeCharacter === CharacterId.Skeleton;
   const isGoblin = hud.activeCharacter === CharacterId.Goblin;
   const isGnome = hud.activeCharacter === CharacterId.Gnome;
+  const isGhost = hud.activeCharacter === CharacterId.Ghost;
   const profile = CHARACTER_ROSTER[hud.activeCharacter] ?? CHARACTER_ROSTER[CharacterId.Zombie];
 
   const hpRatio = Math.max(0, Math.min(1, hud.hp / Math.max(1, hud.maxHp)));
   const xpRatio = Math.max(0, Math.min(1, hud.runXp / Math.max(1, hud.runXpNext)));
 
   const healthStatusLabel =
-    hud.mountainHeartTimer > 0
+    hud.nightmareTimer > 0
+      ? `NIGHTMARE ${hud.nightmareTimer.toFixed(0)}s`
+      : hud.possessionTimer > 0
+      ? `POSSESS ${hud.possessionTimer.toFixed(1)}s`
+      : hud.mountainHeartTimer > 0
       ? `MOUNTAIN ${hud.mountainHeartTimer.toFixed(0)}s`
       : hud.colossusTimer > 0
       ? `TITAN ${hud.colossusTimer.toFixed(0)}s`
       : hud.abominationTimer > 0
       ? `ABOM ${hud.abominationTimer.toFixed(0)}s`
+      : hud.soulDrainTimer > 0
+      ? `DRAIN ${hud.soulDrainTimer.toFixed(1)}s`
+      : hud.restlessTimer > 0
+      ? `RESTLESS ${hud.restlessTimer.toFixed(1)}s`
       : hud.fortressTimer > 0
       ? `FORTRESS ${hud.fortressTimer.toFixed(0)}s`
       : hud.magneticTimer > 0
@@ -154,6 +163,10 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
     hud.fortressTimer > 0 ||
     hud.magneticTimer > 0 ||
     hud.mountainHeartTimer > 0 ||
+    hud.restlessTimer > 0 ||
+    hud.soulDrainTimer > 0 ||
+    hud.possessionTimer > 0 ||
+    hud.nightmareTimer > 0 ||
     (isGnome && hud.resolveBonusPct >= 8);
 
   return (
@@ -174,6 +187,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                       ? 'text-[#FDE047]'
                       : isGnome
                       ? 'text-[#FDBA74]'
+                      : isGhost
+                      ? 'text-[#E9D5FF]'
                       : 'text-[#7DD3FC]'
                     : hpRatio <= 0.3
                     ? 'text-[#F87171]'
@@ -183,6 +198,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                     ? 'text-[#FBBF24]'
                     : isGnome
                     ? 'text-[#FB923C]'
+                    : isGhost
+                    ? 'text-[#D8B4FE]'
                     : 'text-[#86EFAC]'
                 }`}
               >
@@ -201,6 +218,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                     ? 'bg-[#F59E0B]'
                     : isGnome
                     ? 'bg-[#FB923C]'
+                    : isGhost
+                    ? 'bg-[#C084FC]'
                     : 'bg-[#4ADE80]'
                 }`}
                 style={{ transform: `scaleX(${hpRatio})` }}
@@ -223,7 +242,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
               {hud.activeMinions > 0 && (
                 <>
                   <span>·</span>
-                  <span className={isSkeleton ? 'text-[#7DD3FC]' : 'text-[#86EFAC]'}>
+                  <span className={isSkeleton ? 'text-[#7DD3FC]' : isGhost ? 'text-[#D8B4FE]' : 'text-[#86EFAC]'}>
                     {hud.activeMinions}ally
                   </span>
                 </>
@@ -254,6 +273,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                   ? 'border-[#F59E0B]/70'
                   : isGnome
                   ? 'border-[#FB923C]/70'
+                  : isGhost
+                  ? 'border-[#C084FC]/70'
                   : 'border-[#4ADE80]/70'
               }`}
             >
@@ -265,6 +286,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                     ? 'text-[#FBBF24]'
                     : isGnome
                     ? 'text-[#FB923C]'
+                    : isGhost
+                    ? 'text-[#D8B4FE]'
                     : 'text-[#4ADE80]'
                 }`}
               />
@@ -414,6 +437,16 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
           >
             Gnome
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playUiClick(700);
+              onOpenLoadout(CharacterId.Ghost);
+            }}
+            className="min-h-[44px] px-3.5 rounded-xl bg-[#C084FC] text-[#180B26] text-xs font-bold active:scale-95 whitespace-nowrap shrink-0"
+          >
+            Ghost
+          </button>
         </div>
       ) : (
         <div className="flex items-end justify-between w-full">
@@ -438,6 +471,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                     ? 'bg-[#F59E0B] text-[#170F04]'
                     : isGnome
                     ? 'bg-[#FB923C] text-[#1C0F06]'
+                    : isGhost
+                    ? 'bg-[#C084FC] text-[#180B26]'
                     : 'bg-[#4ADE80] text-[#0E1912]'
                 }`}
               >
@@ -513,6 +548,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                     ? 'scale-92 bg-[#F59E0B] border-[#FEF3C7] text-[#170F04]'
                     : isGnome
                     ? 'scale-92 bg-[#FB923C] border-[#FFEDD5] text-[#1C0F06]'
+                    : isGhost
+                    ? 'scale-92 bg-[#C084FC] border-[#F3E8FF] text-[#180B26]'
                     : 'scale-92 bg-[#4ADE80] border-[#DCFCE7] text-[#0E1912]'
                   : isSkeleton
                   ? 'bg-[#182436]/95 border-[#38BDF8] text-[#F5F0E6]'
@@ -520,6 +557,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                   ? 'bg-[#2B2013]/95 border-[#F59E0B] text-[#F5F0E6]'
                   : isGnome
                   ? 'bg-[#2B1D17]/95 border-[#FB923C] text-[#F5F0E6]'
+                  : isGhost
+                  ? 'bg-[#241834]/95 border-[#C084FC] text-[#F5F0E6]'
                   : 'bg-[#212D28]/95 border-[#4ADE80] text-[#F5F0E6]'
               }`}
             >
@@ -533,6 +572,17 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                   <path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2" />
                   <path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8" />
                   <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
+                </svg>
+              ) : isGhost ? (
+                <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-7 h-7">
+                  <path
+                    d="M7 22C10 14 16 8 25 7M10 26C14 18 19 13 27 12M15 28C18 22 22 18 28 17"
+                    stroke="currentColor"
+                    strokeWidth="2.6"
+                    strokeLinecap="round"
+                  />
+                  <circle cx="24.5" cy="7.5" r="2" fill="#67E8F9" />
+                  <circle cx="26.5" cy="12.5" r="1.6" fill="#E9D5FF" />
                 </svg>
               ) : (
                 <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-7 h-7">
@@ -574,6 +624,8 @@ const MobileSkillCircle: React.FC<{
       ? 'bg-[#2B2013]/95 border-[#F59E0B]'
       : activeCharacter === CharacterId.Gnome
       ? 'bg-[#2B1D17]/95 border-[#FB923C]'
+      : activeCharacter === CharacterId.Ghost
+      ? 'bg-[#241834]/95 border-[#C084FC]'
       : 'bg-[#1D2824]/95 border-[#4ADE80]';
   return (
     <button

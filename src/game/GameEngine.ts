@@ -13,6 +13,7 @@ import {
   CharacterId,
   CharacterUpgradeRanks,
   DaggerRainZone,
+  DeathsPassageRift,
   EarthenGraspZone,
   EnemyEntity,
   EnemyKind,
@@ -20,6 +21,7 @@ import {
   ExplosiveTrapEntity,
   FloatingPopup,
   GamePhase,
+  GhostMistZone,
   GuildCompanionRenderState,
   GuildSaveData,
   HudSnapshot,
@@ -134,10 +136,17 @@ export class GameEngine {
     rottingComboTotal: 3,
     rottingComboTimer: 0,
     dashTimer: 0,
-    dashKind: 'FLESH_RIPPER' as 'FLESH_RIPPER' | 'SKELETAL_RUSH' | 'GROUNDBREAKER_LEAP',
+    dashKind: 'FLESH_RIPPER' as
+      | 'FLESH_RIPPER'
+      | 'SKELETAL_RUSH'
+      | 'GROUNDBREAKER_LEAP'
+      | 'PHANTOM_DASH',
     dashSlotIndex: 0 as 0 | 1,
     dashRefunded: false,
     dashAngle: 0,
+    dashOriginX: 0,
+    dashOriginY: 0,
+    dashAfterimageAccum: 0,
     dashHitIds: new Set<number>(),
     undyingTimer: 0,
     undyingHealTick: 0,
@@ -153,6 +162,8 @@ export class GameEngine {
     colossusShockTick: 0,
     unyieldingStacks: 0,
     unyieldingTimer: 0,
+    skelComboStep: 0,
+    skelLungeOffset: 0,
 
     // Goblin active states & passives
     windrunnerTimer: 0,
@@ -168,6 +179,10 @@ export class GameEngine {
     kingThievesRemaining: 0,
     kingThievesTimer: 0,
     zombieClawStrikeCount: 0,
+    zombieComboStep: 0,
+    zombieLungeOffset: 0,
+    goblinComboStep: 0,
+    goblinLungeOffset: 0,
 
     // Gnome active states & passives
     fortressTimer: 0,
@@ -180,6 +195,8 @@ export class GameEngine {
     leapTotalDuration: 0.24,
     resolveRatio: 0,
     gnomePunchCount: 0,
+    gnomeComboStep: 0,
+    gnomeLungeOffset: 0,
     ironFistAftershockTimer: 0,
     ironFistAftershockX: 0,
     ironFistAftershockY: 0,
@@ -190,6 +207,20 @@ export class GameEngine {
     cataclysmOriginX: 0,
     cataclysmOriginY: 0,
     rampartTremorTick: 0,
+
+    // Ghost active states & passives
+    restlessTimer: 0,
+    soulDrainTimer: 0,
+    soulDrainTick: 0,
+    possessionTimer: 0,
+    possessionPulseTick: 0,
+    possessedEnemyId: null as number | null,
+    nightmareTimer: 0,
+    nightmareFearTick: 0,
+    ghostComboStep: 0,
+    ghostLungeOffset: 0,
+    ghostBasicCount: 0,
+    ghostMistDropAccum: 0,
 
     hoveredInGuild: false,
   };
@@ -215,6 +246,8 @@ export class GameEngine {
   private daggerRains: DaggerRainZone[] = [];
   private earthenGrasps: EarthenGraspZone[] = [];
   private stoneRamparts: StoneRampartEntity[] = [];
+  private deathsPassageRifts: DeathsPassageRift[] = [];
+  private ghostMistZones: GhostMistZone[] = [];
   private pickups: PickupOrb[] = [];
   private slashes: SlashEffect[] = [];
   private shockwaves: ShockwaveRing[] = [];
@@ -470,6 +503,9 @@ export class GameEngine {
     } else if (blessingId === 'gnome_bedrock_plating') {
       this.recomputePlayerStats(false);
       this.healPlayer(48);
+    } else if (blessingId === 'ghost_ethereal_veil') {
+      this.recomputePlayerStats(false);
+      this.healPlayer(24);
     } else {
       this.recomputePlayerStats(false);
     }
@@ -522,6 +558,8 @@ export class GameEngine {
     this.daggerRains = [];
     this.earthenGrasps = [];
     this.stoneRamparts = [];
+    this.deathsPassageRifts = [];
+    this.ghostMistZones = [];
     this.pickups = [];
     this.slashes = [];
     this.shockwaves = [];
@@ -542,6 +580,7 @@ export class GameEngine {
     this.attackHeld = false;
     this.player.rottingComboRemaining = 0;
     this.player.dashTimer = 0;
+    this.player.dashAfterimageAccum = 0;
     this.player.undyingTimer = 0;
     this.player.abominationTimer = 0;
     this.player.ribcageTimer = 0;
@@ -550,6 +589,8 @@ export class GameEngine {
     this.player.colossusTimer = 0;
     this.player.unyieldingStacks = 0;
     this.player.unyieldingTimer = 0;
+    this.player.skelComboStep = 0;
+    this.player.skelLungeOffset = 0;
     this.player.windrunnerTimer = 0;
     this.player.reflexBurstTimer = 0;
     this.player.poisonBladesTimer = 0;
@@ -558,13 +599,28 @@ export class GameEngine {
     this.player.phantomRemaining = 0;
     this.player.kingThievesRemaining = 0;
     this.player.zombieClawStrikeCount = 0;
+    this.player.zombieComboStep = 0;
+    this.player.zombieLungeOffset = 0;
+    this.player.goblinComboStep = 0;
+    this.player.goblinLungeOffset = 0;
     this.player.fortressTimer = 0;
     this.player.magneticTimer = 0;
     this.player.mountainHeartTimer = 0;
     this.player.leapAirProgress = 0;
     this.player.gnomePunchCount = 0;
+    this.player.gnomeComboStep = 0;
+    this.player.gnomeLungeOffset = 0;
     this.player.ironFistAftershockTimer = 0;
     this.player.cataclysmWavesRemaining = 0;
+    this.player.restlessTimer = 0;
+    this.player.soulDrainTimer = 0;
+    this.player.possessionTimer = 0;
+    this.player.possessedEnemyId = null;
+    this.player.nightmareTimer = 0;
+    this.player.ghostComboStep = 0;
+    this.player.ghostLungeOffset = 0;
+    this.player.ghostBasicCount = 0;
+    this.player.ghostMistDropAccum = 0;
   }
 
   private recomputePlayerStats(fullHeal: boolean): void {
@@ -574,6 +630,7 @@ export class GameEngine {
     const isSkel = profile.id === CharacterId.Skeleton;
     const isGob = profile.id === CharacterId.Goblin;
     const isGnome = profile.id === CharacterId.Gnome;
+    const isGhost = profile.id === CharacterId.Ghost;
 
     const upgHp = isSkel
       ? ranks.pathA * 14
@@ -581,11 +638,14 @@ export class GameEngine {
       ? ranks.pathA * 11
       : isGnome
       ? ranks.pathA * 26
+      : isGhost
+      ? ranks.pathA * 9
       : ranks.pathA * 24;
     const statueHp =
       (this.activeBlessingIds.has('zombie_bloated_carcass') ? 45 : 0) +
       (this.activeBlessingIds.has('skel_fortified_ribs') ? 32 : 0) +
-      (this.activeBlessingIds.has('gnome_bedrock_plating') ? 48 : 0);
+      (this.activeBlessingIds.has('gnome_bedrock_plating') ? 48 : 0) +
+      (this.activeBlessingIds.has('ghost_ethereal_veil') ? 24 : 0);
     const levelBonus = (this.runLevel - 1) * 10;
     const newMaxHp = profile.baseHp + upgHp + statueHp + levelBonus;
 
@@ -598,13 +658,19 @@ export class GameEngine {
     }
 
     const upgSpeedMult =
-      isSkel || isGob ? 1 + ranks.pathE * 0.05 : isGnome ? 1 + ranks.pathE * 0.04 : 1.0;
+      isSkel || isGob
+        ? 1 + ranks.pathE * 0.05
+        : isGnome
+        ? 1 + ranks.pathE * 0.04
+        : isGhost
+        ? 1 + ranks.pathE * 0.055
+        : 1.0;
     const statueSpeedMult =
       (this.activeBlessingIds.has('skel_phantom_stride') ? 1.18 : 1.0) *
       (this.activeBlessingIds.has('gob_quicksilver_boots') ? 1.2 : 1.0);
     this.player.speed = profile.baseSpeed * upgSpeedMult * statueSpeedMult;
 
-    const pathCdStep = isSkel || isGob ? 0.07 : 0.06;
+    const pathCdStep = isSkel || isGob || isGhost ? 0.07 : 0.06;
     const upgCdMult = 1 - ranks.pathE * pathCdStep;
     const normalBlessCdMult = this.activeBlessingIds.has('skel_phantom_stride') ? 0.8 : 1.0;
 
@@ -620,6 +686,43 @@ export class GameEngine {
     this.player.resolveRatio = isGnome
       ? Math.max(0, Math.min(1, 1 - this.player.hp / Math.max(1, this.player.maxHp)))
       : 0;
+  }
+
+  private getGhostRestlessMultiplier(): number {
+    if (this.player.characterId !== CharacterId.Ghost || this.player.restlessTimer <= 0) {
+      return 1.0;
+    }
+    const ranks = this.getActiveUpgrades();
+    const echoBonus = this.activeBlessingIds.has('ghost_restless_echo') ? 0.14 : 0;
+    return 1.32 + ranks.pathE * 0.08 + echoBonus;
+  }
+
+  private triggerRestlessSpirit(): void {
+    const p = this.player;
+    if (p.characterId !== CharacterId.Ghost) return;
+    const ranks = this.getActiveUpgrades();
+    const hasEcho = this.activeBlessingIds.has('ghost_restless_echo');
+    const wasReady = p.restlessTimer <= 0.15;
+    p.restlessTimer = 4.0 + (hasEcho ? 2.5 : 0);
+    p.ultCharge = Math.min(100, p.ultCharge + 7 * (1 + ranks.pathE * 0.14));
+    if (hasEcho) {
+      this.healPlayer(7);
+    }
+    this.slashes.push({
+      x: p.x,
+      y: p.y,
+      angle: 0,
+      radius: 74,
+      arcSpread: Math.PI * 2,
+      color: '#67E8F9',
+      life: 0.28,
+      maxLife: 0.28,
+      flip: false,
+      kind: 'GHOST_RESTLESS_SURGE',
+    });
+    if (wasReady) {
+      this.spawnPopup(p.x, p.y - 30, 'RESTLESS SPIRIT!', '#67E8F9', 0.98);
+    }
   }
 
   /**
@@ -659,12 +762,32 @@ export class GameEngine {
       charId === CharacterId.Gnome && this.activeBlessingIds.has('gnome_undying_grit')
         ? 1 + Math.max(0, 1 - this.player.hp / Math.max(1, this.player.maxHp)) * 0.35
         : 1.0;
+    const ghostWisp =
+      charId === CharacterId.Ghost && this.activeBlessingIds.has('ghost_ectoplasm_wisp')
+        ? 1.2
+        : 1.0;
+    const ghostRestless = this.getGhostRestlessMultiplier();
+    const ghostNightmare =
+      charId === CharacterId.Ghost && this.player.nightmareTimer > 0 ? 1.25 : 1.0;
     const abom = this.player.abominationTimer > 0 ? 1.65 : 1.0;
     const colossus = this.player.colossusTimer > 0 ? 1.7 : 1.0;
     const mountain = this.player.mountainHeartTimer > 0 ? 1.55 : 1.0;
     const stolenMight = this.player.stolenMightTimer > 0 ? 1.35 : 1.0;
     const lvl = 1 + (this.runLevel - 1) * 0.07;
-    return upg * necroTalons * concussive * gritOffense * abom * colossus * mountain * stolenMight * lvl;
+    return (
+      upg *
+      necroTalons *
+      concussive *
+      gritOffense *
+      ghostWisp *
+      ghostRestless *
+      ghostNightmare *
+      abom *
+      colossus *
+      mountain *
+      stolenMight *
+      lvl
+    );
   }
 
   private getPlagueOrSkillMultiplier(): number {
@@ -677,9 +800,12 @@ export class GameEngine {
         ? ranks.pathD * 0.24
         : charId === CharacterId.Gnome
         ? ranks.pathC * 0.18
+        : charId === CharacterId.Ghost
+        ? ranks.pathB * 0.14 + ranks.pathC * 0.16
         : ranks.pathC * 0.2;
+    const ghostRestless = this.getGhostRestlessMultiplier();
     const lvl = 1 + (this.runLevel - 1) * 0.06;
-    return (1 + upgBonus) * lvl;
+    return (1 + upgBonus) * ghostRestless * lvl;
   }
 
   /**
@@ -721,8 +847,9 @@ export class GameEngine {
     const ranks = this.getActiveUpgrades();
     const isSkel = profile.id === CharacterId.Skeleton;
     const isGob = profile.id === CharacterId.Goblin;
+    const isGhost = profile.id === CharacterId.Ghost;
 
-    const upgCrit = isSkel || isGob ? ranks.pathC * 0.04 : 0;
+    const upgCrit = isSkel || isGob || isGhost ? ranks.pathC * 0.04 : 0;
     const ivoryCrit = this.activeBlessingIds.has('skel_ivory_edge') ? 0.2 : 0;
     const heartseekerCrit = this.activeBlessingIds.has('gob_throat_seeker') ? 0.22 : 0;
     const colossusCrit = this.player.colossusTimer > 0 ? 0.25 : 0;
@@ -1038,6 +1165,8 @@ export class GameEngine {
     this.updateDaggerRains(dt);
     this.updateEarthenGrasps(dt);
     this.updateStoneRamparts(dt);
+    this.updateGhostMistZones(dt);
+    this.updateDeathsPassageRifts(dt);
     this.updatePickups(dt);
     this.updateEffects(dt);
     this.updateParticles(dt);
@@ -1084,6 +1213,11 @@ export class GameEngine {
 
     p.squashX += (1 - p.squashX) * 12 * dt;
     p.squashY += (1 - p.squashY) * 12 * dt;
+    p.skelLungeOffset += (0 - p.skelLungeOffset) * Math.min(1, dt * 16);
+    p.zombieLungeOffset += (0 - p.zombieLungeOffset) * Math.min(1, dt * 14);
+    p.goblinLungeOffset += (0 - p.goblinLungeOffset) * Math.min(1, dt * 18);
+    p.gnomeLungeOffset += (0 - p.gnomeLungeOffset) * Math.min(1, dt * 15);
+    p.ghostLungeOffset += (0 - p.ghostLungeOffset) * Math.min(1, dt * 16);
     if (p.hitFlashTimer > 0) p.hitFlashTimer -= dt;
     if (p.invulnTimer > 0) p.invulnTimer -= dt;
     if (p.basicAttackCooldown > 0) p.basicAttackCooldown -= dt;
@@ -1097,14 +1231,45 @@ export class GameEngine {
       p.ultCharge = Math.min(100, p.ultCharge + 1.8 * dt);
     }
 
-    // Zombie: Undying Flesh regeneration (+ Spined Carapace thorns if blessed)
+    // Zombie: Undying Flesh regeneration (+ Spined Carapace thorns & 60fps vitality cross motes)
     if (p.undyingTimer > 0) {
       p.undyingTimer = Math.max(0, p.undyingTimer - dt);
+      if (Math.random() < 0.28 && this.particles.length < 230) {
+        const ua = Math.random() * Math.PI * 2;
+        const ur = (p.abominationTimer > 0 ? 34 : 24) * (0.6 + Math.random() * 0.45);
+        this.particles.push({
+          x: p.x + Math.cos(ua) * ur,
+          y: p.y + Math.sin(ua) * (ur * 0.65),
+          vx: (Math.random() - 0.5) * 14,
+          vy: -32 - Math.random() * 22,
+          size: 4.5,
+          color: Math.random() < 0.5 ? '#2DD4BF' : '#4ADE80',
+          life: 0.42,
+          maxLife: 0.42,
+          gravity: 0,
+          fade: true,
+          kind: 'NECRO_CROSS',
+          drag: 2.0,
+        });
+      }
       p.undyingHealTick -= dt;
       if (p.undyingHealTick <= 0) {
         p.undyingHealTick = 0.5;
         const healAmt = Math.max(2, Math.round(p.maxHp * 0.035));
         this.healPlayer(healAmt);
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: this.activeBlessingIds.has('zombie_skill_undying_flesh') ? 86 : 62,
+          arcSpread: Math.PI * 2,
+          color: '#2DD4BF',
+          life: 0.28,
+          maxLife: 0.28,
+          flip: false,
+          kind: 'ZOMBIE_UNDYING_PULSE',
+          scale: p.abominationTimer > 0 ? 1.35 : 1.0,
+        });
         if (this.activeBlessingIds.has('zombie_skill_undying_flesh')) {
           this.shockwaves.push({
             x: p.x,
@@ -1126,12 +1291,42 @@ export class GameEngine {
       }
     }
 
-    // Zombie: Abomination Form periodic stomp
+    // Zombie: Abomination Form periodic mutagenic stomp
     if (p.abominationTimer > 0) {
       p.abominationTimer = Math.max(0, p.abominationTimer - dt);
+      if (Math.random() < 0.24 && this.particles.length < 230) {
+        const aa = Math.random() * Math.PI * 2;
+        this.particles.push({
+          x: p.x + Math.cos(aa) * 26,
+          y: p.y + 8 + Math.sin(aa) * 14,
+          vx: Math.cos(aa) * 28,
+          vy: -24 - Math.random() * 18,
+          size: 7,
+          color: Math.random() < 0.5 ? '#A3E635' : '#4ADE80',
+          life: 0.36,
+          maxLife: 0.36,
+          gravity: 0,
+          fade: true,
+          kind: 'SPORE_PUFF',
+          drag: 3.2,
+        });
+      }
       p.abomStompTick -= dt;
       if (p.abomStompTick <= 0) {
         p.abomStompTick = 1.4;
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: Math.random() * Math.PI,
+          radius: 98,
+          arcSpread: Math.PI * 2,
+          color: '#4ADE80',
+          life: 0.32,
+          maxLife: 0.32,
+          flip: false,
+          kind: 'ZOMBIE_ABOMINATION_NOVA',
+          scale: 0.88,
+        });
         this.shockwaves.push({
           x: p.x,
           y: p.y,
@@ -1150,6 +1345,7 @@ export class GameEngine {
               p.x,
               p.y
             );
+            this.applyInfectiousTouch(enemy, 1);
           }
         }
       }
@@ -1171,14 +1367,38 @@ export class GameEngine {
       }
     }
 
-    // Skeleton: Bone Storm whirling vortex shred
+    // Skeleton: Bone Storm whirling vortex shred + 60fps cyclonic bone splinters
     if (p.boneStormTimer > 0) {
       p.boneStormTimer = Math.max(0, p.boneStormTimer - dt);
+      const maelstrom = this.activeBlessingIds.has('skel_skill_bone_storm');
+      const stormRadius = maelstrom ? 99 : 76;
+      if (Math.random() < 0.45 && this.particles.length < 235) {
+        const sa = this.elapsedTime * 9 + Math.random() * Math.PI * 2;
+        const sr = stormRadius * (0.72 + Math.random() * 0.25);
+        const tangent = sa + Math.PI * 0.5;
+        const isShard = Math.random() < 0.45;
+        this.particles.push({
+          x: p.x + Math.cos(sa) * sr,
+          y: p.y + Math.sin(sa) * sr,
+          vx: Math.cos(tangent) * 145,
+          vy: Math.sin(tangent) * 145,
+          size: 2.6,
+          color: isShard ? '#F8FAFC' : '#A5B4FC',
+          life: 0.2,
+          maxLife: 0.2,
+          gravity: 0,
+          fade: true,
+          kind: isShard ? 'BONE_SHARD' : 'SLASH_STREAK',
+          rot: tangent,
+          vRot: isShard ? 18 : 0,
+          len: isShard ? 6 : 14,
+          thick: isShard ? 2.4 : 1.8,
+          drag: 5.0,
+        });
+      }
       p.boneStormTick -= dt;
       if (p.boneStormTick <= 0) {
         p.boneStormTick = 0.34;
-        const maelstrom = this.activeBlessingIds.has('skel_skill_bone_storm');
-        const stormRadius = maelstrom ? 99 : 76;
         const stormRaw =
           13 *
           (maelstrom ? 1.3 : 1.0) *
@@ -1189,6 +1409,20 @@ export class GameEngine {
           if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= stormRadius + enemy.radius) {
             const roll = this.rollPhysicalAttack(stormRaw);
             this.damageEnemy(enemy, roll.damage, true, p.x, p.y, false, roll.isCrit);
+            this.slashes.push({
+              x: enemy.x,
+              y: enemy.y,
+              angle: Math.atan2(enemy.y - p.y, enemy.x - p.x) + Math.PI * 0.5,
+              radius: 24,
+              arcSpread: 0,
+              color: roll.isCrit ? '#FDE047' : '#A5B4FC',
+              life: 0.14,
+              maxLife: 0.14,
+              flip: false,
+              kind: 'SKELETON_IMPACT_FLASH',
+              scale: 0.88,
+              isCrit: roll.isCrit,
+            });
           }
         }
         this.hitDestructibleProps(p.x, p.y, stormRadius);
@@ -1198,9 +1432,39 @@ export class GameEngine {
     // Skeleton: Bone Colossus titan pulse
     if (p.colossusTimer > 0) {
       p.colossusTimer = Math.max(0, p.colossusTimer - dt);
+      if (Math.random() < 0.28 && this.particles.length < 230) {
+        const ca = Math.random() * Math.PI * 2;
+        this.particles.push({
+          x: p.x + Math.cos(ca) * 30,
+          y: p.y + Math.sin(ca) * 20,
+          vx: (Math.random() - 0.5) * 18,
+          vy: -34 - Math.random() * 24,
+          size: 3.5,
+          color: Math.random() < 0.5 ? '#38BDF8' : '#C084FC',
+          life: 0.38,
+          maxLife: 0.38,
+          gravity: 0,
+          fade: true,
+          kind: 'SOUL_WISP',
+          drag: 2.2,
+        });
+      }
       p.colossusShockTick -= dt;
       if (p.colossusShockTick <= 0) {
         p.colossusShockTick = this.activeBlessingIds.has('skel_ult_colossus') ? 0.9 : 1.35;
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: Math.random() * Math.PI,
+          radius: 104,
+          arcSpread: Math.PI * 2,
+          color: '#38BDF8',
+          life: 0.3,
+          maxLife: 0.3,
+          flip: false,
+          kind: 'SKELETON_COLOSSUS_NOVA',
+          scale: 0.85,
+        });
         this.shockwaves.push({
           x: p.x,
           y: p.y,
@@ -1229,15 +1493,57 @@ export class GameEngine {
       }
     }
 
-    // Goblin active timers
+    // Goblin active timers (Windrunner aerodynamic slipstream chevrons & Poisoned Blades venom drips)
     if (p.windrunnerTimer > 0) {
       p.windrunnerTimer = Math.max(0, p.windrunnerTimer - dt);
-      if (Math.hypot(p.vx, p.vy) > 40 && Math.random() < 0.35) {
-        this.spawnBurst(p.x, p.y + 8, '#FDE047', 1, 35);
+      const moveSpd = Math.hypot(p.vx, p.vy);
+      if (moveSpd > 35 && Math.random() < 0.48 && this.particles.length < 230) {
+        const moveAng = Math.atan2(p.vy, p.vx);
+        this.particles.push({
+          x: p.x - Math.cos(moveAng) * 10 + (Math.random() - 0.5) * 10,
+          y: p.y + 4 - Math.sin(moveAng) * 10 + (Math.random() - 0.5) * 10,
+          vx: -Math.cos(moveAng) * 65,
+          vy: -Math.sin(moveAng) * 65,
+          size: 8.5,
+          color: Math.random() < 0.5 ? '#FDE047' : '#34D399',
+          life: 0.24,
+          maxLife: 0.24,
+          gravity: 0,
+          fade: true,
+          kind: 'WIND_CHEVRON',
+          rot: moveAng,
+          vRot: 0,
+          len: 9,
+          thick: 2.2,
+          drag: 4.5,
+        });
       }
     }
     if (p.reflexBurstTimer > 0) p.reflexBurstTimer = Math.max(0, p.reflexBurstTimer - dt);
-    if (p.poisonBladesTimer > 0) p.poisonBladesTimer = Math.max(0, p.poisonBladesTimer - dt);
+    if (p.poisonBladesTimer > 0) {
+      p.poisonBladesTimer = Math.max(0, p.poisonBladesTimer - dt);
+      if (Math.random() < 0.28 && this.particles.length < 230) {
+        const side = Math.random() < 0.5 ? -12 : 12;
+        this.particles.push({
+          x: p.x + side * p.facingX,
+          y: p.y + 4,
+          vx: (Math.random() - 0.5) * 20,
+          vy: 26 + Math.random() * 18,
+          size: 2.8,
+          color: '#A3E635',
+          life: 0.25,
+          maxLife: 0.25,
+          gravity: 0,
+          fade: true,
+          kind: 'VENOM_DROP',
+          rot: Math.PI * 0.5,
+          vRot: 0,
+          len: 4.8,
+          thick: 2.2,
+          drag: 3.0,
+        });
+      }
+    }
     if (p.stolenMightTimer > 0) p.stolenMightTimer = Math.max(0, p.stolenMightTimer - dt);
 
     // Goblin: Dagger Flurry ultra-fast strike chain
@@ -1276,13 +1582,46 @@ export class GameEngine {
         ? Math.max(0, Math.min(1, 1 - p.hp / Math.max(1, p.maxHp)))
         : 0;
 
-    // Gnome: Fortress Stance timer (+ Aegis Bastion tremors)
+    // Gnome: Fortress Stance timer (+ Aegis Bastion tremors & rising bronze rune sparks)
     if (p.fortressTimer > 0) {
       p.fortressTimer = Math.max(0, p.fortressTimer - dt);
+      if (Math.random() < 0.26 && this.particles.length < 230) {
+        const fa = Math.random() * Math.PI * 2;
+        const fr = p.mountainHeartTimer > 0 ? 42 : 30;
+        this.particles.push({
+          x: p.x + Math.cos(fa) * fr,
+          y: p.y + Math.sin(fa) * (fr * 0.6),
+          vx: (Math.random() - 0.5) * 14,
+          vy: -28 - Math.random() * 20,
+          size: 2.8,
+          color: Math.random() < 0.5 ? '#FDBA74' : '#FDE047',
+          life: 0.34,
+          maxLife: 0.34,
+          gravity: 0,
+          fade: true,
+          kind: 'RUNE_SPARK',
+          rot: fa,
+          vRot: 6,
+          len: 5,
+          drag: 2.5,
+        });
+      }
       if (this.activeBlessingIds.has('gnome_skill_fortress_stance')) {
         p.fortressTremorTick -= dt;
         if (p.fortressTremorTick <= 0) {
           p.fortressTremorTick = 1.25;
+          this.slashes.push({
+            x: p.x,
+            y: p.y,
+            angle: 0,
+            radius: 96,
+            arcSpread: Math.PI * 2,
+            color: '#FDBA74',
+            life: 0.28,
+            maxLife: 0.28,
+            flip: false,
+            kind: 'GNOME_FORTRESS_AEGIS',
+          });
           this.shockwaves.push({
             x: p.x,
             y: p.y,
@@ -1303,9 +1642,31 @@ export class GameEngine {
       }
     }
 
-    // Gnome: Magnetic Guard timer (+ Overcharged Coil lightning arcs)
+    // Gnome: Magnetic Guard timer (+ Overcharged Coil lightning arcs & polarity sparks)
     if (p.magneticTimer > 0) {
       p.magneticTimer = Math.max(0, p.magneticTimer - dt);
+      if (Math.random() < 0.32 && this.particles.length < 230) {
+        const ma = Math.random() * Math.PI * 2;
+        const mr = p.mountainHeartTimer > 0 ? 54 : 42;
+        this.particles.push({
+          x: p.x + Math.cos(ma) * mr,
+          y: p.y - 4 + Math.sin(ma) * mr,
+          vx: -Math.sin(ma) * 45,
+          vy: Math.cos(ma) * 45,
+          size: 3,
+          color: Math.random() < 0.6 ? '#38BDF8' : '#FB923C',
+          life: 0.22,
+          maxLife: 0.22,
+          gravity: 0,
+          fade: true,
+          kind: 'MAGNETIC_ARC',
+          rot: ma + Math.PI * 0.5,
+          vRot: 0,
+          len: 9,
+          thick: 2,
+          drag: 4,
+        });
+      }
       if (this.activeBlessingIds.has('gnome_skill_magnetic_guard')) {
         p.magneticZapTick -= dt;
         if (p.magneticZapTick <= 0) {
@@ -1316,18 +1677,35 @@ export class GameEngine {
             if (!enemy || enemy.hp <= 0) continue;
             if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 120 + enemy.radius) {
               this.damageEnemy(enemy, zapDmg, false, p.x, p.y);
-              this.spawnBurst(enemy.x, enemy.y, '#38BDF8', 5, 70);
+              this.slashes.push({
+                x: enemy.x,
+                y: enemy.y,
+                fromX: p.x,
+                fromY: p.y - 6,
+                angle: Math.atan2(enemy.y - p.y, enemy.x - p.x),
+                radius: 0,
+                arcSpread: 0,
+                color: '#38BDF8',
+                life: 0.2,
+                maxLife: 0.2,
+                flip: false,
+                kind: 'GNOME_MAGNETIC_ARC',
+              });
               zappedAny = true;
             }
           }
           if (zappedAny) {
-            this.shockwaves.push({
+            this.slashes.push({
               x: p.x,
               y: p.y,
-              maxRadius: 120,
+              angle: 0,
+              radius: 120,
+              arcSpread: Math.PI * 2,
               color: '#38BDF8',
-              life: 0.2,
-              maxLife: 0.2,
+              life: 0.24,
+              maxLife: 0.24,
+              flip: false,
+              kind: 'GNOME_MAGNETIC_PULSE',
             });
           }
         }
@@ -1340,6 +1718,19 @@ export class GameEngine {
       p.mountainTremorTick -= dt;
       if (p.mountainTremorTick <= 0) {
         p.mountainTremorTick = 1.25;
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 112,
+          arcSpread: Math.PI * 2,
+          color: '#FB923C',
+          life: 0.3,
+          maxLife: 0.3,
+          flip: false,
+          kind: 'GNOME_CRATER_SLAM',
+          scale: 0.9,
+        });
         this.shockwaves.push({
           x: p.x,
           y: p.y,
@@ -1366,6 +1757,19 @@ export class GameEngine {
         soundEngine.playBossSlam();
         const ax = p.ironFistAftershockX + Math.cos(p.ironFistAftershockAngle) * 78;
         const ay = p.ironFistAftershockY + Math.sin(p.ironFistAftershockAngle) * 78;
+        this.slashes.push({
+          x: ax,
+          y: ay,
+          angle: p.ironFistAftershockAngle,
+          radius: 96,
+          arcSpread: Math.PI * 2,
+          color: '#FDBA74',
+          life: 0.32,
+          maxLife: 0.32,
+          flip: false,
+          kind: 'GNOME_CRATER_SLAM',
+          scale: 0.85,
+        });
         this.shockwaves.push({
           x: ax,
           y: ay,
@@ -1374,7 +1778,29 @@ export class GameEngine {
           life: 0.28,
           maxLife: 0.28,
         });
-        this.spawnBurst(ax, ay, '#FB923C', 14, 120);
+        for (let r = 0; r < 10; r++) {
+          if (this.particles.length > 240) break;
+          const ra = (r / 10) * Math.PI * 2;
+          const rspd = 95 + Math.random() * 85;
+          this.particles.push({
+            x: ax,
+            y: ay,
+            vx: Math.cos(ra) * rspd,
+            vy: Math.sin(ra) * rspd,
+            size: 4,
+            color: r % 2 === 0 ? '#78716C' : '#FB923C',
+            life: 0.32,
+            maxLife: 0.32,
+            gravity: 0,
+            fade: true,
+            kind: r % 2 === 0 ? 'STONE_CHUNK' : 'RUNE_SPARK',
+            rot: ra,
+            vRot: (Math.random() - 0.5) * 16,
+            len: 7,
+            thick: 4,
+            drag: 4.5,
+          });
+        }
         const afterDmg = Math.round(24 * this.getPhysicalDamageMultiplier());
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
@@ -1399,6 +1825,191 @@ export class GameEngine {
       }
     }
 
+    // Ghost Passive 2: Restless Spirit surge timer + astral spark motes
+    if (p.restlessTimer > 0) {
+      p.restlessTimer = Math.max(0, p.restlessTimer - dt);
+      if (Math.random() < 0.34 && this.particles.length < 235) {
+        const ra = Math.random() * Math.PI * 2;
+        this.particles.push({
+          x: p.x + Math.cos(ra) * 20,
+          y: p.y - 4 + Math.sin(ra) * 14,
+          vx: Math.cos(ra) * 22,
+          vy: -34 - Math.random() * 24,
+          size: 3.6,
+          color: Math.random() < 0.55 ? '#67E8F9' : '#D8B4FE',
+          life: 0.32,
+          maxLife: 0.32,
+          gravity: 0,
+          fade: true,
+          kind: 'ECTO_SPARK',
+          rot: ra,
+          vRot: 5,
+          drag: 3.0,
+        });
+      }
+    }
+
+    // Ghost Normal Skill: Soul Drain active multi-tendril siphon
+    if (p.soulDrainTimer > 0) {
+      p.soulDrainTimer = Math.max(0, p.soulDrainTimer - dt);
+      p.soulDrainTick -= dt;
+      if (p.soulDrainTick <= 0) {
+        const siphonBless = this.activeBlessingIds.has('ghost_skill_soul_drain');
+        p.soulDrainTick = siphonBless ? 0.32 : 0.42;
+        const maxTargets = siphonBless ? 6 : 4;
+        const drainRange = 180;
+        const targets = [...this.world.enemies]
+          .filter((e) => e && e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) <= drainRange + e.radius)
+          .sort(
+            (a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y)
+          )
+          .slice(0, maxTargets);
+
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: Math.random() * Math.PI * 2,
+          radius: drainRange,
+          arcSpread: Math.PI * 2,
+          color: '#C084FC',
+          life: 0.28,
+          maxLife: 0.28,
+          flip: false,
+          kind: 'GHOST_SOUL_DRAIN_PULSE',
+        });
+
+        let totalHealed = 0;
+        const tickDmg = Math.round(13 * this.getPlagueOrSkillMultiplier());
+        for (const target of targets) {
+          this.tethers.push({
+            fromX: target.x,
+            fromY: target.y - 6,
+            life: 0.34,
+            maxLife: 0.34,
+            color: '#67E8F9',
+          });
+          this.damageEnemy(target, tickDmg, false, p.x, p.y);
+          this.applyGhostChillIfActive(target);
+          totalHealed += siphonBless ? 5 : 3;
+          if (this.particles.length < 238) {
+            const ta = Math.atan2(p.y - target.y, p.x - target.x);
+            this.particles.push({
+              x: target.x,
+              y: target.y - 6,
+              vx: Math.cos(ta) * 185,
+              vy: Math.sin(ta) * 185,
+              size: 4.2,
+              color: '#67E8F9',
+              life: 0.26,
+              maxLife: 0.26,
+              gravity: 0,
+              fade: true,
+              kind: 'SOUL_WISP',
+              drag: 2.0,
+            });
+          }
+        }
+        if (totalHealed > 0) {
+          this.healPlayer(totalHealed);
+        }
+      }
+    }
+
+    // Ghost Ultimate: Eternal Nightmare realm of darkness + periodic terror waves
+    if (p.nightmareTimer > 0) {
+      p.nightmareTimer = Math.max(0, p.nightmareTimer - dt);
+      p.nightmareFearTick -= dt;
+      if (p.nightmareFearTick <= 0) {
+        p.nightmareFearTick = 1.45;
+        const ranks = this.getActiveUpgrades();
+        const fearDur = 1.5 + ranks.pathD * 0.2;
+        const pulseDmg = Math.round(12 * this.getPlagueOrSkillMultiplier());
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: Math.random() * Math.PI * 2,
+          radius: 175,
+          arcSpread: Math.PI * 2,
+          color: '#A855F7',
+          life: 0.32,
+          maxLife: 0.32,
+          flip: false,
+          kind: 'GHOST_NIGHTMARE_NOVA',
+          scale: 0.78,
+        });
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 210 + enemy.radius) {
+            this.damageEnemy(enemy, pulseDmg, false, p.x, p.y);
+            this.applyEnemyFear(enemy, fearDur);
+          }
+        }
+      }
+    }
+
+    // Ghost Normal Skill: Haunted Possession — ride inside host enemy & force it to cleave nearby foes!
+    if (p.possessionTimer > 0) {
+      p.possessionTimer = Math.max(0, p.possessionTimer - dt);
+      const host =
+        p.possessedEnemyId !== null
+          ? this.world.enemies.find((e) => e.id === p.possessedEnemyId && e.hp > 0)
+          : undefined;
+      if (!host || p.possessionTimer <= 0) {
+        const burstX = host ? host.x : p.x;
+        const burstY = host ? host.y : p.y;
+        if (host) {
+          host.possessedTimer = 0;
+        }
+        p.possessionTimer = 0;
+        p.possessedEnemyId = null;
+        this.triggerPossessionExorcism(burstX, burstY);
+      } else {
+        p.x = host.x;
+        p.y = host.y;
+        p.invulnTimer = Math.max(p.invulnTimer, 0.22);
+        p.possessionPulseTick -= dt;
+        if (p.possessionPulseTick <= 0) {
+          const puppeteer = this.activeBlessingIds.has('ghost_skill_haunted_possession');
+          p.possessionPulseTick = puppeteer ? 0.36 : 0.48;
+          soundEngine.playSlash(1);
+          this.slashes.push({
+            x: host.x,
+            y: host.y,
+            angle: Math.random() * Math.PI * 2,
+            radius: 112,
+            arcSpread: Math.PI * 2,
+            color: '#C084FC',
+            life: 0.26,
+            maxLife: 0.26,
+            flip: false,
+            kind: 'GHOST_POSSESS_PULSE',
+          });
+          const cleaveDmg = Math.round(
+            20 * (puppeteer ? 1.3 : 1.0) * this.getPlagueOrSkillMultiplier()
+          );
+          let hitNeighbor = false;
+          for (const other of [...this.world.enemies]) {
+            if (!other || other.hp <= 0 || other.id === host.id) continue;
+            if (Math.hypot(other.x - host.x, other.y - host.y) <= 116 + other.radius) {
+              this.damageEnemy(other, cleaveDmg, true, host.x, host.y, false, puppeteer);
+              this.applyGhostChillIfActive(other);
+              hitNeighbor = true;
+            }
+          }
+          // Host also suffers internal spiritual disruption (full if isolated, half if cleaving allies)
+          this.damageEnemy(
+            host,
+            hitNeighbor ? Math.round(cleaveDmg * 0.55) : cleaveDmg,
+            false,
+            host.x,
+            host.y
+          );
+        }
+        this.checkInteractables();
+        return;
+      }
+    }
+
     // Soul Knight Mobile Aiming: Auto-lock nearest enemy within range; otherwise aim along joystick vector
     const joyMag = Math.hypot(this.joyX, this.joyY);
     const nearestEnemy = this.findNearestEnemy(p.x, p.y, 305);
@@ -1411,10 +2022,13 @@ export class GameEngine {
     }
 
     const windSpeedMult =
-      (p.windrunnerTimer > 0 ? 1.45 : 1.0) * (p.reflexBurstTimer > 0 ? 1.24 : 1.0);
+      (p.windrunnerTimer > 0 ? 1.45 : 1.0) *
+      (p.reflexBurstTimer > 0 ? 1.24 : 1.0) *
+      (p.restlessTimer > 0 ? 1.28 : 1.0) *
+      (p.nightmareTimer > 0 ? 1.14 : 1.0);
     const effectiveMoveSpeed = p.speed * windSpeedMult;
 
-    // Movement via Virtual Joystick or Dash/Leap Skill (Flesh Ripper / Skeletal Rush / Groundbreaker)
+    // Movement via Virtual Joystick or Dash/Leap Skill (Flesh Ripper / Skeletal Rush / Groundbreaker / Phantom Dash)
     if (p.dashTimer > 0) {
       p.dashTimer -= dt;
       if (p.dashKind === 'GROUNDBREAKER_LEAP') {
@@ -1423,19 +2037,167 @@ export class GameEngine {
         const leapSpeed = 520;
         p.vx = Math.cos(p.dashAngle) * leapSpeed;
         p.vy = Math.sin(p.dashAngle) * leapSpeed;
-        if (Math.random() < 0.45) {
-          this.spawnBurst(p.x, p.y + 6, '#FB923C', 1, 45);
+        if (Math.random() < 0.65 && this.particles.length < 235) {
+          this.particles.push({
+            x: p.x + (Math.random() - 0.5) * 10,
+            y: p.y + 4,
+            vx: -Math.cos(p.dashAngle) * 65 + (Math.random() - 0.5) * 35,
+            vy: -Math.sin(p.dashAngle) * 65 + (Math.random() - 0.5) * 35,
+            size: 3.4,
+            color: Math.random() < 0.5 ? '#FB923C' : '#FDE047',
+            life: 0.26,
+            maxLife: 0.26,
+            gravity: 0,
+            fade: true,
+            kind: 'RUNE_SPARK',
+            rot: p.dashAngle,
+            vRot: 12,
+            len: 6,
+            drag: 4,
+          });
         }
         if (p.dashTimer <= 0) {
           p.leapAirProgress = 0;
           this.triggerGroundbreakerCrash();
+        }
+      } else if (p.dashKind === 'PHANTOM_DASH') {
+        const dashSpeed = 810;
+        p.vx = Math.cos(p.dashAngle) * dashSpeed;
+        p.vy = Math.sin(p.dashAngle) * dashSpeed;
+
+        p.dashAfterimageAccum -= dt;
+        if (p.dashAfterimageAccum <= 0) {
+          p.dashAfterimageAccum = 0.036;
+          this.afterimages.push({
+            x: p.x,
+            y: p.y,
+            facingX: p.facingX,
+            color: '#C084FC',
+            life: 0.32,
+            maxLife: 0.32,
+            archetype: 'GHOST',
+          });
+        }
+
+        // Drop lingering spectral mist wake along dash path
+        p.ghostMistDropAccum -= dt;
+        if (p.ghostMistDropAccum <= 0) {
+          p.ghostMistDropAccum = 0.055;
+          const wakeBless = this.activeBlessingIds.has('ghost_skill_phantom_dash');
+          this.ghostMistZones.push({
+            id: allocEntityId(),
+            x: p.x,
+            y: p.y,
+            radius: wakeBless ? 62 : 46,
+            life: wakeBless ? 3.2 : 2.2,
+            maxLife: wakeBless ? 3.2 : 2.2,
+            tickTimer: 0.12,
+            damagePerTick: Math.round(10 * (wakeBless ? 1.35 : 1.0) * this.getPlagueOrSkillMultiplier()),
+          });
+        }
+
+        if (this.particles.length < 238) {
+          const perp = p.dashAngle + Math.PI * 0.5;
+          const off = (Math.random() - 0.5) * 20;
+          this.particles.push({
+            x: p.x + Math.cos(perp) * off,
+            y: p.y + Math.sin(perp) * off,
+            vx: -Math.cos(p.dashAngle) * 120,
+            vy: -Math.sin(p.dashAngle) * 120,
+            size: 4,
+            color: Math.random() < 0.5 ? '#67E8F9' : '#D8B4FE',
+            life: 0.24,
+            maxLife: 0.24,
+            gravity: 0,
+            fade: true,
+            kind: 'ECTO_SPARK',
+            rot: p.dashAngle,
+            vRot: 8,
+            drag: 4.5,
+          });
+        }
+
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (!p.dashHitIds.has(enemy.id)) {
+            const dist = Math.hypot(enemy.x - p.x, enemy.y - p.y);
+            if (dist <= p.radius + enemy.radius + 26) {
+              p.dashHitIds.add(enemy.id);
+              const wakeBless = this.activeBlessingIds.has('ghost_skill_phantom_dash');
+              const roll = this.rollPhysicalAttack(
+                28 * (wakeBless ? 1.3 : 1.0) * this.getPlagueOrSkillMultiplier(),
+                0.22
+              );
+              this.damageEnemy(enemy, roll.damage, false, p.x, p.y, false, roll.isCrit);
+              this.applyGhostChillIfActive(enemy);
+              this.slashes.push({
+                x: enemy.x,
+                y: enemy.y,
+                angle: p.dashAngle,
+                radius: 36,
+                arcSpread: 0,
+                color: '#67E8F9',
+                life: 0.22,
+                maxLife: 0.22,
+                flip: false,
+                kind: 'GHOST_IMPACT_RING',
+                isCrit: roll.isCrit,
+              });
+              this.triggerRestlessSpirit();
+              if (wakeBless && !p.dashRefunded) {
+                p.dashRefunded = true;
+                p.normalCooldowns[p.dashSlotIndex] *= 0.65;
+              }
+            }
+          }
         }
       } else {
         const isSkeletalRush = p.dashKind === 'SKELETAL_RUSH';
         const dashSpeed = isSkeletalRush ? 790 : 690;
         p.vx = Math.cos(p.dashAngle) * dashSpeed;
         p.vy = Math.sin(p.dashAngle) * dashSpeed;
-        this.spawnBurst(p.x, p.y, isSkeletalRush ? '#38BDF8' : '#4ADE80', 2, 50);
+
+        // 60fps time-stepped mirage afterimages + directional razor/claw streaks
+        p.dashAfterimageAccum -= dt;
+        if (p.dashAfterimageAccum <= 0) {
+          p.dashAfterimageAccum = 0.038;
+          this.afterimages.push({
+            x: p.x,
+            y: p.y,
+            facingX: p.facingX,
+            color: isSkeletalRush ? '#38BDF8' : '#34D399',
+            life: 0.26,
+            maxLife: 0.26,
+            archetype: isSkeletalRush ? 'SKELETON' : 'ZOMBIE',
+          });
+        }
+        if (this.particles.length < 238) {
+          const perp = p.dashAngle + Math.PI * 0.5;
+          const off = (Math.random() - 0.5) * 18;
+          this.particles.push({
+            x: p.x + Math.cos(perp) * off,
+            y: p.y + Math.sin(perp) * off,
+            vx: -Math.cos(p.dashAngle) * 130,
+            vy: -Math.sin(p.dashAngle) * 130,
+            size: 3,
+            color: isSkeletalRush
+              ? Math.random() < 0.5
+                ? '#7DD3FC'
+                : '#F8FAFC'
+              : Math.random() < 0.5
+              ? '#4ADE80'
+              : '#BEF264',
+            life: 0.2,
+            maxLife: 0.2,
+            gravity: 0,
+            fade: true,
+            kind: isSkeletalRush ? 'SLASH_STREAK' : 'VENOM_DROP',
+            rot: p.dashAngle + Math.PI,
+            len: isSkeletalRush ? 16 : 6.5,
+            thick: isSkeletalRush ? 2.1 : 2.8,
+            drag: 5.5,
+          });
+        }
 
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
@@ -1451,6 +2213,43 @@ export class GameEngine {
                   phantomDash
                 );
                 this.damageEnemy(enemy, roll.damage, true, p.x, p.y, true, roll.isCrit);
+                this.slashes.push({
+                  x: enemy.x,
+                  y: enemy.y,
+                  angle: p.dashAngle,
+                  radius: 32,
+                  arcSpread: 0,
+                  color: roll.isCrit ? '#FDE047' : '#38BDF8',
+                  life: 0.2,
+                  maxLife: 0.2,
+                  flip: false,
+                  kind: 'SKELETON_IMPACT_FLASH',
+                  scale: 1.35,
+                  isCrit: roll.isCrit,
+                });
+                for (let b = 0; b < 6; b++) {
+                  if (this.particles.length > 240) break;
+                  const ba = p.dashAngle + (Math.random() - 0.5) * 1.4;
+                  const bs = 160 + Math.random() * 110;
+                  this.particles.push({
+                    x: enemy.x,
+                    y: enemy.y,
+                    vx: Math.cos(ba) * bs,
+                    vy: Math.sin(ba) * bs,
+                    size: 2.6,
+                    color: b % 2 === 0 ? '#F8FAFC' : '#38BDF8',
+                    life: 0.24,
+                    maxLife: 0.24,
+                    gravity: 0,
+                    fade: true,
+                    kind: 'BONE_SHARD',
+                    rot: ba,
+                    vRot: (Math.random() - 0.5) * 20,
+                    len: 7,
+                    thick: 2.5,
+                    drag: 5.2,
+                  });
+                }
                 if (phantomDash && !p.dashRefunded) {
                   p.dashRefunded = true;
                   p.normalCooldowns[p.dashSlotIndex] = Math.max(
@@ -1465,6 +2264,33 @@ export class GameEngine {
                 );
                 this.damageEnemy(enemy, roll.damage, true, p.x, p.y, true, roll.isCrit);
                 this.applyInfectiousTouch(enemy, 1);
+                this.slashes.push({
+                  x: enemy.x,
+                  y: enemy.y,
+                  angle: p.dashAngle,
+                  radius: 54,
+                  arcSpread: 1.65,
+                  color: '#34D399',
+                  life: 0.24,
+                  maxLife: 0.24,
+                  flip: false,
+                  kind: 'ZOMBIE_SAVAGE_REND',
+                  scale: p.abominationTimer > 0 ? 1.3 : 1.0,
+                  isCrit: true,
+                });
+                this.slashes.push({
+                  x: enemy.x,
+                  y: enemy.y,
+                  angle: p.dashAngle,
+                  radius: 42,
+                  arcSpread: 0,
+                  color: '#A3E635',
+                  life: 0.28,
+                  maxLife: 0.28,
+                  flip: false,
+                  kind: 'ZOMBIE_POISON_BURST',
+                  isCrit: goreLunge,
+                });
                 if (goreLunge) {
                   this.healPlayer(6);
                 }
@@ -1483,14 +2309,23 @@ export class GameEngine {
       const ny = this.joyY / joyMag;
       p.vx = nx * effectiveMoveSpeed * clampedMag;
       p.vy = ny * effectiveMoveSpeed * clampedMag;
-      p.walkPhase += dt * (8 + 6 * clampedMag) * (p.windrunnerTimer > 0 ? 1.35 : 1);
+      p.walkPhase += dt * (8 + 6 * clampedMag) * (p.windrunnerTimer > 0 || p.restlessTimer > 0 ? 1.35 : 1);
     } else {
       p.leapAirProgress = 0;
       p.vx *= Math.pow(0.001, dt);
       p.vy *= Math.pow(0.001, dt);
     }
 
-    const nextPos = this.resolveWorldCollision(p.x + p.vx * dt, p.y + p.vy * dt, p.radius);
+    // Ghost Passive 1: Ethereal Body phases naturally through physical obstacles in the Dungeon!
+    const phaseObstacles =
+      !this.world.isGuild &&
+      (p.characterId === CharacterId.Ghost || p.dashKind === 'PHANTOM_DASH' && p.dashTimer > 0);
+    const nextPos = this.resolveWorldCollision(
+      p.x + p.vx * dt,
+      p.y + p.vy * dt,
+      p.radius,
+      phaseObstacles
+    );
     p.x = nextPos.x;
     p.y = nextPos.y;
 
@@ -1529,6 +2364,7 @@ export class GameEngine {
     const isSkel = profile.id === CharacterId.Skeleton;
     const isGob = profile.id === CharacterId.Goblin;
     const isGnome = profile.id === CharacterId.Gnome;
+    const isGhost = profile.id === CharacterId.Ghost;
     const isTitan = p.abominationTimer > 0 || p.colossusTimer > 0 || p.mountainHeartTimer > 0;
 
     let cd = profile.baseAttackCooldown;
@@ -1536,34 +2372,160 @@ export class GameEngine {
       cd /= (1 + ranks.pathE * 0.05) * (this.activeBlessingIds.has('skel_phantom_stride') ? 1.18 : 1);
     } else if (isGob) {
       cd /= 1 + ranks.pathB * 0.06;
+    } else if (isGhost) {
+      cd /= (1 + ranks.pathE * 0.05) * (p.restlessTimer > 0 ? 1.18 : 1.0);
     }
     if (isTitan) cd = Math.max(0.16, cd - 0.04);
     if (p.windrunnerTimer > 0) cd *= 0.76;
     p.basicAttackCooldown = Math.max(0.11, cd);
 
-    p.comboFlip = !p.comboFlip;
-    p.squashX = isGnome ? 1.22 : 1.18;
-    p.squashY = isGnome ? 0.82 : 0.85;
+    const isZombie = profile.id === CharacterId.Zombie;
+    const skelStep = isSkel ? p.skelComboStep : 0;
+    const isSkelFinisher = isSkel && skelStep === 2;
+    const zombStep = isZombie ? p.zombieComboStep : 0;
+    const isZombieFinisher = isZombie && zombStep === 2;
+    const gobStep = isGob ? p.goblinComboStep : 0;
+    const isGobFinisher = isGob && gobStep === 2;
+    const gnomeStep = isGnome ? p.gnomeComboStep : 0;
+    const isGnomeFinisher = isGnome && gnomeStep === 2;
+    const ghostStep = isGhost ? p.ghostComboStep : 0;
+    const isGhostFinisher = isGhost && ghostStep === 2;
+
+    if (isSkel) {
+      p.skelComboStep = (skelStep + 1) % 3;
+      p.comboFlip = skelStep % 2 === 1;
+      p.skelLungeOffset = isSkelFinisher ? 11 : 6.5;
+      p.squashX = isSkelFinisher ? 1.28 : 1.18;
+      p.squashY = isSkelFinisher ? 0.78 : 0.85;
+    } else if (isZombie) {
+      p.zombieComboStep = (zombStep + 1) % 3;
+      p.comboFlip = zombStep % 2 === 1;
+      p.zombieLungeOffset = isZombieFinisher ? 10 : 6;
+      p.squashX = isZombieFinisher ? 1.26 : 1.18;
+      p.squashY = isZombieFinisher ? 0.78 : 0.84;
+    } else if (isGob) {
+      p.goblinComboStep = (gobStep + 1) % 3;
+      p.comboFlip = gobStep % 2 === 1;
+      p.goblinLungeOffset = isGobFinisher ? 11.5 : 7;
+      p.squashX = isGobFinisher ? 1.26 : 1.18;
+      p.squashY = isGobFinisher ? 0.78 : 0.85;
+    } else if (isGnome) {
+      p.gnomeComboStep = (gnomeStep + 1) % 3;
+      p.comboFlip = gnomeStep % 2 === 1;
+      p.gnomeLungeOffset = isGnomeFinisher ? 12 : 7.5;
+      p.squashX = isGnomeFinisher ? 1.32 : 1.22;
+      p.squashY = isGnomeFinisher ? 0.74 : 0.82;
+    } else if (isGhost) {
+      p.ghostComboStep = (ghostStep + 1) % 3;
+      p.comboFlip = ghostStep % 2 === 1;
+      p.ghostLungeOffset = isGhostFinisher ? 11.5 : 7;
+      p.squashX = isGhostFinisher ? 1.26 : 1.16;
+      p.squashY = isGhostFinisher ? 0.8 : 0.86;
+    } else {
+      p.comboFlip = !p.comboFlip;
+      p.squashX = 1.18;
+      p.squashY = 0.85;
+    }
 
     const baseReach = isSkel
-      ? (p.colossusTimer > 0 ? 96 : 68) * (1 + ranks.pathB * 0.04)
+      ? (p.colossusTimer > 0 ? 96 : isSkelFinisher ? 80 : 68) * (1 + ranks.pathB * 0.04)
       : isGob
-      ? 58
+      ? isGobFinisher
+        ? 68
+        : 58
       : isGnome
-      ? (p.mountainHeartTimer > 0 ? 92 : 66) * (1 + ranks.pathB * 0.05)
+      ? (p.mountainHeartTimer > 0
+          ? isGnomeFinisher
+            ? 104
+            : 92
+          : isGnomeFinisher
+          ? 78
+          : 66) *
+        (1 + ranks.pathB * 0.05)
+      : isGhost
+      ? (isGhostFinisher ? 92 : 76) * (1 + ranks.pathB * 0.04)
       : p.abominationTimer > 0
-      ? 84
+      ? isZombieFinisher
+        ? 94
+        : 84
+      : isZombieFinisher
+      ? 72
       : 62;
     const reach = baseReach;
-    const spread = isTitan ? 1.7 : isSkel ? 1.45 : isGob ? 1.25 : isGnome ? 1.4 : 1.35;
+    const spread = isSkel
+      ? isSkelFinisher
+        ? 1.82
+        : p.colossusTimer > 0
+        ? 1.68
+        : 1.48
+      : isZombie
+      ? isZombieFinisher
+        ? 1.72
+        : p.abominationTimer > 0
+        ? 1.62
+        : 1.42
+      : isGob
+      ? isGobFinisher
+        ? 1.62
+        : 1.32
+      : isGnome
+      ? isGnomeFinisher
+        ? 1.74
+        : p.mountainHeartTimer > 0
+        ? 1.62
+        : 1.44
+      : isGhost
+      ? isGhostFinisher
+        ? 1.88
+        : 1.54
+      : isTitan
+      ? 1.7
+      : 1.35;
 
     const gobVenomActive = p.poisonBladesTimer > 0 || this.activeBlessingIds.has('gob_viper_toxin');
 
-    soundEngine.playSlash(p.comboFlip ? 1 : 0);
-    const isZombie = profile.id === CharacterId.Zombie;
-    this.slashes.push({
-      x: p.x + Math.cos(p.aimAngle) * 14,
-      y: p.y + Math.sin(p.aimAngle) * 14,
+    soundEngine.playSlash(
+      isSkel
+        ? skelStep
+        : isZombie
+        ? zombStep
+        : isGob
+        ? gobStep
+        : isGnome
+        ? gnomeStep
+        : isGhost
+        ? ghostStep
+        : p.comboFlip
+        ? 1
+        : 0
+    );
+    const originX = p.x + Math.cos(p.aimAngle) * 16;
+    const originY = p.y + Math.sin(p.aimAngle) * 16;
+    const slashDuration = isGob
+      ? isGobFinisher
+        ? 0.165
+        : 0.125
+      : isGnome
+      ? isGnomeFinisher
+        ? 0.25
+        : 0.185
+      : isGhost
+      ? isGhostFinisher
+        ? 0.24
+        : 0.175
+      : isZombie
+      ? isZombieFinisher
+        ? 0.23
+        : 0.18
+      : isSkel
+      ? isSkelFinisher
+        ? 0.19
+        : 0.145
+      : 0.14;
+
+    const createdSlash: SlashEffect = {
+      x: originX,
+      y: originY,
       angle: p.aimAngle,
       radius: reach,
       arcSpread: spread,
@@ -1576,21 +2538,324 @@ export class GameEngine {
           ? '#A3E635'
           : '#FBBF24'
         : isGnome
-        ? p.mountainHeartTimer > 0
+        ? p.mountainHeartTimer > 0 || isGnomeFinisher
           ? '#FDBA74'
           : '#FB923C'
-        : p.abominationTimer > 0
+        : isGhost
+        ? p.restlessTimer > 0 || isGhostFinisher
+          ? '#67E8F9'
+          : '#C084FC'
+        : p.abominationTimer > 0 || isZombieFinisher
         ? '#A3E635'
         : '#4ADE80',
-      life: isGob ? 0.11 : isZombie ? 0.28 : 0.14,
-      maxLife: isGob ? 0.11 : isZombie ? 0.28 : 0.14,
+      life: slashDuration,
+      maxLife: slashDuration,
       flip: p.comboFlip,
-      kind: isZombie ? 'ZOMBIE_BASIC_ATTACK' : 'DEFAULT',
-      scale: isZombie && p.abominationTimer > 0 ? 1.45 : 1.0,
-    });
+      kind: isZombie
+        ? isZombieFinisher
+          ? 'ZOMBIE_SAVAGE_REND'
+          : 'ZOMBIE_BASIC_ATTACK'
+        : isSkel
+        ? isSkelFinisher
+          ? 'SKELETON_TWIN_CLEAVE'
+          : 'SKELETON_BASIC_ATTACK'
+        : isGob
+        ? isGobFinisher
+          ? 'GOBLIN_TWIN_CROSS'
+          : 'GOBLIN_BASIC_ATTACK'
+        : isGnome
+        ? isGnomeFinisher
+          ? 'GNOME_SEISMIC_SLAM'
+          : 'GNOME_BASIC_ATTACK'
+        : isGhost
+        ? isGhostFinisher
+          ? 'GHOST_VORTEX_REND'
+          : 'GHOST_BASIC_ARC'
+        : 'DEFAULT',
+      scale:
+        isZombie && p.abominationTimer > 0
+          ? 1.38
+          : isSkel && p.colossusTimer > 0
+          ? 1.32
+          : isGob && p.stolenMightTimer > 0
+          ? 1.14
+          : isGnome && p.mountainHeartTimer > 0
+          ? 1.34
+          : isGhost && p.restlessTimer > 0
+          ? 1.18
+          : 1.0,
+      isCrit:
+        isSkelFinisher ||
+        isZombieFinisher ||
+        isGobFinisher ||
+        isGnomeFinisher ||
+        isGhostFinisher,
+    };
+    this.slashes.push(createdSlash);
 
-    const rawDmg = profile.baseAttackDamage * this.getPhysicalDamageMultiplier();
-    this.hitEnemiesInArc(p.x, p.y, p.aimAngle, reach, spread * 0.65, rawDmg, isGnome, 0, isZombie);
+    // Ghost Basic Attack: 60fps swirling ectoplasm sparks & astral wisp trails
+    if (isGhost) {
+      const moteCount = isGhostFinisher ? 11 : 7;
+      for (let i = 0; i < moteCount; i++) {
+        if (this.particles.length > 240) break;
+        const t = (i / Math.max(1, moteCount - 1) - 0.5) * spread;
+        const dir = p.aimAngle + (p.comboFlip ? -t : t);
+        const r = reach * (0.7 + Math.random() * 0.3);
+        const sx = originX + Math.cos(dir) * r;
+        const sy = originY + Math.sin(dir) * r;
+        const tangent = dir + (p.comboFlip ? -Math.PI * 0.36 : Math.PI * 0.36);
+        const spd = (isGhostFinisher ? 190 : 140) + Math.random() * 100;
+        const life = 0.22 + Math.random() * 0.14;
+        const isStar = i % 2 === 0;
+        this.particles.push({
+          x: sx,
+          y: sy,
+          vx: Math.cos(tangent) * spd,
+          vy: Math.sin(tangent) * spd,
+          size: isStar ? 4.0 : 3.2,
+          color: isStar ? '#67E8F9' : '#D8B4FE',
+          life,
+          maxLife: life,
+          gravity: 0,
+          fade: true,
+          kind: isStar ? 'ECTO_SPARK' : 'SOUL_WISP',
+          rot: tangent,
+          vRot: 9,
+          drag: 4.8,
+        });
+      }
+      // Every 3rd basic strike (Abyssal Vortex Rend) fires a homing/piercing Spirit Orb wisp!
+      if (isGhostFinisher) {
+        const orbSpd = 460;
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x: p.x + Math.cos(p.aimAngle) * 20,
+          y: p.y + Math.sin(p.aimAngle) * 20,
+          vx: Math.cos(p.aimAngle) * orbSpd,
+          vy: Math.sin(p.aimAngle) * orbSpd,
+          radius: 10,
+          damage: 18 * this.getPhysicalDamageMultiplier(),
+          life: 1.15,
+          color: '#67E8F9',
+          kind: 'PLAYER_SPIRIT_ORB',
+          angle: p.aimAngle,
+          pierce: true,
+          homing: true,
+          hitEnemyIds: new Set<number>(),
+        });
+      }
+      // Ghost Statue Blessing: Ectoplasmic Wisps — fires extra homing spirit orb every 2nd strike!
+      if (this.activeBlessingIds.has('ghost_ectoplasm_wisp')) {
+        p.ghostBasicCount++;
+        if (p.ghostBasicCount >= 2) {
+          p.ghostBasicCount = 0;
+          const offAng = p.aimAngle + (p.comboFlip ? -0.22 : 0.22);
+          this.projectiles.push({
+            id: allocEntityId(),
+            fromPlayer: true,
+            x: p.x + Math.cos(offAng) * 18,
+            y: p.y + Math.sin(offAng) * 18,
+            vx: Math.cos(offAng) * 430,
+            vy: Math.sin(offAng) * 430,
+            radius: 9,
+            damage: 14 * this.getPhysicalDamageMultiplier(),
+            life: 1.25,
+            color: '#C084FC',
+            kind: 'PLAYER_SPIRIT_ORB',
+            angle: offAng,
+            pierce: false,
+            homing: true,
+            hitEnemyIds: new Set<number>(),
+          });
+        }
+      }
+    }
+
+    // Skeleton Basic Attack: tangential velocity streaks & flying ivory bone splinters
+    if (isSkel) {
+      const shardCount = isSkelFinisher ? 12 : 7;
+      for (let i = 0; i < shardCount; i++) {
+        if (this.particles.length > 240) break;
+        const t = (i / Math.max(1, shardCount - 1) - 0.5) * spread;
+        const dir = p.aimAngle + (p.comboFlip ? -t : t);
+        const r = reach * (0.72 + Math.random() * 0.3);
+        const sx = originX + Math.cos(dir) * r;
+        const sy = originY + Math.sin(dir) * r;
+        const tangent = dir + (p.comboFlip ? -Math.PI * 0.38 : Math.PI * 0.38);
+        const spd = (isSkelFinisher ? 215 : 155) + Math.random() * 120;
+        const isBonePiece = i % 2 === 0;
+        const life = 0.21 + Math.random() * 0.14;
+        this.particles.push({
+          x: sx,
+          y: sy,
+          vx: Math.cos(tangent) * spd,
+          vy: Math.sin(tangent) * spd,
+          size: 2.5,
+          color: isBonePiece ? '#F8FAFC' : isSkelFinisher ? '#FDE047' : '#38BDF8',
+          life,
+          maxLife: life,
+          gravity: 0,
+          fade: true,
+          kind: isBonePiece ? 'BONE_SHARD' : 'SLASH_STREAK',
+          rot: tangent,
+          vRot: (Math.random() - 0.5) * 18,
+          len: isBonePiece ? 6.5 + Math.random() * 4.5 : 13 + Math.random() * 9,
+          thick: isBonePiece ? 2.5 : 1.8,
+          drag: 5.5,
+        });
+      }
+    }
+
+    // Goblin Basic Attack: 60fps twin-dagger razor streaks & venom/amber sparks
+    if (isGob) {
+      const sparkCount = isGobFinisher ? 10 : 6;
+      for (let i = 0; i < sparkCount; i++) {
+        if (this.particles.length > 240) break;
+        const t = (i / Math.max(1, sparkCount - 1) - 0.5) * spread;
+        const dir = p.aimAngle + (p.comboFlip ? -t : t);
+        const r = reach * (0.72 + Math.random() * 0.28);
+        const sx = originX + Math.cos(dir) * r;
+        const sy = originY + Math.sin(dir) * r;
+        const tangent = dir + (p.comboFlip ? -Math.PI * 0.4 : Math.PI * 0.4);
+        const spd = (isGobFinisher ? 220 : 165) + Math.random() * 110;
+        const useVenomDrop = gobVenomActive && i % 2 === 1;
+        const life = 0.17 + Math.random() * 0.11;
+        this.particles.push({
+          x: sx,
+          y: sy,
+          vx: Math.cos(tangent) * spd,
+          vy: Math.sin(tangent) * spd,
+          size: 2.6,
+          color: useVenomDrop
+            ? '#A3E635'
+            : gobVenomActive
+            ? '#BEF264'
+            : i % 2 === 0
+            ? '#FDE047'
+            : '#FB923C',
+          life,
+          maxLife: life,
+          gravity: 0,
+          fade: true,
+          kind: useVenomDrop ? 'VENOM_DROP' : 'SLASH_STREAK',
+          rot: tangent,
+          vRot: 0,
+          len: useVenomDrop ? 5.8 : 13 + Math.random() * 8,
+          thick: useVenomDrop ? 2.3 : 1.9,
+          drag: 6.2,
+        });
+      }
+    }
+
+    // Zombie Basic Attack: 60fps flung virulent slime droplets & billowing plague spore puffs
+    if (isZombie) {
+      const abomMult = p.abominationTimer > 0 ? 1.28 : 1.0;
+      const dropCount = isZombieFinisher ? 11 : 7;
+      for (let i = 0; i < dropCount; i++) {
+        if (this.particles.length > 240) break;
+        const t = (i / Math.max(1, dropCount - 1) - 0.5) * spread;
+        const dir = p.aimAngle + (p.comboFlip ? -t : t);
+        const r = reach * (0.65 + Math.random() * 0.35);
+        const sx = originX + Math.cos(dir) * r;
+        const sy = originY + Math.sin(dir) * r;
+        const isSpore = i % 3 === 1;
+        const tangent = dir + (p.comboFlip ? -Math.PI * 0.34 : Math.PI * 0.34);
+        const spd = isSpore ? 38 + Math.random() * 35 : (isZombieFinisher ? 175 : 130) + Math.random() * 95;
+        const life = isSpore ? 0.36 + Math.random() * 0.18 : 0.24 + Math.random() * 0.14;
+        this.particles.push({
+          x: sx,
+          y: sy,
+          vx: Math.cos(tangent) * spd,
+          vy: Math.sin(tangent) * spd - (isSpore ? 14 : 0),
+          size: (isSpore ? 6.5 + Math.random() * 4 : 3.2 + Math.random() * 1.8) * abomMult,
+          color: isSpore
+            ? isZombieFinisher
+              ? '#A3E635'
+              : '#4ADE80'
+            : i % 2 === 0
+            ? '#BEF264'
+            : '#4ADE80',
+          life,
+          maxLife: life,
+          gravity: 0,
+          fade: true,
+          kind: isSpore ? 'SPORE_PUFF' : 'VENOM_DROP',
+          rot: tangent,
+          vRot: 0,
+          len: (6.5 + Math.random() * 4) * abomMult,
+          thick: (2.8 + Math.random() * 1.2) * abomMult,
+          drag: isSpore ? 3.2 : 4.8,
+        });
+      }
+    }
+
+    // Gnome Basic Attack: 60fps flying granite chunks & bronze rune sparks
+    if (isGnome) {
+      const mtnMult = p.mountainHeartTimer > 0 ? 1.25 : 1.0;
+      const chunkCount = isGnomeFinisher ? 11 : 7;
+      for (let i = 0; i < chunkCount; i++) {
+        if (this.particles.length > 240) break;
+        const t = (i / Math.max(1, chunkCount - 1) - 0.5) * spread;
+        const dir = p.aimAngle + (p.comboFlip ? -t : t);
+        const r = reach * (0.68 + Math.random() * 0.3);
+        const sx = originX + Math.cos(dir) * r;
+        const sy = originY + Math.sin(dir) * r;
+        const isStone = i % 2 === 0;
+        const outAng = dir + (Math.random() - 0.5) * 0.45;
+        const spd = (isGnomeFinisher ? 185 : 135) + Math.random() * 95;
+        const life = isStone ? 0.28 + Math.random() * 0.14 : 0.22 + Math.random() * 0.12;
+        this.particles.push({
+          x: sx,
+          y: sy,
+          vx: Math.cos(outAng) * spd,
+          vy: Math.sin(outAng) * spd,
+          size: (isStone ? 4.2 : 3.0) * mtnMult,
+          color: isStone
+            ? i % 4 === 0
+              ? '#A8A29E'
+              : '#78716C'
+            : isGnomeFinisher
+            ? '#FDE047'
+            : '#FB923C',
+          life,
+          maxLife: life,
+          gravity: 0,
+          fade: true,
+          kind: isStone ? 'STONE_CHUNK' : 'RUNE_SPARK',
+          rot: outAng,
+          vRot: (Math.random() - 0.5) * 18,
+          len: (isStone ? 6.8 : 8) * mtnMult,
+          thick: (isStone ? 4.2 : 2.2) * mtnMult,
+          drag: 5.0,
+        });
+      }
+      if (isGnomeFinisher) {
+        this.shakeMag = Math.max(this.shakeMag, 4.5);
+      }
+    }
+
+    const rawDmg =
+      profile.baseAttackDamage *
+      (isSkelFinisher || isGnomeFinisher || isGhostFinisher
+        ? 1.24
+        : isZombieFinisher || isGobFinisher
+        ? 1.2
+        : 1.0) *
+      this.getPhysicalDamageMultiplier();
+    this.hitEnemiesInArc(
+      p.x,
+      p.y,
+      p.aimAngle,
+      reach,
+      spread * 0.65,
+      rawDmg,
+      isGnome || isSkelFinisher || isZombieFinisher || isGobFinisher || isGhostFinisher,
+      isSkelFinisher ? 0.25 : isGobFinisher || isGhostFinisher ? 0.22 : isGnomeFinisher ? 0.18 : 0,
+      isZombie,
+      isSkel || isGob || isGnome || isGhost ? createdSlash : undefined,
+      isZombieFinisher
+    );
     this.hitDestructibleProps(p.x, p.y, reach);
 
     // Goblin Statue Blessing: Zephyr Gale — Windrunner basic attacks throw enchanted daggers!
@@ -1687,8 +2952,9 @@ export class GameEngine {
         soundEngine.playPlague();
         const ranks = this.getActiveUpgrades();
         const miasma = this.activeBlessingIds.has('zombie_skill_plague_burst');
-        this.player.squashX = 1.25;
-        this.player.squashY = 0.78;
+        this.player.squashX = 1.28;
+        this.player.squashY = 0.76;
+        this.shakeMag = Math.max(this.shakeMag, 6.5);
         const radius = Math.round(128 * (1 + ranks.pathC * 0.08) * (miasma ? 1.35 : 1.0));
         const duration = miasma ? 6.5 : 4.5;
         this.poisonClouds.push({
@@ -1701,6 +2967,19 @@ export class GameEngine {
           tickTimer: 0.1,
           damagePerTick: Math.round(11 * this.getPlagueOrSkillMultiplier()),
         });
+        this.slashes.push({
+          x: this.player.x,
+          y: this.player.y,
+          angle: Math.random() * Math.PI,
+          radius,
+          arcSpread: Math.PI * 2,
+          color: '#A3E635',
+          life: 0.42,
+          maxLife: 0.42,
+          flip: false,
+          kind: 'ZOMBIE_PLAGUE_NOVA',
+          isCrit: miasma,
+        });
         this.shockwaves.push({
           x: this.player.x,
           y: this.player.y,
@@ -1709,7 +2988,29 @@ export class GameEngine {
           life: 0.28,
           maxLife: 0.28,
         });
-        this.spawnBurst(this.player.x, this.player.y, '#A3E635', 16, 120);
+        for (let i = 0; i < 16; i++) {
+          if (this.particles.length > 240) break;
+          const pa = (i / 16) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
+          const isSpore = i % 2 === 0;
+          const pspd = (isSpore ? 95 : 145) + Math.random() * 75;
+          this.particles.push({
+            x: this.player.x + Math.cos(pa) * 14,
+            y: this.player.y + Math.sin(pa) * 14,
+            vx: Math.cos(pa) * pspd,
+            vy: Math.sin(pa) * pspd - (isSpore ? 14 : 0),
+            size: isSpore ? 8.5 + Math.random() * 4 : 3.4,
+            color: isSpore ? '#4ADE80' : '#BEF264',
+            life: isSpore ? 0.44 : 0.3,
+            maxLife: isSpore ? 0.44 : 0.3,
+            gravity: 0,
+            fade: true,
+            kind: isSpore ? 'SPORE_PUFF' : 'VENOM_DROP',
+            rot: pa,
+            len: 7,
+            thick: 3,
+            drag: isSpore ? 3.2 : 4.6,
+          });
+        }
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
           if (Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y) <= radius + enemy.radius) {
@@ -1739,20 +3040,27 @@ export class GameEngine {
         this.player.dashRefunded = false;
         this.player.dashTimer = 0.21;
         this.player.dashAngle = lungeAngle;
+        this.player.dashOriginX = this.player.x;
+        this.player.dashOriginY = this.player.y;
+        this.player.dashAfterimageAccum = 0;
         this.player.aimAngle = lungeAngle;
         this.player.facingX = Math.cos(lungeAngle) >= 0 ? 1 : -1;
         this.player.dashHitIds.clear();
         this.player.invulnTimer = Math.max(this.player.invulnTimer, 0.26);
         this.slashes.push({
-          x: this.player.x + Math.cos(lungeAngle) * 28,
-          y: this.player.y + Math.sin(lungeAngle) * 28,
+          x: this.player.x + Math.cos(lungeAngle) * 142,
+          y: this.player.y + Math.sin(lungeAngle) * 142,
+          fromX: this.player.x,
+          fromY: this.player.y,
           angle: lungeAngle,
-          radius: 58,
-          arcSpread: 1.1,
+          radius: 142,
+          arcSpread: 1.25,
           color: '#34D399',
-          life: 0.2,
-          maxLife: 0.2,
+          life: 0.28,
+          maxLife: 0.28,
           flip: false,
+          kind: 'ZOMBIE_FLESH_RIPPER_WAKE',
+          scale: this.player.abominationTimer > 0 ? 1.35 : 1.0,
         });
         if (this.activeBlessingIds.has('zombie_skill_flesh_ripper')) {
           this.poisonClouds.push({
@@ -1773,6 +3081,21 @@ export class GameEngine {
         const spined = this.activeBlessingIds.has('zombie_skill_undying_flesh');
         this.player.undyingTimer = spined ? 7.5 : 5.0;
         this.player.undyingHealTick = 0.15;
+        this.player.squashX = 1.2;
+        this.player.squashY = 0.82;
+        this.slashes.push({
+          x: this.player.x,
+          y: this.player.y,
+          angle: 0,
+          radius: 78,
+          arcSpread: Math.PI * 2,
+          color: '#2DD4BF',
+          life: 0.38,
+          maxLife: 0.38,
+          flip: false,
+          kind: 'ZOMBIE_UNDYING_PULSE',
+          scale: this.player.abominationTimer > 0 ? 1.35 : 1.0,
+        });
         this.shockwaves.push({
           x: this.player.x,
           y: this.player.y,
@@ -1781,6 +3104,24 @@ export class GameEngine {
           life: 0.3,
           maxLife: 0.3,
         });
+        for (let c = 0; c < 10; c++) {
+          if (this.particles.length > 240) break;
+          const ca = (c / 10) * Math.PI * 2;
+          this.particles.push({
+            x: this.player.x + Math.cos(ca) * 18,
+            y: this.player.y + Math.sin(ca) * 14,
+            vx: Math.cos(ca) * 55,
+            vy: Math.sin(ca) * 40 - 34,
+            size: 5,
+            color: c % 2 === 0 ? '#2DD4BF' : '#86EFAC',
+            life: 0.45,
+            maxLife: 0.45,
+            gravity: 0,
+            fade: true,
+            kind: 'NECRO_CROSS',
+            drag: 2.8,
+          });
+        }
         this.spawnPopup(this.player.x, this.player.y - 26, 'UNDYING FLESH', '#5EEAD4', 0.95);
         break;
       }
@@ -1790,12 +3131,27 @@ export class GameEngine {
         const extra = this.activeBlessingIds.has('zombie_skill_grave_call') ? 2 : 0;
         const count = 2 + extra;
         const life = 15 + ranks.pathD * 1.5;
+        this.player.squashX = 1.22;
+        this.player.squashY = 0.8;
+        this.slashes.push({
+          x: this.player.x,
+          y: this.player.y,
+          angle: 0,
+          radius: 66,
+          arcSpread: Math.PI * 2,
+          color: '#86EFAC',
+          life: 0.36,
+          maxLife: 0.36,
+          flip: false,
+          kind: 'ZOMBIE_GRAVE_ERUPTION',
+        });
         for (let i = 0; i < count; i++) {
           const ang = this.player.aimAngle + (i - (count - 1) / 2) * 0.85;
           const sx = this.player.x + Math.cos(ang) * 44;
           const sy = this.player.y + Math.sin(ang) * 44;
           this.spawnMinion(sx, sy, life, extra > 0, 'ZOMBIE_SHAMBLER');
         }
+        this.spawnPopup(this.player.x, this.player.y - 26, 'GRAVE CALL!', '#86EFAC', 0.95);
         break;
       }
 
@@ -1804,26 +3160,72 @@ export class GameEngine {
         soundEngine.playSlash(1);
         const ranks = this.getActiveUpgrades();
         const crescent = this.activeBlessingIds.has('skel_skill_bone_slash');
-        this.player.squashX = 1.24;
-        this.player.squashY = 0.8;
+        this.player.squashX = 1.28;
+        this.player.squashY = 0.78;
+        this.player.skelLungeOffset = 10.5;
         const reach =
-          (this.player.colossusTimer > 0 ? 122 : 96) * (1 + ranks.pathB * 0.04);
+          (this.player.colossusTimer > 0 ? 124 : 98) * (1 + ranks.pathB * 0.04);
         const angle = this.player.aimAngle;
+        const ox = this.player.x + Math.cos(angle) * 18;
+        const oy = this.player.y + Math.sin(angle) * 18;
 
-        this.slashes.push({
-          x: this.player.x + Math.cos(angle) * 18,
-          y: this.player.y + Math.sin(angle) * 18,
+        const boneSlashFx: SlashEffect = {
+          x: ox,
+          y: oy,
           angle,
           radius: reach,
-          arcSpread: 1.9,
+          arcSpread: 1.95,
           color: '#38BDF8',
-          life: 0.18,
-          maxLife: 0.18,
+          life: 0.22,
+          maxLife: 0.22,
           flip: false,
-        });
+          kind: 'SKELETON_BONE_SLASH',
+          scale: this.player.colossusTimer > 0 ? 1.32 : 1.08,
+          isCrit: crescent,
+        };
+        this.slashes.push(boneSlashFx);
+
+        for (let i = 0; i < 12; i++) {
+          if (this.particles.length > 240) break;
+          const t = (i / 11 - 0.5) * 1.9;
+          const dir = angle + t;
+          const r = reach * (0.72 + Math.random() * 0.28);
+          const tangent = dir + Math.PI * 0.36;
+          const spd = 195 + Math.random() * 130;
+          const isBone = i % 2 === 0;
+          this.particles.push({
+            x: ox + Math.cos(dir) * r,
+            y: oy + Math.sin(dir) * r,
+            vx: Math.cos(tangent) * spd,
+            vy: Math.sin(tangent) * spd,
+            size: 2.8,
+            color: isBone ? '#F8FAFC' : '#38BDF8',
+            life: 0.24,
+            maxLife: 0.24,
+            gravity: 0,
+            fade: true,
+            kind: isBone ? 'BONE_SHARD' : 'SLASH_STREAK',
+            rot: tangent,
+            vRot: isBone ? (Math.random() - 0.5) * 20 : 0,
+            len: isBone ? 8 : 17,
+            thick: isBone ? 2.8 : 2.1,
+            drag: 5.2,
+          });
+        }
 
         const rawDmg = 30 * (crescent ? 1.28 : 1.0) * this.getPhysicalDamageMultiplier();
-        this.hitEnemiesInArc(this.player.x, this.player.y, angle, reach, 1.0, rawDmg, true, 0.35);
+        this.hitEnemiesInArc(
+          this.player.x,
+          this.player.y,
+          angle,
+          reach,
+          1.0,
+          rawDmg,
+          true,
+          0.35,
+          false,
+          boneSlashFx
+        );
         this.hitDestructibleProps(this.player.x, this.player.y, reach);
 
         if (crescent) {
@@ -1851,13 +3253,28 @@ export class GameEngine {
       case NormalSkillId.BoneSpear: {
         soundEngine.playArrow();
         const ranks = this.getActiveUpgrades();
-        this.player.squashX = 1.2;
-        this.player.squashY = 0.84;
+        this.player.squashX = 1.24;
+        this.player.squashY = 0.8;
+        this.player.skelLungeOffset = 7.5;
         const baseAngle = this.player.aimAngle;
         const speed = 640;
         const rawSpearDmg = 32 * this.getPhysicalDamageMultiplier() * (1 + ranks.pathB * 0.06);
         const twinVolley = this.activeBlessingIds.has('skel_skill_bone_spear');
         const angles = twinVolley ? [baseAngle - 0.075, baseAngle + 0.075] : [baseAngle];
+
+        this.slashes.push({
+          x: this.player.x + Math.cos(baseAngle) * 20,
+          y: this.player.y + Math.sin(baseAngle) * 20,
+          angle: baseAngle,
+          radius: 56,
+          arcSpread: 0.9,
+          color: '#7DD3FC',
+          life: 0.22,
+          maxLife: 0.22,
+          flip: false,
+          kind: 'SKELETON_SPEAR_LAUNCH',
+          scale: twinVolley ? 1.22 : 1.0,
+        });
 
         for (const angle of angles) {
           this.projectiles.push({
@@ -1877,13 +3294,30 @@ export class GameEngine {
             hitEnemyIds: new Set<number>(),
           });
         }
-        this.spawnBurst(
-          this.player.x + Math.cos(baseAngle) * 18,
-          this.player.y + Math.sin(baseAngle) * 18,
-          '#7DD3FC',
-          twinVolley ? 12 : 8,
-          90
-        );
+        for (let s = 0; s < (twinVolley ? 12 : 8); s++) {
+          if (this.particles.length > 240) break;
+          const sa = baseAngle + (Math.random() - 0.5) * 0.9;
+          const sspd = 150 + Math.random() * 120;
+          const isBone = s % 2 === 0;
+          this.particles.push({
+            x: this.player.x + Math.cos(baseAngle) * 20,
+            y: this.player.y + Math.sin(baseAngle) * 20,
+            vx: Math.cos(sa) * sspd,
+            vy: Math.sin(sa) * sspd,
+            size: 2.6,
+            color: isBone ? '#F8FAFC' : '#7DD3FC',
+            life: 0.22,
+            maxLife: 0.22,
+            gravity: 0,
+            fade: true,
+            kind: isBone ? 'BONE_SHARD' : 'SLASH_STREAK',
+            rot: sa,
+            vRot: isBone ? 16 : 0,
+            len: isBone ? 6.5 : 15,
+            thick: 2.2,
+            drag: 5.5,
+          });
+        }
         break;
       }
 
@@ -1895,6 +3329,21 @@ export class GameEngine {
           (this.activeBlessingIds.has('skel_skill_ribcage_shield') ? 2 : 0);
         this.player.ribcageTimer = 6.5;
         this.player.ribcageCharges = 3 + extraCharges;
+        this.player.squashX = 1.18;
+        this.player.squashY = 0.84;
+        this.slashes.push({
+          x: this.player.x,
+          y: this.player.y,
+          angle: 0,
+          radius: 74,
+          arcSpread: Math.PI * 2,
+          color: '#E2E8F0',
+          life: 0.36,
+          maxLife: 0.36,
+          flip: false,
+          kind: 'SKELETON_RIBCAGE_BURST',
+          scale: this.player.colossusTimer > 0 ? 1.35 : 1.0,
+        });
         this.shockwaves.push({
           x: this.player.x,
           y: this.player.y,
@@ -1903,7 +3352,28 @@ export class GameEngine {
           life: 0.28,
           maxLife: 0.28,
         });
-        this.spawnBurst(this.player.x, this.player.y, '#E2E8F0', 12, 85);
+        for (let r = 0; r < 10; r++) {
+          if (this.particles.length > 240) break;
+          const ra = (r / 10) * Math.PI * 2;
+          this.particles.push({
+            x: this.player.x + Math.cos(ra) * 18,
+            y: this.player.y + Math.sin(ra) * 18,
+            vx: Math.cos(ra) * 95,
+            vy: Math.sin(ra) * 95,
+            size: 3,
+            color: r % 2 === 0 ? '#F8FAFC' : '#38BDF8',
+            life: 0.28,
+            maxLife: 0.28,
+            gravity: 0,
+            fade: true,
+            kind: 'BONE_SHARD',
+            rot: ra + Math.PI * 0.5,
+            vRot: 12,
+            len: 7,
+            thick: 2.5,
+            drag: 4.8,
+          });
+        }
         this.spawnPopup(this.player.x, this.player.y - 26, 'RIBCAGE SHIELD', '#E2E8F0', 0.95);
         break;
       }
@@ -1917,20 +3387,27 @@ export class GameEngine {
         this.player.dashRefunded = false;
         this.player.dashTimer = 0.19;
         this.player.dashAngle = rushAngle;
+        this.player.dashOriginX = this.player.x;
+        this.player.dashOriginY = this.player.y;
+        this.player.dashAfterimageAccum = 0;
         this.player.aimAngle = rushAngle;
         this.player.facingX = Math.cos(rushAngle) >= 0 ? 1 : -1;
         this.player.dashHitIds.clear();
         this.player.invulnTimer = Math.max(this.player.invulnTimer, 0.26);
         this.slashes.push({
-          x: this.player.x + Math.cos(rushAngle) * 30,
-          y: this.player.y + Math.sin(rushAngle) * 30,
+          x: this.player.x + Math.cos(rushAngle) * 150,
+          y: this.player.y + Math.sin(rushAngle) * 150,
+          fromX: this.player.x,
+          fromY: this.player.y,
           angle: rushAngle,
-          radius: 62,
+          radius: 150,
           arcSpread: 1.25,
           color: '#60A5FA',
-          life: 0.2,
-          maxLife: 0.2,
+          life: 0.26,
+          maxLife: 0.26,
           flip: false,
+          kind: 'SKELETON_RUSH_WAKE',
+          scale: this.player.colossusTimer > 0 ? 1.35 : 1.0,
         });
         break;
       }
@@ -1938,17 +3415,54 @@ export class GameEngine {
       case NormalSkillId.BoneStorm: {
         soundEngine.playSummon();
         const maelstrom = this.activeBlessingIds.has('skel_skill_bone_storm');
+        const stormR = maelstrom ? 102 : 82;
         this.player.boneStormTimer = maelstrom ? 8.5 : 5.5;
         this.player.boneStormTick = 0.05;
+        this.player.squashX = 1.22;
+        this.player.squashY = 0.8;
+        this.slashes.push({
+          x: this.player.x,
+          y: this.player.y,
+          angle: 0,
+          radius: stormR,
+          arcSpread: Math.PI * 2,
+          color: '#A5B4FC',
+          life: 0.38,
+          maxLife: 0.38,
+          flip: false,
+          kind: 'SKELETON_BONE_STORM_BURST',
+        });
         this.shockwaves.push({
           x: this.player.x,
           y: this.player.y,
-          maxRadius: maelstrom ? 102 : 82,
+          maxRadius: stormR,
           color: '#A5B4FC',
           life: 0.3,
           maxLife: 0.3,
         });
-        this.spawnBurst(this.player.x, this.player.y, '#A5B4FC', 14, 110);
+        for (let b = 0; b < 14; b++) {
+          if (this.particles.length > 240) break;
+          const ba = (b / 14) * Math.PI * 2;
+          const tangent = ba + Math.PI * 0.42;
+          this.particles.push({
+            x: this.player.x + Math.cos(ba) * 20,
+            y: this.player.y + Math.sin(ba) * 20,
+            vx: Math.cos(tangent) * 145,
+            vy: Math.sin(tangent) * 145,
+            size: 3,
+            color: b % 2 === 0 ? '#F8FAFC' : '#A5B4FC',
+            life: 0.32,
+            maxLife: 0.32,
+            gravity: 0,
+            fade: true,
+            kind: b % 2 === 0 ? 'BONE_SHARD' : 'SLASH_STREAK',
+            rot: tangent,
+            vRot: 18,
+            len: b % 2 === 0 ? 7.5 : 15,
+            thick: 2.4,
+            drag: 4.5,
+          });
+        }
         this.spawnPopup(this.player.x, this.player.y - 26, 'BONE STORM', '#A5B4FC', 0.95);
         break;
       }
@@ -1966,15 +3480,39 @@ export class GameEngine {
         soundEngine.playDash();
         const p = this.player;
         const umbral = this.activeBlessingIds.has('gob_skill_shadowstep');
+        const venomGlow = p.poisonBladesTimer > 0 || this.activeBlessingIds.has('gob_viper_toxin');
+        const startX = p.x;
+        const startY = p.y;
+
         this.afterimages.push({
-          x: p.x,
-          y: p.y,
+          x: startX,
+          y: startY,
           facingX: p.facingX,
           color: '#F59E0B',
-          life: 0.38,
-          maxLife: 0.38,
+          life: 0.42,
+          maxLife: 0.42,
         });
-        this.spawnBurst(p.x, p.y, '#FBBF24', 10, 95);
+
+        // Vanishing shadow-smoke implosion puffs at origin
+        for (let s = 0; s < 8; s++) {
+          if (this.particles.length > 240) break;
+          const a = (s / 8) * Math.PI * 2;
+          const spd = 45 + Math.random() * 45;
+          this.particles.push({
+            x: startX + Math.cos(a) * 8,
+            y: startY + Math.sin(a) * 8,
+            vx: Math.cos(a) * spd,
+            vy: Math.sin(a) * spd - 10,
+            size: 8.5 + Math.random() * 4,
+            color: s % 2 === 0 ? '#F59E0B' : '#312E81',
+            life: 0.32,
+            maxLife: 0.32,
+            gravity: 0,
+            fade: true,
+            kind: 'SHADOW_PUFF',
+            drag: 3.8,
+          });
+        }
 
         const target = this.findNearestEnemy(p.x, p.y, 325);
         if (target) {
@@ -1986,20 +3524,39 @@ export class GameEngine {
           p.aimAngle = Math.atan2(target.y - p.y, target.x - p.x);
           p.facingX = Math.cos(p.aimAngle) >= 0 ? 1 : -1;
           p.invulnTimer = Math.max(p.invulnTimer, 0.32);
-          p.squashX = 1.26;
-          p.squashY = 0.78;
+          p.squashX = 1.28;
+          p.squashY = 0.76;
+          p.goblinLungeOffset = 10;
+
+          // 60fps Shadow-Blink lightning ribbon from origin to ambush spot
+          this.slashes.push({
+            x: p.x,
+            y: p.y,
+            fromX: startX,
+            fromY: startY,
+            angle: p.aimAngle,
+            radius: 0,
+            arcSpread: 0,
+            color: venomGlow ? '#A3E635' : '#FBBF24',
+            life: 0.22,
+            maxLife: 0.22,
+            flip: false,
+            kind: 'GOBLIN_SHADOW_TRACE',
+          });
 
           soundEngine.playSlash(2);
           this.slashes.push({
-            x: p.x + Math.cos(p.aimAngle) * 16,
-            y: p.y + Math.sin(p.aimAngle) * 16,
+            x: target.x,
+            y: target.y,
             angle: p.aimAngle,
-            radius: 72,
-            arcSpread: 1.65,
-            color: '#FBBF24',
-            life: 0.18,
-            maxLife: 0.18,
+            radius: 56,
+            arcSpread: 1.75,
+            color: venomGlow ? '#A3E635' : '#FDE047',
+            life: 0.22,
+            maxLife: 0.22,
             flip: false,
+            kind: 'GOBLIN_BACKSTAB_X',
+            isCrit: true,
           });
 
           const opp = this.getOpportunisticBonus(target, p.x);
@@ -2029,19 +3586,54 @@ export class GameEngine {
           p.x = resolved.x;
           p.y = resolved.y;
           p.invulnTimer = Math.max(p.invulnTimer, 0.28);
+          p.goblinLungeOffset = 9;
+
           this.slashes.push({
-            x: p.x + Math.cos(blinkAngle) * 16,
-            y: p.y + Math.sin(blinkAngle) * 16,
+            x: p.x,
+            y: p.y,
+            fromX: startX,
+            fromY: startY,
+            angle: blinkAngle,
+            radius: 0,
+            arcSpread: 0,
+            color: venomGlow ? '#A3E635' : '#FBBF24',
+            life: 0.2,
+            maxLife: 0.2,
+            flip: false,
+            kind: 'GOBLIN_SHADOW_TRACE',
+          });
+          this.slashes.push({
+            x: p.x + Math.cos(blinkAngle) * 18,
+            y: p.y + Math.sin(blinkAngle) * 18,
             angle: blinkAngle,
             radius: 66,
-            arcSpread: 1.5,
-            color: '#FBBF24',
+            arcSpread: 1.55,
+            color: venomGlow ? '#A3E635' : '#FBBF24',
             life: 0.16,
             maxLife: 0.16,
             flip: false,
+            kind: 'GOBLIN_TWIN_CROSS',
+            isCrit: true,
           });
         }
-        this.spawnBurst(p.x, p.y, '#FDE047', 10, 95);
+        for (let s = 0; s < 6; s++) {
+          if (this.particles.length > 240) break;
+          const a = (s / 6) * Math.PI * 2;
+          this.particles.push({
+            x: p.x,
+            y: p.y,
+            vx: Math.cos(a) * 65,
+            vy: Math.sin(a) * 65,
+            size: 7.5,
+            color: '#FDE047',
+            life: 0.26,
+            maxLife: 0.26,
+            gravity: 0,
+            fade: true,
+            kind: 'SHADOW_PUFF',
+            drag: 4.2,
+          });
+        }
         break;
       }
 
@@ -2079,15 +3671,39 @@ export class GameEngine {
         this.player.windrunnerTimer = this.activeBlessingIds.has('gob_skill_windrunner')
           ? 7.5
           : 5.0;
+        this.player.squashX = 1.2;
+        this.player.squashY = 0.82;
         this.shockwaves.push({
           x: this.player.x,
           y: this.player.y,
-          maxRadius: 74,
+          maxRadius: 78,
           color: '#FDE047',
           life: 0.28,
           maxLife: 0.28,
         });
-        this.spawnBurst(this.player.x, this.player.y, '#FDE047', 14, 115);
+        for (let w = 0; w < 8; w++) {
+          if (this.particles.length > 240) break;
+          const wa = (w / 8) * Math.PI * 2;
+          const wspd = 125 + Math.random() * 50;
+          this.particles.push({
+            x: this.player.x + Math.cos(wa) * 10,
+            y: this.player.y + Math.sin(wa) * 10,
+            vx: Math.cos(wa) * wspd,
+            vy: Math.sin(wa) * wspd,
+            size: 9,
+            color: w % 2 === 0 ? '#FDE047' : '#34D399',
+            life: 0.28,
+            maxLife: 0.28,
+            gravity: 0,
+            fade: true,
+            kind: 'WIND_CHEVRON',
+            rot: wa + Math.PI,
+            vRot: 0,
+            len: 9.5,
+            thick: 2.2,
+            drag: 4.2,
+          });
+        }
         this.spawnPopup(this.player.x, this.player.y - 26, 'WINDRUNNER!', '#FDE047', 0.98);
         break;
       }
@@ -2097,15 +3713,44 @@ export class GameEngine {
         this.player.poisonBladesTimer = this.activeBlessingIds.has('gob_skill_poisoned_blades')
           ? 9.5
           : 6.5;
-        this.shockwaves.push({
+        this.player.squashX = 1.2;
+        this.player.squashY = 0.82;
+        this.slashes.push({
           x: this.player.x,
           y: this.player.y,
-          maxRadius: 68,
+          angle: this.player.aimAngle,
+          radius: 56,
+          arcSpread: Math.PI * 2,
           color: '#A3E635',
-          life: 0.26,
-          maxLife: 0.26,
+          life: 0.36,
+          maxLife: 0.36,
+          flip: false,
+          kind: 'GOBLIN_VENOM_COAT',
         });
-        this.spawnBurst(this.player.x, this.player.y, '#A3E635', 14, 95);
+        for (let v = 0; v < 10; v++) {
+          if (this.particles.length > 240) break;
+          const va = (v / 10) * Math.PI * 2;
+          const isSpore = v % 3 === 0;
+          const vspd = isSpore ? 45 : 105 + Math.random() * 55;
+          this.particles.push({
+            x: this.player.x + Math.cos(va) * 12,
+            y: this.player.y + Math.sin(va) * 12,
+            vx: Math.cos(va) * vspd,
+            vy: Math.sin(va) * vspd - (isSpore ? 14 : 0),
+            size: isSpore ? 7.5 : 3.2,
+            color: isSpore ? '#4ADE80' : '#BEF264',
+            life: 0.32,
+            maxLife: 0.32,
+            gravity: 0,
+            fade: true,
+            kind: isSpore ? 'SPORE_PUFF' : 'VENOM_DROP',
+            rot: va,
+            vRot: 0,
+            len: 6.5,
+            thick: 2.8,
+            drag: 4.5,
+          });
+        }
         this.spawnPopup(this.player.x, this.player.y - 26, 'POISONED BLADES', '#A3E635', 0.96);
         break;
       }
@@ -2123,18 +3768,23 @@ export class GameEngine {
 
         const angle = p.aimAngle;
         const reach = (p.mountainHeartTimer > 0 ? 168 : 148) * (1 + ranks.pathB * 0.05);
+        p.gnomeLungeOffset = 14;
 
-        // Gauntlet punch slash + 3 forward tectonic shockwaves
+        // 60fps Forged-Gauntlet Tectonic Faultline Wave + 3 cascading sonic rings
         this.slashes.push({
-          x: p.x + Math.cos(angle) * 20,
-          y: p.y + Math.sin(angle) * 20,
+          x: p.x + Math.cos(angle) * reach,
+          y: p.y + Math.sin(angle) * reach,
+          fromX: p.x + Math.cos(angle) * 14,
+          fromY: p.y + Math.sin(angle) * 14,
           angle,
-          radius: 78,
+          radius: reach,
           arcSpread: 1.5,
-          color: '#FB923C',
-          life: 0.2,
-          maxLife: 0.2,
+          color: tectonic ? '#FDE047' : '#FB923C',
+          life: 0.34,
+          maxLife: 0.34,
           flip: false,
+          kind: 'GNOME_IRON_FIST_WAVE',
+          scale: p.mountainHeartTimer > 0 ? 1.25 : 1.0,
         });
 
         for (let step = 1; step <= 3; step++) {
@@ -2149,7 +3799,29 @@ export class GameEngine {
             life: 0.22 + step * 0.04,
             maxLife: 0.22 + step * 0.04,
           });
-          this.spawnBurst(sx, sy, '#FDBA74', 5, 85);
+          for (let c = 0; c < 4; c++) {
+            if (this.particles.length > 240) break;
+            const ca = angle + (Math.random() - 0.5) * 1.4;
+            const cspd = 110 + Math.random() * 95;
+            this.particles.push({
+              x: sx,
+              y: sy,
+              vx: Math.cos(ca) * cspd,
+              vy: Math.sin(ca) * cspd,
+              size: 4.4,
+              color: c % 2 === 0 ? '#78716C' : '#FDBA74',
+              life: 0.3,
+              maxLife: 0.3,
+              gravity: 0,
+              fade: true,
+              kind: c % 2 === 0 ? 'STONE_CHUNK' : 'RUNE_SPARK',
+              rot: ca,
+              vRot: (Math.random() - 0.5) * 16,
+              len: 7.5,
+              thick: 4.2,
+              drag: 4.5,
+            });
+          }
         }
 
         const rawFistDmg =
@@ -2164,7 +3836,11 @@ export class GameEngine {
             this.applyEnemyStun(enemy, stunDur);
           }
         }
-        this.hitDestructibleProps(p.x + Math.cos(angle) * (reach * 0.5), p.y + Math.sin(angle) * (reach * 0.5), reach * 0.65);
+        this.hitDestructibleProps(
+          p.x + Math.cos(angle) * (reach * 0.5),
+          p.y + Math.sin(angle) * (reach * 0.5),
+          reach * 0.65
+        );
 
         if (tectonic) {
           p.ironFistAftershockTimer = 0.32;
@@ -2187,6 +3863,19 @@ export class GameEngine {
         if (aegis) {
           this.healPlayer(Math.round(p.maxHp * 0.3));
         }
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 86,
+          arcSpread: Math.PI * 2,
+          color: '#FDBA74',
+          life: 0.38,
+          maxLife: 0.38,
+          flip: false,
+          kind: 'GNOME_FORTRESS_AEGIS',
+          scale: p.mountainHeartTimer > 0 ? 1.3 : 1.0,
+        });
         this.shockwaves.push({
           x: p.x,
           y: p.y,
@@ -2195,7 +3884,27 @@ export class GameEngine {
           life: 0.3,
           maxLife: 0.3,
         });
-        this.spawnBurst(p.x, p.y, '#FDBA74', 14, 95);
+        for (let r = 0; r < 10; r++) {
+          if (this.particles.length > 240) break;
+          const ra = (r / 10) * Math.PI * 2;
+          this.particles.push({
+            x: p.x + Math.cos(ra) * 20,
+            y: p.y + Math.sin(ra) * 14,
+            vx: Math.cos(ra) * 85,
+            vy: Math.sin(ra) * 65 - 15,
+            size: 3.5,
+            color: r % 2 === 0 ? '#FDBA74' : '#FDE047',
+            life: 0.34,
+            maxLife: 0.34,
+            gravity: 0,
+            fade: true,
+            kind: 'RUNE_SPARK',
+            rot: ra,
+            vRot: 10,
+            len: 7,
+            drag: 4,
+          });
+        }
         this.spawnPopup(p.x, p.y - 26, 'FORTRESS STANCE!', '#FDBA74', 0.98);
         break;
       }
@@ -2216,7 +3925,28 @@ export class GameEngine {
         p.facingX = Math.cos(leapAngle) >= 0 ? 1 : -1;
         p.dashHitIds.clear();
         p.invulnTimer = Math.max(p.invulnTimer, 0.34);
-        this.spawnBurst(p.x, p.y, '#FB923C', 10, 90);
+        for (let s = 0; s < 8; s++) {
+          if (this.particles.length > 240) break;
+          const sa = (s / 8) * Math.PI * 2;
+          this.particles.push({
+            x: p.x,
+            y: p.y + 8,
+            vx: Math.cos(sa) * 95,
+            vy: Math.sin(sa) * 65,
+            size: 4,
+            color: s % 2 === 0 ? '#78716C' : '#FB923C',
+            life: 0.26,
+            maxLife: 0.26,
+            gravity: 0,
+            fade: true,
+            kind: s % 2 === 0 ? 'STONE_CHUNK' : 'RUNE_SPARK',
+            rot: sa,
+            vRot: 14,
+            len: 6.5,
+            thick: 3.8,
+            drag: 4.5,
+          });
+        }
         break;
       }
 
@@ -2227,6 +3957,19 @@ export class GameEngine {
         const overcharged = this.activeBlessingIds.has('gnome_skill_magnetic_guard');
         p.magneticTimer = 5.5 + ranks.pathD * 0.4 + (overcharged ? 2.5 : 0);
         p.magneticZapTick = 0.15;
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 98,
+          arcSpread: Math.PI * 2,
+          color: '#38BDF8',
+          life: 0.36,
+          maxLife: 0.36,
+          flip: false,
+          kind: 'GNOME_MAGNETIC_PULSE',
+          scale: p.mountainHeartTimer > 0 ? 1.25 : 1.0,
+        });
         this.shockwaves.push({
           x: p.x,
           y: p.y,
@@ -2235,7 +3978,28 @@ export class GameEngine {
           life: 0.28,
           maxLife: 0.28,
         });
-        this.spawnBurst(p.x, p.y, '#38BDF8', 14, 105);
+        for (let m = 0; m < 10; m++) {
+          if (this.particles.length > 240) break;
+          const ma = (m / 10) * Math.PI * 2;
+          this.particles.push({
+            x: p.x + Math.cos(ma) * 16,
+            y: p.y + Math.sin(ma) * 16,
+            vx: Math.cos(ma) * 115,
+            vy: Math.sin(ma) * 115,
+            size: 3.5,
+            color: m % 2 === 0 ? '#38BDF8' : '#FB923C',
+            life: 0.28,
+            maxLife: 0.28,
+            gravity: 0,
+            fade: true,
+            kind: 'MAGNETIC_ARC',
+            rot: ma,
+            vRot: 0,
+            len: 10,
+            thick: 2.2,
+            drag: 4.5,
+          });
+        }
         this.spawnPopup(p.x, p.y - 26, 'MAGNETIC GUARD!', '#7DD3FC', 0.98);
         break;
       }
@@ -2247,6 +4011,7 @@ export class GameEngine {
         const crushing = this.activeBlessingIds.has('gnome_skill_earthen_grasp');
         p.squashX = 1.24;
         p.squashY = 0.78;
+        p.gnomeLungeOffset = 9;
         this.shakeMag = Math.max(this.shakeMag, 7);
 
         const rootDuration = 2.8 + ranks.pathC * 0.25 + (crushing ? 1.2 : 0);
@@ -2262,6 +4027,19 @@ export class GameEngine {
           )
           .slice(0, 6);
 
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 118,
+          arcSpread: Math.PI * 2,
+          color: '#D97706',
+          life: 0.28,
+          maxLife: 0.28,
+          flip: false,
+          kind: 'GNOME_CRATER_SLAM',
+          scale: 0.85,
+        });
         this.shockwaves.push({
           x: p.x,
           y: p.y,
@@ -2311,8 +4089,344 @@ export class GameEngine {
         }
         break;
       }
+
+      // === GHOST NORMAL SKILLS ===
+      case NormalSkillId.SpectralBolt: {
+        soundEngine.playArrow();
+        const p = this.player;
+        const ranks = this.getActiveUpgrades();
+        const twinLance = this.activeBlessingIds.has('ghost_skill_spectral_bolt');
+        p.squashX = 1.24;
+        p.squashY = 0.8;
+
+        const baseAngle = p.aimAngle;
+        const angles = twinLance ? [baseAngle - 0.14, baseAngle + 0.14] : [baseAngle];
+        const boltSpeed = 610;
+        const boltDamage =
+          33 *
+          (twinLance ? 1.25 : 1.0) *
+          this.getPhysicalDamageMultiplier() *
+          this.getPlagueOrSkillMultiplier();
+
+        this.slashes.push({
+          x: p.x + Math.cos(baseAngle) * 18,
+          y: p.y + Math.sin(baseAngle) * 18,
+          angle: baseAngle,
+          radius: 42,
+          arcSpread: 1.2,
+          color: '#C084FC',
+          life: 0.24,
+          maxLife: 0.24,
+          flip: false,
+          kind: 'GHOST_BOLT_CAST',
+        });
+
+        for (const ang of angles) {
+          this.projectiles.push({
+            id: allocEntityId(),
+            fromPlayer: true,
+            x: p.x + Math.cos(ang) * 20,
+            y: p.y + Math.sin(ang) * 20,
+            vx: Math.cos(ang) * boltSpeed,
+            vy: Math.sin(ang) * boltSpeed,
+            radius: 13 + ranks.pathB * 0.8,
+            damage: boltDamage,
+            life: 1.45,
+            color: '#C084FC',
+            kind: 'PLAYER_SPECTRAL_BOLT',
+            angle: ang,
+            pierce: true,
+            hitEnemyIds: new Set<number>(),
+          });
+        }
+
+        for (let s = 0; s < 8; s++) {
+          if (this.particles.length > 240) break;
+          const sa = baseAngle + (Math.random() - 0.5) * 1.1;
+          const sspd = 130 + Math.random() * 90;
+          this.particles.push({
+            x: p.x + Math.cos(baseAngle) * 16,
+            y: p.y + Math.sin(baseAngle) * 16,
+            vx: Math.cos(sa) * sspd,
+            vy: Math.sin(sa) * sspd,
+            size: 3.6,
+            color: s % 2 === 0 ? '#67E8F9' : '#E9D5FF',
+            life: 0.24,
+            maxLife: 0.24,
+            gravity: 0,
+            fade: true,
+            kind: 'ECTO_SPARK',
+            rot: sa,
+            vRot: 12,
+            drag: 4.5,
+          });
+        }
+        this.spawnPopup(p.x, p.y - 26, twinLance ? 'TWIN SPECTRAL BOLT!' : 'SPECTRAL BOLT!', '#C084FC', 0.96);
+        break;
+      }
+
+      case NormalSkillId.PhantomDash: {
+        soundEngine.playDash();
+        const p = this.player;
+        const joyMag = Math.hypot(this.joyX, this.joyY);
+        const dashAng = joyMag > 0.12 ? Math.atan2(this.joyY, this.joyX) : p.aimAngle;
+        p.dashAngle = dashAng;
+        p.facingX = Math.cos(dashAng) >= 0 ? 1 : -1;
+        p.dashTimer = 0.24;
+        p.dashKind = 'PHANTOM_DASH';
+        p.dashHitIds.clear();
+        p.dashAfterimageAccum = 0;
+        p.ghostMistDropAccum = 0;
+        p.dashRefunded = false;
+        p.dashSlotIndex = slotIndex;
+        p.invulnTimer = Math.max(p.invulnTimer, 0.34);
+        p.squashX = 1.32;
+        p.squashY = 0.72;
+
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: dashAng,
+          radius: 56,
+          arcSpread: Math.PI * 2,
+          color: '#67E8F9',
+          life: 0.32,
+          maxLife: 0.32,
+          flip: false,
+          kind: 'GHOST_MIST_WAKE',
+        });
+        this.spawnPopup(p.x, p.y - 26, 'PHANTOM DASH!', '#67E8F9', 0.96);
+        break;
+      }
+
+      case NormalSkillId.SoulDrain: {
+        soundEngine.playHeal();
+        const p = this.player;
+        const ranks = this.getActiveUpgrades();
+        const devourer = this.activeBlessingIds.has('ghost_skill_soul_drain');
+        p.soulDrainTimer = devourer ? 4.4 : 3.2;
+        p.soulDrainTick = 0.05;
+        p.squashX = 1.24;
+        p.squashY = 0.8;
+
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 176 + ranks.pathD * 8,
+          arcSpread: Math.PI * 2,
+          color: '#34D399',
+          life: 0.36,
+          maxLife: 0.36,
+          flip: false,
+          kind: 'GHOST_SOUL_DRAIN_PULSE',
+        });
+        this.spawnPopup(p.x, p.y - 28, 'SOUL DRAIN!', '#6EE7B7', 0.98);
+        break;
+      }
+
+      case NormalSkillId.WailingScream: {
+        soundEngine.playBossSlam();
+        const p = this.player;
+        const ranks = this.getActiveUpgrades();
+        const banshee = this.activeBlessingIds.has('ghost_skill_wailing_scream');
+        this.hitstopTimer = 0.04;
+        this.shakeMag = Math.max(this.shakeMag, 9.5);
+        p.squashX = 1.34;
+        p.squashY = 0.72;
+
+        const screamRadius = Math.round((banshee ? 225 : 178) * (1 + ranks.pathD * 0.04));
+        const fearDur = (banshee ? 3.2 : 2.2) + ranks.pathD * 0.25;
+        const rawDmg =
+          30 *
+          (banshee ? 1.3 : 1.0) *
+          this.getPhysicalDamageMultiplier() *
+          this.getPlagueOrSkillMultiplier();
+
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: p.aimAngle,
+          radius: screamRadius,
+          arcSpread: Math.PI * 2,
+          color: '#A78BFA',
+          life: 0.44,
+          maxLife: 0.44,
+          flip: false,
+          kind: 'GHOST_WAILING_SCREAM',
+        });
+        this.shockwaves.push({
+          x: p.x,
+          y: p.y,
+          maxRadius: screamRadius,
+          color: '#67E8F9',
+          life: 0.34,
+          maxLife: 0.34,
+        });
+
+        for (let w = 0; w < 16; w++) {
+          if (this.particles.length > 240) break;
+          const wa = (w / 16) * Math.PI * 2;
+          const wspd = 155 + Math.random() * 95;
+          this.particles.push({
+            x: p.x + Math.cos(wa) * 14,
+            y: p.y + Math.sin(wa) * 14,
+            vx: Math.cos(wa) * wspd,
+            vy: Math.sin(wa) * wspd,
+            size: 4.0,
+            color: w % 2 === 0 ? '#67E8F9' : '#D8B4FE',
+            life: 0.34,
+            maxLife: 0.34,
+            gravity: 0,
+            fade: true,
+            kind: 'ECTO_SPARK',
+            rot: wa,
+            vRot: 14,
+            drag: 4.2,
+          });
+        }
+
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= screamRadius + enemy.radius) {
+            const roll = this.rollPhysicalAttack(rawDmg, 0.2);
+            this.damageEnemy(enemy, roll.damage, true, p.x, p.y, true, roll.isCrit);
+            this.applyEnemyFear(enemy, fearDur);
+            this.applyGhostChillIfActive(enemy);
+          }
+        }
+        this.hitDestructibleProps(p.x, p.y, screamRadius);
+        this.spawnPopup(p.x, p.y - 30, 'WAILING SCREAM!', '#D8B4FE', 1.05);
+        break;
+      }
+
+      case NormalSkillId.HauntedPossession: {
+        const p = this.player;
+        const ranks = this.getActiveUpgrades();
+        const puppeteer = this.activeBlessingIds.has('ghost_skill_haunted_possession');
+        const host = this.findNearestEnemy(p.x, p.y, 265);
+
+        if (host && host.kind !== EnemyKind.TrainingDummy) {
+          soundEngine.playSummon();
+          const dur = (puppeteer ? 3.5 : 2.3) + ranks.pathD * 0.22;
+          p.possessedEnemyId = host.id;
+          p.possessionTimer = dur;
+          p.possessionPulseTick = 0.08;
+          p.invulnTimer = Math.max(p.invulnTimer, dur + 0.35);
+          host.possessedTimer = dur;
+
+          this.afterimages.push({
+            x: p.x,
+            y: p.y,
+            facingX: p.facingX,
+            color: '#C084FC',
+            life: 0.38,
+            maxLife: 0.38,
+            archetype: 'GHOST',
+          });
+          this.tethers.push({
+            fromX: p.x,
+            fromY: p.y - 10,
+            toX: host.x,
+            toY: host.y - 10,
+            color: '#C084FC',
+            life: 0.32,
+            maxLife: 0.32,
+          });
+          p.x = host.x;
+          p.y = host.y;
+          this.slashes.push({
+            x: host.x,
+            y: host.y,
+            angle: 0,
+            radius: 74,
+            arcSpread: Math.PI * 2,
+            color: '#C084FC',
+            life: 0.3,
+            maxLife: 0.3,
+            flip: false,
+            kind: 'GHOST_POSSESS_PULSE',
+          });
+          this.spawnPopup(host.x, host.y - 34, 'POSSESSED!', '#E879F9', 1.06);
+        } else {
+          // Fallback exorcism nova if cast with only Training Dummy or no host nearby
+          this.triggerPossessionExorcism(
+            host ? host.x : p.x + Math.cos(p.aimAngle) * 52,
+            host ? host.y : p.y + Math.sin(p.aimAngle) * 52
+          );
+        }
+        break;
+      }
     }
     this.emitHudSnapshot();
+  }
+
+  private applyEnemyFear(enemy: EnemyEntity, duration: number): void {
+    if (enemy.kind === EnemyKind.TrainingDummy) return;
+    const effective = enemy.kind === EnemyKind.SkeletonBoss ? duration * 0.45 : duration;
+    enemy.fearTimer = Math.max(enemy.fearTimer, effective);
+    if (enemy.aiState === 'WINDUP' || enemy.aiState === 'WHIRLWIND') {
+      enemy.aiState = 'COOLDOWN';
+      enemy.telegraphType = 'NONE';
+      enemy.stateTimer = Math.max(enemy.stateTimer, 0.3);
+    }
+  }
+
+  private applyGhostChillIfActive(enemy: EnemyEntity): void {
+    if (this.player.characterId !== CharacterId.Ghost) return;
+    if (this.activeBlessingIds.has('ghost_chilling_touch')) {
+      enemy.slowTimer = Math.max(enemy.slowTimer, 2.6);
+      enemy.slowFactor = Math.min(enemy.slowFactor, 0.68);
+    }
+  }
+
+  private triggerPossessionExorcism(x: number, y: number): void {
+    soundEngine.playBossSlam();
+    const p = this.player;
+    const puppeteer = this.activeBlessingIds.has('ghost_skill_haunted_possession');
+    p.invulnTimer = Math.max(p.invulnTimer, 0.42);
+    p.squashX = 1.28;
+    p.squashY = 0.76;
+    this.shakeMag = Math.max(this.shakeMag, 8.5);
+    this.triggerRestlessSpirit();
+
+    const blastR = puppeteer ? 148 : 118;
+    this.slashes.push({
+      x,
+      y,
+      angle: 0,
+      radius: blastR,
+      arcSpread: Math.PI * 2,
+      color: '#E879F9',
+      life: 0.38,
+      maxLife: 0.38,
+      flip: false,
+      kind: 'GHOST_EXORCISM_BURST',
+    });
+    this.shockwaves.push({
+      x,
+      y,
+      maxRadius: blastR,
+      color: '#C084FC',
+      life: 0.32,
+      maxLife: 0.32,
+    });
+    const rawBlast =
+      36 *
+      (puppeteer ? 1.45 : 1.0) *
+      this.getPhysicalDamageMultiplier() *
+      this.getPlagueOrSkillMultiplier();
+    for (const enemy of [...this.world.enemies]) {
+      if (!enemy || enemy.hp <= 0) continue;
+      if (Math.hypot(enemy.x - x, enemy.y - y) <= blastR + enemy.radius) {
+        const roll = this.rollPhysicalAttack(rawBlast, 0.25);
+        this.damageEnemy(enemy, roll.damage, true, x, y, true, roll.isCrit);
+        this.applyEnemyFear(enemy, 1.4);
+        this.applyGhostChillIfActive(enemy);
+      }
+    }
+    this.spawnBurst(x, y, '#E879F9', 14, 120);
+    this.spawnPopup(x, y - 30, 'EXORCISM!', '#F0ABFC', 1.05);
   }
 
   private applyEnemyStun(enemy: EnemyEntity, duration: number): void {
@@ -2340,6 +4454,19 @@ export class GameEngine {
     const crashRadius = Math.round(
       138 * (1 + ranks.pathB * 0.04) * (faultline ? 1.35 : 1.0)
     );
+    this.slashes.push({
+      x: p.x,
+      y: p.y,
+      angle: p.aimAngle,
+      radius: crashRadius,
+      arcSpread: Math.PI * 2,
+      color: '#FB923C',
+      life: 0.4,
+      maxLife: 0.4,
+      flip: false,
+      kind: 'GNOME_CRATER_SLAM',
+      scale: faultline ? 1.25 : 1.0,
+    });
     this.shockwaves.push({
       x: p.x,
       y: p.y,
@@ -2356,7 +4483,30 @@ export class GameEngine {
       life: 0.24,
       maxLife: 0.24,
     });
-    this.spawnBurst(p.x, p.y, '#FB923C', 20, 155);
+    for (let s = 0; s < 16; s++) {
+      if (this.particles.length > 240) break;
+      const sa = (s / 16) * Math.PI * 2 + Math.random() * 0.2;
+      const sspd = 125 + Math.random() * 115;
+      const isStone = s % 2 === 0;
+      this.particles.push({
+        x: p.x,
+        y: p.y,
+        vx: Math.cos(sa) * sspd,
+        vy: Math.sin(sa) * sspd,
+        size: isStone ? 4.8 : 3.4,
+        color: isStone ? '#78716C' : '#FDE047',
+        life: 0.38,
+        maxLife: 0.38,
+        gravity: 0,
+        fade: true,
+        kind: isStone ? 'STONE_CHUNK' : 'RUNE_SPARK',
+        rot: sa,
+        vRot: (Math.random() - 0.5) * 20,
+        len: 8,
+        thick: 4.5,
+        drag: 4.2,
+      });
+    }
     this.spawnPopup(p.x, p.y - 30, 'GROUNDBREAKER!', '#FDBA74', 1.05);
 
     const rawCrash =
@@ -2388,6 +4538,19 @@ export class GameEngine {
     const oy = p.cataclysmOriginY;
     const waveRadius = (125 + waveIndex * 78) * (1 + ranks.pathB * 0.04);
 
+    this.slashes.push({
+      x: ox,
+      y: oy,
+      angle: waveIndex * 0.45,
+      radius: waveRadius,
+      arcSpread: Math.PI * 2,
+      color: waveIndex % 2 === 0 ? '#FB923C' : '#FDE047',
+      life: 0.42,
+      maxLife: 0.42,
+      flip: waveIndex % 2 === 1,
+      kind: 'GNOME_CATACLYSM_RING',
+      scale: 1 + waveIndex * 0.12,
+    });
     this.shockwaves.push({
       x: ox,
       y: oy,
@@ -2396,7 +4559,31 @@ export class GameEngine {
       life: 0.36,
       maxLife: 0.36,
     });
-    this.spawnBurst(ox, oy, '#FDBA74', 14, 140 + waveIndex * 25);
+    for (let s = 0; s < 14; s++) {
+      if (this.particles.length > 240) break;
+      const sa = (s / 14) * Math.PI * 2 + waveIndex * 0.3;
+      const rSpawn = Math.max(12, waveRadius * 0.65);
+      const sspd = 130 + waveIndex * 25 + Math.random() * 80;
+      const isStone = s % 2 === 0;
+      this.particles.push({
+        x: ox + Math.cos(sa) * rSpawn,
+        y: oy + Math.sin(sa) * rSpawn,
+        vx: Math.cos(sa) * sspd,
+        vy: Math.sin(sa) * sspd,
+        size: isStone ? 5 : 3.5,
+        color: isStone ? '#78716C' : '#FDBA74',
+        life: 0.36,
+        maxLife: 0.36,
+        gravity: 0,
+        fade: true,
+        kind: isStone ? 'STONE_CHUNK' : 'RUNE_SPARK',
+        rot: sa,
+        vRot: (Math.random() - 0.5) * 18,
+        len: 8.5,
+        thick: 4.8,
+        drag: 4.2,
+      });
+    }
 
     const waveDmg =
       (28 + waveIndex * 6) *
@@ -2421,24 +4608,56 @@ export class GameEngine {
     const p = this.player;
     soundEngine.playSlash(step % 3);
     const sevenfold = this.activeBlessingIds.has('gob_skill_dagger_flurry');
-    const reach = isFinal && sevenfold ? 92 : 74;
-    const jitter = (step % 2 === 0 ? 1 : -1) * (step * 0.06);
+    const reach = isFinal && sevenfold ? 94 : isFinal ? 82 : 74;
+    const jitter = (step % 2 === 0 ? 1 : -1) * ((step % 4) * 0.085);
     const angle = p.aimAngle + jitter;
     const venomGlow = p.poisonBladesTimer > 0 || this.activeBlessingIds.has('gob_viper_toxin');
 
-    p.squashX = 1.16;
-    p.squashY = 0.86;
-    this.slashes.push({
-      x: p.x + Math.cos(angle) * 16,
-      y: p.y + Math.sin(angle) * 16,
+    p.squashX = isFinal ? 1.24 : 1.16;
+    p.squashY = isFinal ? 0.8 : 0.86;
+    p.goblinLungeOffset = isFinal ? 11 : 6.5;
+    p.comboFlip = step % 2 === 0;
+
+    const ox = p.x + Math.cos(angle) * 16;
+    const oy = p.y + Math.sin(angle) * 16;
+    const createdFlurry: SlashEffect = {
+      x: ox,
+      y: oy,
       angle,
       radius: reach,
-      arcSpread: isFinal && sevenfold ? 1.85 : 1.35,
+      arcSpread: isFinal ? 1.8 : 1.35,
       color: venomGlow ? '#A3E635' : '#F59E0B',
-      life: 0.11,
-      maxLife: 0.11,
+      life: isFinal ? 0.165 : 0.125,
+      maxLife: isFinal ? 0.165 : 0.125,
       flip: step % 2 === 0,
-    });
+      kind: isFinal ? 'GOBLIN_TWIN_CROSS' : 'GOBLIN_FLURRY_THRUST',
+      isCrit: isFinal,
+    };
+    this.slashes.push(createdFlurry);
+
+    for (let s = 0; s < (isFinal ? 6 : 3); s++) {
+      if (this.particles.length > 240) break;
+      const sa = angle + (Math.random() - 0.5) * 0.48;
+      const spd = 210 + Math.random() * 120;
+      this.particles.push({
+        x: ox + Math.cos(sa) * 20,
+        y: oy + Math.sin(sa) * 20,
+        vx: Math.cos(sa) * spd,
+        vy: Math.sin(sa) * spd,
+        size: 2.4,
+        color: venomGlow ? '#BEF264' : '#FDE047',
+        life: 0.16,
+        maxLife: 0.16,
+        gravity: 0,
+        fade: true,
+        kind: 'SLASH_STREAK',
+        rot: sa,
+        vRot: 0,
+        len: 15,
+        thick: 1.9,
+        drag: 6.5,
+      });
+    }
 
     const rawDmg = (isFinal && sevenfold ? 20 : 13) * this.getPhysicalDamageMultiplier();
     this.hitEnemiesInArc(
@@ -2449,20 +4668,26 @@ export class GameEngine {
       isFinal && sevenfold ? 1.05 : 0.85,
       rawDmg,
       isFinal,
-      isFinal && sevenfold ? 1.0 : 0.12
+      isFinal && sevenfold ? 1.0 : 0.12,
+      false,
+      createdFlurry
     );
     this.hitDestructibleProps(p.x, p.y, reach);
   }
 
   private performPhantomFrenzyStep(step: number): void {
     const p = this.player;
+    const prevX = p.x;
+    const prevY = p.y;
+    const venomGlow = p.poisonBladesTimer > 0 || this.activeBlessingIds.has('gob_viper_toxin');
+
     this.afterimages.push({
-      x: p.x,
-      y: p.y,
+      x: prevX,
+      y: prevY,
       facingX: p.facingX,
       color: step % 2 === 0 ? '#F59E0B' : '#FDE047',
-      life: 0.42,
-      maxLife: 0.42,
+      life: 0.45,
+      maxLife: 0.45,
     });
 
     const candidates = this.world.enemies.filter((e) => e.hp > 0);
@@ -2479,18 +4704,36 @@ export class GameEngine {
       const toEnemy = Math.atan2(target.y - p.y, target.x - p.x);
       p.aimAngle = toEnemy;
       p.facingX = Math.cos(toEnemy) >= 0 ? 1 : -1;
+      p.goblinLungeOffset = 9;
+      p.comboFlip = step % 2 === 0;
 
       soundEngine.playSlash(step % 3);
+      this.slashes.push({
+        x: p.x,
+        y: p.y,
+        fromX: prevX,
+        fromY: prevY,
+        angle: toEnemy,
+        radius: 0,
+        arcSpread: 0,
+        color: venomGlow ? '#A3E635' : '#FDE047',
+        life: 0.2,
+        maxLife: 0.2,
+        flip: false,
+        kind: 'GOBLIN_SHADOW_TRACE',
+      });
       this.slashes.push({
         x: p.x + Math.cos(toEnemy) * 14,
         y: p.y + Math.sin(toEnemy) * 14,
         angle: toEnemy,
         radius: 78,
         arcSpread: 1.8,
-        color: '#F59E0B',
-        life: 0.14,
-        maxLife: 0.14,
+        color: venomGlow ? '#A3E635' : '#F59E0B',
+        life: 0.16,
+        maxLife: 0.16,
         flip: step % 2 === 0,
+        kind: step === p.phantomTotal ? 'GOBLIN_TWIN_CROSS' : 'GOBLIN_BASIC_ATTACK',
+        isCrit: step === p.phantomTotal,
       });
 
       const opp = this.getOpportunisticBonus(target, p.x);
@@ -2515,17 +4758,33 @@ export class GameEngine {
       );
       p.x = dest.x;
       p.y = dest.y;
+      p.goblinLungeOffset = 8;
       soundEngine.playSlash(step % 2);
+      this.slashes.push({
+        x: p.x,
+        y: p.y,
+        fromX: prevX,
+        fromY: prevY,
+        angle: ang,
+        radius: 0,
+        arcSpread: 0,
+        color: venomGlow ? '#A3E635' : '#FDE047',
+        life: 0.18,
+        maxLife: 0.18,
+        flip: false,
+        kind: 'GOBLIN_SHADOW_TRACE',
+      });
       this.slashes.push({
         x: p.x,
         y: p.y,
         angle: ang,
         radius: 68,
         arcSpread: 1.8,
-        color: '#F59E0B',
-        life: 0.13,
-        maxLife: 0.13,
+        color: venomGlow ? '#A3E635' : '#F59E0B',
+        life: 0.15,
+        maxLife: 0.15,
         flip: step % 2 === 0,
+        kind: 'GOBLIN_BASIC_ATTACK',
       });
     }
     this.shakeMag = Math.max(this.shakeMag, 4.5);
@@ -2533,9 +4792,13 @@ export class GameEngine {
 
   private performKingOfThievesStep(): void {
     const p = this.player;
+    const prevX = p.x;
+    const prevY = p.y;
+    const venomGlow = p.poisonBladesTimer > 0 || this.activeBlessingIds.has('gob_viper_toxin');
+
     this.afterimages.push({
-      x: p.x,
-      y: p.y,
+      x: prevX,
+      y: prevY,
       facingX: p.facingX,
       color: '#FBBF24',
       life: 0.45,
@@ -2556,19 +4819,59 @@ export class GameEngine {
     const toTarget = Math.atan2(target.y - p.y, target.x - p.x);
     p.aimAngle = toTarget;
     p.facingX = Math.cos(toTarget) >= 0 ? 1 : -1;
+    p.goblinLungeOffset = 10;
 
     soundEngine.playSlash(2);
     this.slashes.push({
-      x: p.x + Math.cos(toTarget) * 14,
-      y: p.y + Math.sin(toTarget) * 14,
+      x: p.x,
+      y: p.y,
+      fromX: prevX,
+      fromY: prevY,
       angle: toTarget,
-      radius: 74,
-      arcSpread: 1.7,
+      radius: 0,
+      arcSpread: 0,
       color: '#FDE047',
-      life: 0.15,
-      maxLife: 0.15,
+      life: 0.22,
+      maxLife: 0.22,
       flip: false,
+      kind: 'GOBLIN_SHADOW_TRACE',
     });
+    this.slashes.push({
+      x: target.x,
+      y: target.y,
+      angle: toTarget,
+      radius: 54,
+      arcSpread: 1.7,
+      color: venomGlow ? '#A3E635' : '#FDE047',
+      life: 0.2,
+      maxLife: 0.2,
+      flip: false,
+      kind: 'GOBLIN_BACKSTAB_X',
+      isCrit: true,
+    });
+
+    // Glittering stolen gold coins & vitality sparks erupt from victim!
+    for (let c = 0; c < 6; c++) {
+      if (this.particles.length > 240) break;
+      const ca = (c / 6) * Math.PI * 2 + Math.random() * 0.4;
+      const cspd = 85 + Math.random() * 75;
+      this.particles.push({
+        x: target.x,
+        y: target.y - 6,
+        vx: Math.cos(ca) * cspd,
+        vy: Math.sin(ca) * cspd - 22,
+        size: 4.5,
+        color: c % 2 === 0 ? '#FDE047' : '#F59E0B',
+        life: 0.38,
+        maxLife: 0.38,
+        gravity: 0,
+        fade: true,
+        kind: 'GOLD_COIN_SPARK',
+        rot: Math.random() * Math.PI,
+        vRot: 14,
+        drag: 3.5,
+      });
+    }
 
     // Steals strength & vitality from struck foe!
     target.infectionStacks = Math.min(3, target.infectionStacks + 2);
@@ -2582,8 +4885,9 @@ export class GameEngine {
     this.tethers.push({
       fromX: target.x,
       fromY: target.y,
-      life: 0.32,
-      maxLife: 0.32,
+      life: 0.34,
+      maxLife: 0.34,
+      color: '#FBBF24',
     });
     this.damageEnemy(target, roll.damage, true, p.x, p.y, true, roll.isCrit);
     this.applyGoblinPoisonIfActive(target);
@@ -2597,40 +4901,66 @@ export class GameEngine {
     const p = this.player;
     const ranks = this.getActiveUpgrades();
     const festering = this.activeBlessingIds.has('zombie_skill_rotting_claw');
+    const isFinal = step === p.rottingComboTotal;
     soundEngine.playSlash(step);
-    const reach = p.abominationTimer > 0 ? 96 : 76;
-    const angleJitter = (step - 2) * 0.16;
+    const reach = (p.abominationTimer > 0 ? 96 : 78) * (isFinal ? 1.12 : 1.0);
+    const angleJitter = isFinal ? 0 : (step - 2) * 0.16;
     const angle = p.aimAngle + angleJitter;
 
+    p.zombieLungeOffset = isFinal ? 11 : 7;
+    p.comboFlip = step % 2 === 0;
+    p.squashX = isFinal ? 1.28 : 1.18;
+    p.squashY = isFinal ? 0.78 : 0.84;
+
+    const ox = p.x + Math.cos(angle) * 18;
+    const oy = p.y + Math.sin(angle) * 18;
+
     this.slashes.push({
-      x: p.x + Math.cos(angle) * 18,
-      y: p.y + Math.sin(angle) * 18,
+      x: ox,
+      y: oy,
       angle,
       radius: reach,
-      arcSpread: 1.55,
-      color: '#4ADE80',
-      life: 0.22,
-      maxLife: 0.22,
+      arcSpread: isFinal ? 1.75 : 1.55,
+      color: isFinal ? '#A3E635' : '#4ADE80',
+      life: isFinal ? 0.26 : 0.22,
+      maxLife: isFinal ? 0.26 : 0.22,
       flip: step % 2 === 0,
-      kind: 'ZOMBIE_BASIC_ATTACK',
-      scale: p.abominationTimer > 0 ? 1.4 : 1.05,
+      kind: isFinal ? 'ZOMBIE_SAVAGE_REND' : 'ZOMBIE_BASIC_ATTACK',
+      scale: p.abominationTimer > 0 ? 1.4 : 1.08,
+      isCrit: isFinal,
     });
+
+    for (let d = 0; d < (isFinal ? 9 : 5); d++) {
+      if (this.particles.length > 240) break;
+      const da = angle + (Math.random() - 0.5) * 1.4;
+      const isSpore = d % 3 === 0;
+      const dspd = (isSpore ? 55 : 155) + Math.random() * 75;
+      this.particles.push({
+        x: ox + Math.cos(da) * (reach * 0.55),
+        y: oy + Math.sin(da) * (reach * 0.55),
+        vx: Math.cos(da) * dspd,
+        vy: Math.sin(da) * dspd,
+        size: isSpore ? 7 : 3.2,
+        color: isSpore ? '#4ADE80' : '#BEF264',
+        life: 0.26,
+        maxLife: 0.26,
+        gravity: 0,
+        fade: true,
+        kind: isSpore ? 'SPORE_PUFF' : 'VENOM_DROP',
+        rot: da,
+        len: 7,
+        thick: 2.8,
+        drag: 4.5,
+      });
+    }
 
     const rawDmg = 16 * (festering ? 1.25 : 1.0) * this.getPhysicalDamageMultiplier();
     const slowDuration = 3.5 + ranks.pathB * 0.4;
     for (const enemy of [...this.world.enemies]) {
       if (!enemy || enemy.hp <= 0) continue;
       if (this.isEnemyInArc(enemy, p.x, p.y, angle, reach, 0.95)) {
-        const roll = this.rollPhysicalAttack(rawDmg);
-        this.damageEnemy(
-          enemy,
-          roll.damage,
-          true,
-          p.x,
-          p.y,
-          step === p.rottingComboTotal,
-          roll.isCrit
-        );
+        const roll = this.rollPhysicalAttack(rawDmg, isFinal ? 0.2 : 0);
+        this.damageEnemy(enemy, roll.damage, true, p.x, p.y, isFinal, roll.isCrit);
         enemy.slowTimer = Math.max(enemy.slowTimer, slowDuration);
         enemy.slowFactor = 0.6;
         this.applyInfectiousTouch(enemy, festering ? 2 : 1);
@@ -2646,8 +4976,8 @@ export class GameEngine {
           flip: Math.random() < 0.5,
           kind: 'ZOMBIE_POISON_BURST',
           scale: p.abominationTimer > 0 ? 1.35 : 1.0,
+          isCrit: isFinal,
         });
-        this.spawnBurst(enemy.x, enemy.y, '#A3E635', 6, 60);
       }
     }
     this.hitDestructibleProps(p.x, p.y, reach);
@@ -2667,14 +4997,27 @@ export class GameEngine {
         const behemoth = this.activeBlessingIds.has('zombie_ult_abomination');
         p.abominationTimer = behemoth ? 14.0 : 10.0;
         p.abomStompTick = 0.8;
-        p.squashX = 1.35;
-        p.squashY = 0.72;
+        p.squashX = 1.38;
+        p.squashY = 0.7;
         this.hitstopTimer = 0.055;
         this.shakeMag = 10;
         this.healPlayer(Math.round(p.maxHp * (behemoth ? 0.45 : 0.25)));
         if (behemoth) {
           p.normalCooldowns = [0, 0];
         }
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 155,
+          arcSpread: Math.PI * 2,
+          color: '#4ADE80',
+          life: 0.44,
+          maxLife: 0.44,
+          flip: false,
+          kind: 'ZOMBIE_ABOMINATION_NOVA',
+          scale: 1.25,
+        });
         this.shockwaves.push({
           x: p.x,
           y: p.y,
@@ -2683,7 +5026,29 @@ export class GameEngine {
           life: 0.36,
           maxLife: 0.36,
         });
-        this.spawnBurst(p.x, p.y, '#4ADE80', 22, 160);
+        for (let b = 0; b < 18; b++) {
+          if (this.particles.length > 240) break;
+          const ba = (b / 18) * Math.PI * 2;
+          const isSpore = b % 2 === 0;
+          const bspd = 135 + Math.random() * 110;
+          this.particles.push({
+            x: p.x,
+            y: p.y,
+            vx: Math.cos(ba) * bspd,
+            vy: Math.sin(ba) * bspd,
+            size: isSpore ? 9 : 3.8,
+            color: isSpore ? '#4ADE80' : '#BEF264',
+            life: 0.4,
+            maxLife: 0.4,
+            gravity: 0,
+            fade: true,
+            kind: isSpore ? 'SPORE_PUFF' : 'VENOM_DROP',
+            rot: ba,
+            len: 8,
+            thick: 3.4,
+            drag: 4.0,
+          });
+        }
         this.spawnPopup(p.x, p.y - 34, 'ABOMINATION!', '#4ADE80', 1.15);
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
@@ -2696,6 +5061,7 @@ export class GameEngine {
               p.y,
               true
             );
+            this.applyInfectiousTouch(enemy, 2);
           }
         }
         break;
@@ -2705,12 +5071,27 @@ export class GameEngine {
         soundEngine.playSummon();
         const ranks = this.getActiveUpgrades();
         const lordGraves = this.activeBlessingIds.has('zombie_ult_kingdom');
-        this.shakeMag = 8;
+        this.shakeMag = 9;
+        p.squashX = 1.3;
+        p.squashY = 0.74;
         const hordeCount = 7 + (lordGraves ? 3 : 0);
         const hordeLife = 14 + ranks.pathD * 1.5;
         if (lordGraves) {
           p.normalCooldowns = [0, 0];
         }
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 168,
+          arcSpread: Math.PI * 2,
+          color: '#A3E635',
+          life: 0.48,
+          maxLife: 0.48,
+          flip: false,
+          kind: 'ZOMBIE_GRAVE_ERUPTION',
+          scale: 1.5,
+        });
         this.shockwaves.push({
           x: p.x,
           y: p.y,
@@ -2732,17 +5113,17 @@ export class GameEngine {
       case UltimateSkillId.DeathsEmbrace: {
         soundEngine.playBossSlam();
         const ravenous = this.activeBlessingIds.has('zombie_ult_embrace');
-        this.hitstopTimer = 0.08;
-        this.shakeMag = 14;
-        p.squashX = 1.45;
-        p.squashY = 0.6;
+        this.hitstopTimer = 0.06;
+        this.shakeMag = 13;
+        p.squashX = 1.42;
+        p.squashY = 0.62;
         if (ravenous) {
           p.normalCooldowns = [0, 0];
         }
         const slamRadius = 250;
-        const animDuration = 1.25; // 60 sequential frames (~48 fps)
+        const animDuration = 1.85; // 60 sequential frames (~32.4 fps across Slam, Wave, Drain, Heal Cross & Fade)
         const embraceEffect: DeathsEmbraceEffect = {
-          id: Math.random(),
+          id: allocEntityId(),
           x: p.x,
           y: p.y,
           radius: slamRadius,
@@ -2753,17 +5134,7 @@ export class GameEngine {
           followPlayer: true,
         };
         this.deathsEmbraceEffects.push(embraceEffect);
-
-        this.shockwaves.push({
-          x: p.x,
-          y: p.y,
-          maxRadius: slamRadius,
-          color: '#2DD4BF',
-          life: 0.38,
-          maxLife: 0.38,
-        });
-        this.spawnBurst(p.x, p.y, '#2DD4BF', 28, 190);
-        this.spawnPopup(p.x, p.y - 34, "DEATH'S EMBRACE", '#5EEAD4', 1.15);
+        this.spawnPopup(p.x, p.y - 34, "DEATH'S EMBRACE", '#A3E635', 1.15);
 
         let totalDrain = 0;
         const waveDmg = Math.round(
@@ -2772,12 +5143,12 @@ export class GameEngine {
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
           if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= slamRadius + enemy.radius) {
-            // Life-drain tethers stretch across the life-drain vortex stages (frames 21-30)
+            // Life-drain tethers stretch across the Absorb/Drain stages
             this.tethers.push({
               fromX: enemy.x,
               fromY: enemy.y,
-              life: 0.75,
-              maxLife: 0.75,
+              life: 0.9,
+              maxLife: 0.9,
             });
             this.damageEnemy(enemy, waveDmg, false, p.x, p.y, true);
             this.applyInfectiousTouch(enemy, 3);
@@ -2803,6 +5174,19 @@ export class GameEngine {
         if (dread) {
           p.normalCooldowns = [0, 0];
         }
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 164,
+          arcSpread: Math.PI * 2,
+          color: '#38BDF8',
+          life: 0.46,
+          maxLife: 0.46,
+          flip: false,
+          kind: 'SKELETON_COLOSSUS_NOVA',
+          scale: 1.25,
+        });
         this.shockwaves.push({
           x: p.x,
           y: p.y,
@@ -2811,7 +5195,30 @@ export class GameEngine {
           life: 0.38,
           maxLife: 0.38,
         });
-        this.spawnBurst(p.x, p.y, '#F8FAFC', 24, 175);
+        for (let b = 0; b < 20; b++) {
+          if (this.particles.length > 240) break;
+          const ba = (b / 20) * Math.PI * 2;
+          const isBone = b % 2 === 0;
+          const bspd = 145 + Math.random() * 120;
+          this.particles.push({
+            x: p.x,
+            y: p.y,
+            vx: Math.cos(ba) * bspd,
+            vy: Math.sin(ba) * bspd,
+            size: 3.5,
+            color: isBone ? '#F8FAFC' : '#38BDF8',
+            life: 0.38,
+            maxLife: 0.38,
+            gravity: 0,
+            fade: true,
+            kind: isBone ? 'BONE_SHARD' : 'SOUL_WISP',
+            rot: ba,
+            vRot: isBone ? 18 : 0,
+            len: 9,
+            thick: 3.2,
+            drag: 4.2,
+          });
+        }
         this.spawnPopup(p.x, p.y - 36, 'BONE COLOSSUS!', '#38BDF8', 1.18);
 
         for (const enemy of [...this.world.enemies]) {
@@ -2833,10 +5240,25 @@ export class GameEngine {
         soundEngine.playSummon();
         const phalanx = this.activeBlessingIds.has('skel_ult_army');
         this.shakeMag = 9;
+        p.squashX = 1.28;
+        p.squashY = 0.76;
         const legionCount = phalanx ? 9 : 6;
         if (phalanx) {
           p.normalCooldowns = [0, 0];
         }
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 172,
+          arcSpread: Math.PI * 2,
+          color: '#818CF8',
+          life: 0.46,
+          maxLife: 0.46,
+          flip: false,
+          kind: 'SKELETON_CRYPT_SUMMON',
+          scale: 1.45,
+        });
         this.shockwaves.push({
           x: p.x,
           y: p.y,
@@ -2845,7 +5267,6 @@ export class GameEngine {
           life: 0.4,
           maxLife: 0.4,
         });
-        this.spawnBurst(p.x, p.y, '#818CF8', 22, 150);
         this.spawnPopup(p.x, p.y - 34, 'ARMY OF BONES!', '#818CF8', 1.14);
         for (let i = 0; i < legionCount; i++) {
           const ang = (i / legionCount) * Math.PI * 2;
@@ -2862,25 +5283,29 @@ export class GameEngine {
         const harvest = this.activeBlessingIds.has('skel_ult_reaper');
         this.hitstopTimer = 0.075;
         this.shakeMag = 14;
-        p.squashX = 1.36;
-        p.squashY = 0.68;
+        p.squashX = 1.38;
+        p.squashY = 0.66;
+        p.skelLungeOffset = 14;
         if (harvest) {
           p.normalCooldowns = [0, 0];
           this.healPlayer(25);
         }
 
         const angle = p.aimAngle;
-        const scytheReach = 168;
+        const scytheReach = 172;
         this.slashes.push({
           x: p.x + Math.cos(angle) * 20,
           y: p.y + Math.sin(angle) * 20,
           angle,
           radius: scytheReach,
-          arcSpread: 2.55,
+          arcSpread: 2.6,
           color: '#C084FC',
-          life: 0.28,
-          maxLife: 0.28,
+          life: 0.36,
+          maxLife: 0.36,
           flip: false,
+          kind: 'SKELETON_REAPER_SCYTHE',
+          scale: this.player.colossusTimer > 0 ? 1.28 : 1.0,
+          isCrit: true,
         });
         this.shockwaves.push({
           x: p.x,
@@ -2890,7 +5315,30 @@ export class GameEngine {
           life: 0.34,
           maxLife: 0.34,
         });
-        this.spawnBurst(p.x, p.y, '#C084FC', 26, 185);
+        for (let r = 0; r < 18; r++) {
+          if (this.particles.length > 240) break;
+          const t = (r / 17 - 0.5) * 2.5;
+          const ra = angle + t;
+          const rspd = 175 + Math.random() * 135;
+          const isWisp = r % 2 === 0;
+          this.particles.push({
+            x: p.x + Math.cos(ra) * 42,
+            y: p.y + Math.sin(ra) * 42,
+            vx: Math.cos(ra) * rspd,
+            vy: Math.sin(ra) * rspd,
+            size: isWisp ? 4.5 : 3.0,
+            color: isWisp ? '#C084FC' : '#38BDF8',
+            life: 0.38,
+            maxLife: 0.38,
+            gravity: 0,
+            fade: true,
+            kind: isWisp ? 'SOUL_WISP' : 'SLASH_STREAK',
+            rot: ra,
+            len: 18,
+            thick: 2.4,
+            drag: 4.2,
+          });
+        }
         this.spawnPopup(p.x, p.y - 36, "REAPER'S JUDGMENT!", '#C084FC', 1.18);
 
         // Wide spectral scythe sweep (Guaranteed Critical Strike!)
@@ -2900,6 +5348,20 @@ export class GameEngine {
           if (this.isEnemyInArc(enemy, p.x, p.y, angle, scytheReach, 1.38)) {
             const roll = this.rollPhysicalAttack(rawSweep, 0, true);
             this.damageEnemy(enemy, roll.damage, true, p.x, p.y, true, true);
+            this.slashes.push({
+              x: enemy.x,
+              y: enemy.y,
+              angle,
+              radius: 36,
+              arcSpread: 0,
+              color: '#C084FC',
+              life: 0.24,
+              maxLife: 0.24,
+              flip: false,
+              kind: 'SKELETON_IMPACT_FLASH',
+              scale: 1.4,
+              isCrit: true,
+            });
           }
         }
         this.hitDestructibleProps(p.x, p.y, scytheReach);
@@ -3058,6 +5520,18 @@ export class GameEngine {
         if (livingMtn) {
           p.normalCooldowns = [0, 0];
         }
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 168,
+          arcSpread: Math.PI * 2,
+          color: '#FB923C',
+          life: 0.45,
+          maxLife: 0.45,
+          flip: false,
+          kind: 'GNOME_MOUNTAIN_NOVA',
+        });
         this.shockwaves.push({
           x: p.x,
           y: p.y,
@@ -3066,7 +5540,30 @@ export class GameEngine {
           life: 0.38,
           maxLife: 0.38,
         });
-        this.spawnBurst(p.x, p.y, '#FDBA74', 24, 175);
+        for (let b = 0; b < 18; b++) {
+          if (this.particles.length > 240) break;
+          const ba = (b / 18) * Math.PI * 2;
+          const bspd = 135 + Math.random() * 115;
+          const isStone = b % 2 === 0;
+          this.particles.push({
+            x: p.x,
+            y: p.y,
+            vx: Math.cos(ba) * bspd,
+            vy: Math.sin(ba) * bspd,
+            size: isStone ? 5.2 : 3.6,
+            color: isStone ? '#78716C' : '#FDBA74',
+            life: 0.4,
+            maxLife: 0.4,
+            gravity: 0,
+            fade: true,
+            kind: isStone ? 'STONE_CHUNK' : 'RUNE_SPARK',
+            rot: ba,
+            vRot: (Math.random() - 0.5) * 18,
+            len: 9,
+            thick: 5,
+            drag: 4.2,
+          });
+        }
         this.spawnPopup(p.x, p.y - 38, "MOUNTAIN'S HEART!", '#FB923C', 1.18);
 
         for (const enemy of [...this.world.enemies]) {
@@ -3113,9 +5610,43 @@ export class GameEngine {
             life: wallLife,
             maxLife: wallLife,
           });
-          this.spawnBurst(wx, wy, '#D97706', 8, 90);
+          for (let s = 0; s < 5; s++) {
+            if (this.particles.length > 240) break;
+            const sa = Math.random() * Math.PI * 2;
+            this.particles.push({
+              x: wx,
+              y: wy + 8,
+              vx: Math.cos(sa) * 85,
+              vy: Math.sin(sa) * 65 - 18,
+              size: 4.5,
+              color: s % 2 === 0 ? '#78716C' : '#FB923C',
+              life: 0.34,
+              maxLife: 0.34,
+              gravity: 0,
+              fade: true,
+              kind: s % 2 === 0 ? 'STONE_CHUNK' : 'RUNE_SPARK',
+              rot: sa,
+              vRot: 14,
+              len: 7.5,
+              thick: 4.2,
+              drag: 4.5,
+            });
+          }
         }
 
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: ringRadius,
+          arcSpread: Math.PI * 2,
+          color: '#FB923C',
+          life: 0.38,
+          maxLife: 0.38,
+          flip: false,
+          kind: 'GNOME_FORTRESS_AEGIS',
+          scale: 1.4,
+        });
         this.shockwaves.push({
           x: p.x,
           y: p.y,
@@ -3158,6 +5689,179 @@ export class GameEngine {
         this.spawnPopup(p.x, p.y - 38, 'CATACLYSMIC SLAM!', '#FB923C', 1.2);
         break;
       }
+
+      // === GHOST ULTIMATE SKILLS ===
+      case UltimateSkillId.EternalNightmare: {
+        soundEngine.playSummon();
+        soundEngine.playBossSlam();
+        const ranks = this.getActiveUpgrades();
+        const dread = this.activeBlessingIds.has('ghost_ult_nightmare');
+        const dur = (dread ? 10.0 : 7.0) + ranks.pathD * 0.4;
+        p.nightmareTimer = dur;
+        p.nightmareFearTick = 0.65;
+        p.invulnTimer = Math.max(p.invulnTimer, 1.0);
+        this.hitstopTimer = 0.055;
+        this.shakeMag = 12;
+        if (dread) {
+          p.normalCooldowns = [0, 0];
+        }
+
+        const appCount = dread ? 6 : 4;
+        for (let i = 0; i < appCount; i++) {
+          const ang = (i / appCount) * Math.PI * 2;
+          this.spawnMinion(
+            p.x + Math.cos(ang) * 58,
+            p.y + Math.sin(ang) * 48,
+            dur + 1.0,
+            true,
+            'GHOST_APPARITION'
+          );
+        }
+
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 210,
+          arcSpread: Math.PI * 2,
+          color: '#A855F7',
+          life: 0.48,
+          maxLife: 0.48,
+          flip: false,
+          kind: 'GHOST_NIGHTMARE_NOVA',
+        });
+        this.shockwaves.push({
+          x: p.x,
+          y: p.y,
+          maxRadius: 210,
+          color: '#C084FC',
+          life: 0.4,
+          maxLife: 0.4,
+        });
+
+        const openDmg = Math.round(30 * this.getPlagueOrSkillMultiplier());
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 220 + enemy.radius) {
+            this.damageEnemy(enemy, openDmg, true, p.x, p.y, false);
+            this.applyEnemyFear(enemy, 2.2 + ranks.pathD * 0.2);
+            this.applyGhostChillIfActive(enemy);
+          }
+        }
+        this.triggerRestlessSpirit();
+        this.spawnPopup(p.x, p.y - 38, 'ETERNAL NIGHTMARE!', '#D8B4FE', 1.18);
+        break;
+      }
+
+      case UltimateSkillId.SpiritLegion: {
+        soundEngine.playSummon();
+        const hostBless = this.activeBlessingIds.has('ghost_ult_legion');
+        this.hitstopTimer = 0.045;
+        this.shakeMag = 10;
+        p.invulnTimer = Math.max(p.invulnTimer, 0.85);
+        p.squashX = 1.3;
+        p.squashY = 0.74;
+        if (hostBless) {
+          p.normalCooldowns = [0, 0];
+          this.healPlayer(20);
+        }
+
+        const spiritCount = hostBless ? 14 : 10;
+        const orbDmg =
+          25 *
+          this.getPhysicalDamageMultiplier() *
+          this.getPlagueOrSkillMultiplier();
+        for (let i = 0; i < spiritCount; i++) {
+          const ang = (i / spiritCount) * Math.PI * 2;
+          const orbitR = 54 + (i % 2) * 18;
+          this.projectiles.push({
+            id: allocEntityId(),
+            fromPlayer: true,
+            x: p.x + Math.cos(ang) * orbitR,
+            y: p.y + Math.sin(ang) * orbitR,
+            vx: 0,
+            vy: 0,
+            radius: 11,
+            damage: orbDmg,
+            life: 4.2,
+            color: i % 2 === 0 ? '#67E8F9' : '#C084FC',
+            kind: 'PLAYER_SPIRIT_ORB',
+            angle: ang,
+            pierce: hostBless,
+            hitEnemyIds: new Set<number>(),
+            orbitTimer: 0.36 + i * 0.11,
+            orbitAngle: ang,
+            orbitRadius: orbitR,
+          });
+        }
+
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 132,
+          arcSpread: Math.PI * 2,
+          color: '#67E8F9',
+          life: 0.42,
+          maxLife: 0.42,
+          flip: false,
+          kind: 'GHOST_SPIRIT_RING',
+        });
+        this.triggerRestlessSpirit();
+        this.spawnPopup(p.x, p.y - 38, 'SPIRIT LEGION!', '#67E8F9', 1.18);
+        break;
+      }
+
+      case UltimateSkillId.DeathsPassage: {
+        soundEngine.playBossSlam();
+        soundEngine.playSummon();
+        const ranks = this.getActiveUpgrades();
+        const horizon = this.activeBlessingIds.has('ghost_ult_passage');
+        this.hitstopTimer = 0.06;
+        this.shakeMag = 13;
+        p.invulnTimer = Math.max(p.invulnTimer, 0.9);
+        p.squashX = 1.34;
+        p.squashY = 0.7;
+        if (horizon) {
+          p.normalCooldowns = [0, 0];
+        }
+
+        const focusTarget = this.findNearestEnemy(p.x, p.y, 290);
+        const rx = focusTarget ? focusTarget.x : p.x + Math.cos(p.aimAngle) * 84;
+        const ry = focusTarget ? focusTarget.y : p.y + Math.sin(p.aimAngle) * 84;
+        const riftRadius = Math.round((horizon ? 236 : 192) * (1 + ranks.pathD * 0.04));
+        const riftLife = 2.25;
+
+        this.deathsPassageRifts.push({
+          id: allocEntityId(),
+          x: rx,
+          y: ry,
+          radius: riftRadius,
+          life: riftLife,
+          maxLife: riftLife,
+          tickTimer: 0.1,
+          detonated: false,
+          pullDamage: Math.round(12 * this.getPlagueOrSkillMultiplier()),
+          explosionDamage: Math.round(
+            74 *
+              (horizon ? 1.28 : 1.0) *
+              this.getPhysicalDamageMultiplier() *
+              this.getPlagueOrSkillMultiplier()
+          ),
+        });
+
+        this.shockwaves.push({
+          x: rx,
+          y: ry,
+          maxRadius: riftRadius,
+          color: '#A855F7',
+          life: 0.36,
+          maxLife: 0.36,
+        });
+        this.triggerRestlessSpirit();
+        this.spawnPopup(p.x, p.y - 38, "DEATH'S PASSAGE!", '#E879F9', 1.2);
+        break;
+      }
     }
 
     this.emitHudSnapshot();
@@ -3168,20 +5872,25 @@ export class GameEngine {
     y: number,
     duration: number,
     frenzied: boolean,
-    minionType: 'ZOMBIE_SHAMBLER' | 'SKELETON_WARRIOR_ALLY'
+    minionType: 'ZOMBIE_SHAMBLER' | 'SKELETON_WARRIOR_ALLY' | 'GHOST_APPARITION'
   ): void {
-    const resolved = this.resolveWorldCollision(x, y, 12);
+    const isGhostApp = minionType === 'GHOST_APPARITION';
+    const resolved = this.resolveWorldCollision(x, y, 12, isGhostApp);
     const ranks = this.getActiveUpgrades();
     const isSkeletal = minionType === 'SKELETON_WARRIOR_ALLY';
-    const masteryMult = 1 + ranks.pathD * (isSkeletal ? 0.18 : 0.22);
+    const masteryMult = 1 + ranks.pathD * (isGhostApp ? 0.2 : isSkeletal ? 0.18 : 0.22);
     const endlessBless =
       !isSkeletal &&
+      !isGhostApp &&
       (this.activeBlessingIds.has('zombie_skill_grave_call') ||
         this.activeBlessingIds.has('zombie_ult_kingdom'));
-    const blessSpeed = endlessBless ? 1.25 : 1.0;
-    const hp = Math.round((isSkeletal ? 42 : 46) * masteryMult);
-    const baseDmg = isSkeletal ? 15 : frenzied ? 13 : 11;
-    const dmg = Math.round(baseDmg * masteryMult * (endlessBless ? 1.15 : 1));
+    const dreadBless = isGhostApp && this.activeBlessingIds.has('ghost_ult_nightmare');
+    const blessSpeed = endlessBless || dreadBless ? 1.22 : 1.0;
+    const hp = Math.round((isGhostApp ? 48 : isSkeletal ? 42 : 46) * masteryMult);
+    const baseDmg = isGhostApp ? 17 : isSkeletal ? 15 : frenzied ? 13 : 11;
+    const dmg = Math.round(
+      baseDmg * masteryMult * (endlessBless || dreadBless ? 1.18 : 1)
+    );
 
     this.minions.push({
       id: allocEntityId(),
@@ -3194,22 +5903,46 @@ export class GameEngine {
       hp,
       maxHp: hp,
       damage: dmg,
-      speed: (isSkeletal ? 210 : frenzied ? 192 : 168) * blessSpeed,
+      speed: (isGhostApp ? 236 : isSkeletal ? 210 : frenzied ? 192 : 168) * blessSpeed,
       lifeTimer: duration,
       maxLife: duration,
-      attackCooldown: 0.15,
+      attackCooldown: 0.12,
       walkPhase: Math.random() * 5,
       hitFlashTimer: 0,
       facingX: 1,
       sproutVariant: Math.floor(Math.random() * 3) as 0 | 1 | 2,
-      spawnAnimTimer: 0.24,
+      spawnAnimTimer: 0.28,
     });
-    this.spawnBurst(resolved.x, resolved.y, isSkeletal ? '#7DD3FC' : '#86EFAC', 8, 75);
+    this.slashes.push({
+      x: resolved.x,
+      y: resolved.y,
+      angle: 0,
+      radius: 34,
+      arcSpread: Math.PI * 2,
+      color: isGhostApp ? '#C084FC' : isSkeletal ? '#818CF8' : '#86EFAC',
+      life: 0.34,
+      maxLife: 0.34,
+      flip: false,
+      kind: isGhostApp
+        ? 'GHOST_MIST_WAKE'
+        : isSkeletal
+        ? 'SKELETON_CRYPT_SUMMON'
+        : 'ZOMBIE_GRAVE_ERUPTION',
+      scale: 0.72,
+    });
+    this.spawnBurst(
+      resolved.x,
+      resolved.y,
+      isGhostApp ? '#C084FC' : isSkeletal ? '#7DD3FC' : '#86EFAC',
+      6,
+      70
+    );
   }
 
   private updateMinions(dt: number): void {
     for (let i = this.minions.length - 1; i >= 0; i--) {
       const m = this.minions[i];
+      const isGhostApp = m.minionType === 'GHOST_APPARITION';
       m.lifeTimer -= dt;
       if (m.spawnAnimTimer > 0) m.spawnAnimTimer -= dt;
       if (m.hitFlashTimer > 0) m.hitFlashTimer -= dt;
@@ -3219,7 +5952,11 @@ export class GameEngine {
         this.spawnBurst(
           m.x,
           m.y,
-          m.minionType === 'SKELETON_WARRIOR_ALLY' ? '#7DD3FC' : '#68A357',
+          isGhostApp
+            ? '#C084FC'
+            : m.minionType === 'SKELETON_WARRIOR_ALLY'
+            ? '#7DD3FC'
+            : '#68A357',
           6,
           55
         );
@@ -3227,7 +5964,7 @@ export class GameEngine {
         continue;
       }
 
-      const target = this.findNearestEnemy(m.x, m.y, 520);
+      const target = this.findNearestEnemy(m.x, m.y, 540);
       if (target) {
         const dx = target.x - m.x;
         const dy = target.y - m.y;
@@ -3243,22 +5980,46 @@ export class GameEngine {
           m.vy *= 0.6;
           if (m.attackCooldown <= 0) {
             const isSkeletal = m.minionType === 'SKELETON_WARRIOR_ALLY';
-            m.attackCooldown = isSkeletal ? 0.52 : 0.62;
+            m.attackCooldown = isGhostApp ? 0.48 : isSkeletal ? 0.52 : 0.62;
             soundEngine.playHit(false);
-            if (isSkeletal) {
+            if (isGhostApp) {
               const ang = Math.atan2(dy, dx);
+              const isCrit = Math.random() < 0.28;
               this.slashes.push({
                 x: m.x + Math.cos(ang) * 8,
                 y: m.y + Math.sin(ang) * 8,
                 angle: ang,
-                radius: 26,
-                arcSpread: 1.2,
-                color: '#38BDF8',
-                life: 0.11,
-                maxLife: 0.11,
-                flip: false,
+                radius: 34,
+                arcSpread: 1.5,
+                color: '#C084FC',
+                life: 0.16,
+                maxLife: 0.16,
+                flip: Math.random() < 0.5,
+                kind: 'GHOST_BASIC_ARC',
+                scale: 0.68,
+                isCrit,
               });
+              const hitDmg = isCrit ? Math.round(m.damage * 1.7) : m.damage;
+              this.damageEnemy(target, hitDmg, true, m.x, m.y, false, isCrit);
+              this.applyEnemyFear(target, 0.85);
+              this.applyGhostChillIfActive(target);
+            } else if (isSkeletal) {
+              const ang = Math.atan2(dy, dx);
               const isCrit = Math.random() < 0.25;
+              this.slashes.push({
+                x: m.x + Math.cos(ang) * 8,
+                y: m.y + Math.sin(ang) * 8,
+                angle: ang,
+                radius: 30,
+                arcSpread: 1.4,
+                color: '#38BDF8',
+                life: 0.14,
+                maxLife: 0.14,
+                flip: Math.random() < 0.5,
+                kind: 'SKELETON_BASIC_ATTACK',
+                scale: 0.62,
+                isCrit,
+              });
               const hitDmg = isCrit ? Math.round(m.damage * 1.75) : m.damage;
               this.damageEnemy(target, hitDmg, true, m.x, m.y, false, isCrit);
             } else {
@@ -3308,7 +6069,12 @@ export class GameEngine {
         }
       }
 
-      const resolved = this.resolveWorldCollision(m.x + m.vx * dt, m.y + m.vy * dt, m.radius);
+      const resolved = this.resolveWorldCollision(
+        m.x + m.vx * dt,
+        m.y + m.vy * dt,
+        m.radius,
+        isGhostApp
+      );
       m.x = resolved.x;
       m.y = resolved.y;
     }
@@ -3332,6 +6098,12 @@ export class GameEngine {
       }
       if (e.rootTimer > 0) {
         e.rootTimer = Math.max(0, e.rootTimer - dt);
+      }
+      if (e.fearTimer > 0) {
+        e.fearTimer = Math.max(0, e.fearTimer - dt);
+      }
+      if (e.possessedTimer > 0) {
+        e.possessedTimer = Math.max(0, e.possessedTimer - dt);
       }
 
       if (e.infectionStacks > 0 || e.plagueTimer > 0) {
@@ -3362,6 +6134,34 @@ export class GameEngine {
         continue;
       }
 
+      // Possessed host is steered by Ghost's Haunted Possession in updatePlayer()
+      if (e.possessedTimer > 0) {
+        e.aiState = 'COOLDOWN';
+        e.telegraphType = 'NONE';
+        const otherEnemy = this.world.enemies.find(
+          (o) => o.id !== e.id && o.hp > 0 && o.kind !== EnemyKind.TrainingDummy
+        );
+        if (otherEnemy) {
+          const hdx = otherEnemy.x - e.x;
+          const hdy = otherEnemy.y - e.y;
+          const hdist = Math.max(1, Math.hypot(hdx, hdy));
+          e.vx = (hdx / hdist) * (e.speed * 1.15);
+          e.vy = (hdy / hdist) * (e.speed * 1.15);
+          e.facingX = hdx >= 0 ? 1 : -1;
+          e.walkPhase += dt * 13;
+        } else {
+          e.vx *= 0.8;
+          e.vy *= 0.8;
+        }
+        const pPos = this.resolveEnemyRampartCollision(
+          this.resolveWorldCollision(e.x + e.vx * dt, e.y + e.vy * dt, e.radius),
+          e.radius
+        );
+        e.x = pPos.x;
+        e.y = pPos.y;
+        continue;
+      }
+
       // Stunned enemies cannot act or windup attacks
       if (e.stunTimer > 0) {
         if (e.aiState === 'WINDUP' || e.aiState === 'WHIRLWIND') {
@@ -3377,6 +6177,29 @@ export class GameEngine {
         );
         e.x = stunnedPos.x;
         e.y = stunnedPos.y;
+        continue;
+      }
+
+      // Frightened enemies panic and flee away from Ghost!
+      if (e.fearTimer > 0) {
+        if (e.aiState === 'WINDUP' || e.aiState === 'WHIRLWIND') {
+          e.aiState = 'COOLDOWN';
+          e.telegraphType = 'NONE';
+          e.stateTimer = Math.max(e.stateTimer, 0.3);
+        }
+        const isRooted = e.rootTimer > 0;
+        const fleeAngle = Math.atan2(e.y - this.player.y, e.x - this.player.x);
+        const fleeSpeed = isRooted ? 0 : e.speed * e.slowFactor * 0.88;
+        e.vx = Math.cos(fleeAngle) * fleeSpeed;
+        e.vy = Math.sin(fleeAngle) * fleeSpeed;
+        e.facingX = Math.cos(fleeAngle) >= 0 ? 1 : -1;
+        e.walkPhase += dt * 13;
+        const fearPos = this.resolveEnemyRampartCollision(
+          this.resolveWorldCollision(e.x + e.vx * dt, e.y + e.vy * dt, e.radius),
+          e.radius
+        );
+        e.x = fearPos.x;
+        e.y = fearPos.y;
         continue;
       }
 
@@ -3806,10 +6629,48 @@ export class GameEngine {
       }
     }
 
+    // Ghost Passive 1: Ethereal Body (phase evasion + Restless Spirit surge!)
+    if (p.characterId === CharacterId.Ghost) {
+      const astralVeil = this.activeBlessingIds.has('ghost_ethereal_veil') ? 0.12 : 0;
+      const evadeChance = Math.min(
+        0.78,
+        0.24 + ranks.pathA * 0.025 + astralVeil + (p.nightmareTimer > 0 ? 0.1 : 0)
+      );
+      if (Math.random() < evadeChance) {
+        soundEngine.playDash();
+        p.invulnTimer = 0.32;
+        this.afterimages.push({
+          x: p.x,
+          y: p.y,
+          facingX: p.facingX,
+          color: '#C084FC',
+          life: 0.36,
+          maxLife: 0.36,
+          archetype: 'GHOST',
+        });
+        this.triggerRestlessSpirit();
+        this.spawnPopup(p.x, p.y - 28, 'PHASE!', '#67E8F9', 1.0);
+        this.emitHudSnapshot();
+        return;
+      }
+    }
+
     const isSkeleton = p.characterId === CharacterId.Skeleton;
     const isZombie = p.characterId === CharacterId.Zombie;
     const isGnome = p.characterId === CharacterId.Gnome;
+    const isGhost = p.characterId === CharacterId.Ghost;
     let dmg = incomingDmg;
+
+    // Ghost Passive 1: Ethereal Body innate physical attack resistance
+    if (isGhost) {
+      const etherealGuard = Math.min(
+        0.52,
+        0.2 +
+          ranks.pathA * 0.03 +
+          (this.activeBlessingIds.has('ghost_ethereal_veil') ? 0.12 : 0)
+      );
+      dmg *= 1 - etherealGuard;
+    }
 
     // Skeleton Passive 1: Eternal Framework + Calcified Marrow pathA (+3% guard per rank)
     if (isSkeleton) {
@@ -3831,6 +6692,18 @@ export class GameEngine {
       }
       dmg *= 0.2;
       ribBlocked = true;
+      this.slashes.push({
+        x: p.x,
+        y: p.y,
+        angle: 0,
+        radius: 58,
+        arcSpread: Math.PI * 2,
+        color: '#E2E8F0',
+        life: 0.26,
+        maxLife: 0.26,
+        flip: false,
+        kind: 'SKELETON_RIBCAGE_BURST',
+      });
       if (this.activeBlessingIds.has('skel_skill_ribcage_shield')) {
         this.shockwaves.push({
           x: p.x,
@@ -4022,19 +6895,91 @@ export class GameEngine {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const pr = this.projectiles[i];
       pr.life -= dt;
-      pr.x += pr.vx * dt;
-      pr.y += pr.vy * dt;
 
-      if (pr.fromPlayer) {
-        // Player Bone Spear & Dark Wave break destructible urns/crates along their path
-        this.hitDestructibleProps(pr.x, pr.y, pr.radius + 8);
+      // Ghost Spirit Orb: orbits Ghost briefly before launching & homing onto nearest enemy!
+      if (pr.kind === 'PLAYER_SPIRIT_ORB') {
+        if (pr.orbitTimer !== undefined && pr.orbitTimer > 0) {
+          pr.orbitTimer -= dt;
+          pr.orbitAngle = (pr.orbitAngle ?? pr.angle) + dt * 6.2;
+          const orbR = pr.orbitRadius ?? 56;
+          pr.x = this.player.x + Math.cos(pr.orbitAngle) * orbR;
+          pr.y = this.player.y + Math.sin(pr.orbitAngle) * orbR;
+          pr.angle = pr.orbitAngle + Math.PI * 0.5;
+          if (pr.orbitTimer <= 0) {
+            const target = this.findNearestEnemy(pr.x, pr.y, 460);
+            const launchAng = target
+              ? Math.atan2(target.y - pr.y, target.x - pr.x)
+              : pr.orbitAngle;
+            pr.angle = launchAng;
+            pr.vx = Math.cos(launchAng) * 520;
+            pr.vy = Math.sin(launchAng) * 520;
+          }
+        } else {
+          const target = this.findNearestEnemy(pr.x, pr.y, 380);
+          if (target) {
+            const desired = Math.atan2(target.y - pr.y, target.x - pr.x);
+            const diff = Math.atan2(Math.sin(desired - pr.angle), Math.cos(desired - pr.angle));
+            pr.angle += Math.max(-7.5 * dt, Math.min(7.5 * dt, diff));
+            const spd = 540;
+            pr.vx = Math.cos(pr.angle) * spd;
+            pr.vy = Math.sin(pr.angle) * spd;
+          }
+          pr.x += pr.vx * dt;
+          pr.y += pr.vy * dt;
+        }
+      } else {
+        pr.x += pr.vx * dt;
+        pr.y += pr.vy * dt;
       }
 
-      // Dark Wave passes over low props and only expires on outer room walls or lifetime; Bone Spear stops on walls/solid pillars
-      const blocked =
-        pr.kind === 'PLAYER_DARK_WAVE'
-          ? !this.isPointInsideWalkableArea(pr.x, pr.y)
-          : this.isPointBlockedByWallOrProp(pr.x, pr.y);
+      if (pr.fromPlayer) {
+        // Player projectiles break destructible urns/crates & emit 60fps slipstream trails
+        this.hitDestructibleProps(pr.x, pr.y, pr.radius + 8);
+        if (
+          (pr.kind === 'PLAYER_BONE_SPEAR' ||
+            pr.kind === 'PLAYER_DARK_WAVE' ||
+            pr.kind === 'PLAYER_SPECTRAL_BOLT' ||
+            pr.kind === 'PLAYER_SPIRIT_ORB') &&
+          Math.random() < 0.58 &&
+          this.particles.length < 238
+        ) {
+          const isGhostProj =
+            pr.kind === 'PLAYER_SPECTRAL_BOLT' || pr.kind === 'PLAYER_SPIRIT_ORB';
+          const isWave = pr.kind === 'PLAYER_DARK_WAVE';
+          this.particles.push({
+            x: pr.x - Math.cos(pr.angle) * 10 + (Math.random() - 0.5) * (isWave ? 26 : 9),
+            y: pr.y - Math.sin(pr.angle) * 10 + (Math.random() - 0.5) * (isWave ? 26 : 9),
+            vx: -Math.cos(pr.angle) * 55,
+            vy: -Math.sin(pr.angle) * 55,
+            size: isGhostProj ? 3.5 : isWave ? 3.8 : 2.5,
+            color: isGhostProj
+              ? Math.random() < 0.5
+                ? '#67E8F9'
+                : '#D8B4FE'
+              : isWave
+              ? '#C084FC'
+              : '#7DD3FC',
+            life: 0.2,
+            maxLife: 0.2,
+            gravity: 0,
+            fade: true,
+            kind: isGhostProj ? 'ECTO_SPARK' : isWave ? 'SOUL_WISP' : 'SLASH_STREAK',
+            rot: pr.angle + Math.PI,
+            len: 13,
+            thick: 1.9,
+            drag: 4.5,
+          });
+        }
+      }
+
+      // Spectral Bolt, Spirit Orb & Dark Wave phase over interior props and only expire on outer room walls or lifetime
+      const phasesOverProps =
+        pr.kind === 'PLAYER_DARK_WAVE' ||
+        pr.kind === 'PLAYER_SPECTRAL_BOLT' ||
+        pr.kind === 'PLAYER_SPIRIT_ORB';
+      const blocked = phasesOverProps
+        ? !this.isPointInsideWalkableArea(pr.x, pr.y)
+        : this.isPointBlockedByWallOrProp(pr.x, pr.y);
 
       if (pr.life <= 0 || blocked) {
         this.spawnBurst(pr.x, pr.y, pr.color, 5, 65);
@@ -4057,7 +7002,7 @@ export class GameEngine {
                 ? 0.25
                 : 0;
             const bonusCrit =
-              (pr.kind === 'PLAYER_BONE_SPEAR' ? 0.15 + spearTwinBonus : 0.25) + opp.bonusCrit;
+              (pr.kind === 'PLAYER_BONE_SPEAR' ? 0.15 + spearTwinBonus : 0.22) + opp.bonusCrit;
             const roll = this.rollPhysicalAttack(
               pr.damage * opp.dmgMult,
               bonusCrit,
@@ -4067,6 +7012,38 @@ export class GameEngine {
             this.damageEnemy(enemy, roll.damage, true, pr.x, pr.y, true, roll.isCrit);
             if (pr.kind === 'PLAYER_ENCHANTED_DAGGER') {
               this.applyGoblinPoisonIfActive(enemy);
+            }
+            if (pr.kind === 'PLAYER_SPECTRAL_BOLT' || pr.kind === 'PLAYER_SPIRIT_ORB') {
+              this.applyGhostChillIfActive(enemy);
+              this.slashes.push({
+                x: enemy.x,
+                y: enemy.y,
+                angle: pr.angle,
+                radius: 30,
+                arcSpread: 0,
+                color: roll.isCrit ? '#67E8F9' : '#C084FC',
+                life: 0.2,
+                maxLife: 0.2,
+                flip: false,
+                kind: 'GHOST_IMPACT_RING',
+                scale: roll.isCrit ? 1.3 : 1.0,
+                isCrit: roll.isCrit,
+              });
+            } else if (pr.kind === 'PLAYER_BONE_SPEAR' || pr.kind === 'PLAYER_DARK_WAVE') {
+              this.slashes.push({
+                x: enemy.x,
+                y: enemy.y,
+                angle: pr.angle,
+                radius: 28,
+                arcSpread: 0,
+                color: roll.isCrit ? '#FDE047' : pr.color,
+                life: 0.18,
+                maxLife: 0.18,
+                flip: false,
+                kind: 'SKELETON_IMPACT_FLASH',
+                scale: roll.isCrit ? 1.3 : 1.0,
+                isCrit: roll.isCrit,
+              });
             }
             this.spawnBurst(enemy.x, enemy.y, pr.color, 6, 80);
 
@@ -4129,6 +7106,20 @@ export class GameEngine {
             pr.damage * (1.8 + ranks.pathD * 0.2) * (overcharged ? 2.0 : 1.0)
           );
           soundEngine.playUiClick(780);
+          this.slashes.push({
+            x: pr.x,
+            y: pr.y,
+            fromX: this.player.x,
+            fromY: this.player.y - 6,
+            angle: newAngle,
+            radius: 0,
+            arcSpread: 0,
+            color: '#38BDF8',
+            life: 0.22,
+            maxLife: 0.22,
+            flip: false,
+            kind: 'GNOME_MAGNETIC_ARC',
+          });
           this.spawnBurst(pr.x, pr.y, '#38BDF8', 8, 90);
           this.spawnPopup(pr.x, pr.y - 16, 'REDIRECT!', '#7DD3FC', 0.88);
           continue;
@@ -4143,6 +7134,18 @@ export class GameEngine {
           (this.activeBlessingIds.has('skel_skill_bone_storm') ? 76 : 58)
       ) {
         soundEngine.playBoneBreak();
+        this.slashes.push({
+          x: pr.x,
+          y: pr.y,
+          angle: pr.angle,
+          radius: 26,
+          arcSpread: 0,
+          color: '#A5B4FC',
+          life: 0.16,
+          maxLife: 0.16,
+          flip: false,
+          kind: 'SKELETON_IMPACT_FLASH',
+        });
         this.spawnBurst(pr.x, pr.y, '#A5B4FC', 6, 75);
         this.spawnPopup(pr.x, pr.y - 12, 'PARRY', '#A5B4FC', 0.82);
         this.projectiles.splice(i, 1);
@@ -4164,6 +7167,18 @@ export class GameEngine {
           this.player.unyieldingStacks = Math.min(maxUnyielding, this.player.unyieldingStacks + 1);
           this.player.unyieldingTimer = 5.0;
         }
+        this.slashes.push({
+          x: this.player.x,
+          y: this.player.y,
+          angle: 0,
+          radius: 56,
+          arcSpread: Math.PI * 2,
+          color: '#E2E8F0',
+          life: 0.24,
+          maxLife: 0.24,
+          flip: false,
+          kind: 'SKELETON_RIBCAGE_BURST',
+        });
         if (this.activeBlessingIds.has('skel_skill_ribcage_shield')) {
           this.shockwaves.push({
             x: this.player.x,
@@ -4264,6 +7279,7 @@ export class GameEngine {
   private detonateTrap(trap: ExplosiveTrapEntity): void {
     soundEngine.playBossSlam();
     this.shakeMag = Math.max(this.shakeMag, 9.5);
+    this.hitstopTimer = Math.max(this.hitstopTimer, 0.025);
     this.shockwaves.push({
       x: trap.x,
       y: trap.y,
@@ -4272,8 +7288,44 @@ export class GameEngine {
       life: 0.34,
       maxLife: 0.34,
     });
-    this.spawnBurst(trap.x, trap.y, '#FDE047', 18, 165);
-    this.spawnBurst(trap.x, trap.y, '#FB923C', 12, 130);
+    this.slashes.push({
+      x: trap.x,
+      y: trap.y,
+      angle: Math.random() * Math.PI,
+      radius: trap.blastRadius,
+      arcSpread: Math.PI * 2,
+      color: '#F97316',
+      life: 0.36,
+      maxLife: 0.36,
+      flip: false,
+      kind: 'GOBLIN_TRAP_BLAST',
+    });
+    // Flying brass gear shrapnel & fiery sparks
+    for (let i = 0; i < 16; i++) {
+      if (this.particles.length > 240) break;
+      const a = (i / 16) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
+      const isShrapnel = i % 2 === 0;
+      const spd = (isShrapnel ? 185 : 140) + Math.random() * 110;
+      const life = isShrapnel ? 0.32 + Math.random() * 0.14 : 0.28 + Math.random() * 0.14;
+      this.particles.push({
+        x: trap.x,
+        y: trap.y,
+        vx: Math.cos(a) * spd,
+        vy: Math.sin(a) * spd,
+        size: isShrapnel ? 4.2 : 9.5,
+        color: isShrapnel ? (i % 4 === 0 ? '#FDE047' : '#FB923C') : '#292524',
+        life,
+        maxLife: life,
+        gravity: 0,
+        fade: true,
+        kind: isShrapnel ? 'BRASS_SHRAPNEL' : 'SHADOW_PUFF',
+        rot: a,
+        vRot: (Math.random() - 0.5) * 22,
+        len: 6.5,
+        thick: 2.8,
+        drag: isShrapnel ? 4.8 : 3.4,
+      });
+    }
 
     for (const enemy of [...this.world.enemies]) {
       if (!enemy || enemy.hp <= 0) continue;
@@ -4431,6 +7483,132 @@ export class GameEngine {
     }
   }
 
+  private updateGhostMistZones(dt: number): void {
+    for (let i = this.ghostMistZones.length - 1; i >= 0; i--) {
+      const m = this.ghostMistZones[i];
+      m.life -= dt;
+      m.tickTimer -= dt;
+      if (m.life <= 0) {
+        this.ghostMistZones.splice(i, 1);
+        continue;
+      }
+      if (m.tickTimer <= 0) {
+        m.tickTimer = 0.45;
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (Math.hypot(enemy.x - m.x, enemy.y - m.y) <= m.radius + enemy.radius) {
+            this.damageEnemy(enemy, m.damagePerTick, false, m.x, m.y);
+            enemy.slowTimer = Math.max(enemy.slowTimer, 1.1);
+            enemy.slowFactor = Math.min(enemy.slowFactor, 0.78);
+            this.applyGhostChillIfActive(enemy);
+          }
+        }
+      }
+    }
+  }
+
+  private updateDeathsPassageRifts(dt: number): void {
+    for (let i = this.deathsPassageRifts.length - 1; i >= 0; i--) {
+      const rift = this.deathsPassageRifts[i];
+      rift.life -= dt;
+      rift.tickTimer -= dt;
+
+      // Continuous vortex gravity pulling enemies into the center prior to detonation!
+      if (!rift.detonated && rift.life > 0.35) {
+        for (const enemy of this.world.enemies) {
+          if (!enemy || enemy.hp <= 0 || enemy.kind === EnemyKind.TrainingDummy) continue;
+          const dx = rift.x - enemy.x;
+          const dy = rift.y - enemy.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > 14 && dist <= rift.radius + enemy.radius + 36) {
+            const pullForce = enemy.kind === EnemyKind.SkeletonBoss ? 120 : 235;
+            const resolved = this.resolveWorldCollision(
+              enemy.x + (dx / dist) * pullForce * dt,
+              enemy.y + (dy / dist) * pullForce * dt,
+              enemy.radius
+            );
+            enemy.x = resolved.x;
+            enemy.y = resolved.y;
+          }
+        }
+
+        if (rift.tickTimer <= 0) {
+          rift.tickTimer = 0.32;
+          for (const enemy of [...this.world.enemies]) {
+            if (!enemy || enemy.hp <= 0) continue;
+            if (Math.hypot(enemy.x - rift.x, enemy.y - rift.y) <= rift.radius + enemy.radius) {
+              this.damageEnemy(enemy, rift.pullDamage, false, rift.x, rift.y);
+              this.applyGhostChillIfActive(enemy);
+            }
+          }
+        }
+      }
+
+      // Enormous spiritual explosion at climax of the rift!
+      if (!rift.detonated && rift.life <= 0.35) {
+        rift.detonated = true;
+        soundEngine.playBossSlam();
+        this.hitstopTimer = 0.065;
+        this.shakeMag = Math.max(this.shakeMag, 14);
+        this.slashes.push({
+          x: rift.x,
+          y: rift.y,
+          angle: 0,
+          radius: rift.radius * 1.12,
+          arcSpread: Math.PI * 2,
+          color: '#E879F9',
+          life: 0.46,
+          maxLife: 0.46,
+          flip: false,
+          kind: 'GHOST_PASSAGE_DETONATION',
+        });
+        this.shockwaves.push({
+          x: rift.x,
+          y: rift.y,
+          maxRadius: rift.radius * 1.15,
+          color: '#67E8F9',
+          life: 0.38,
+          maxLife: 0.38,
+        });
+        for (let s = 0; s < 20; s++) {
+          if (this.particles.length > 240) break;
+          const sa = (s / 20) * Math.PI * 2;
+          const sspd = 175 + Math.random() * 130;
+          this.particles.push({
+            x: rift.x,
+            y: rift.y,
+            vx: Math.cos(sa) * sspd,
+            vy: Math.sin(sa) * sspd,
+            size: 4.5,
+            color: s % 2 === 0 ? '#67E8F9' : '#E879F9',
+            life: 0.42,
+            maxLife: 0.42,
+            gravity: 0,
+            fade: true,
+            kind: 'ECTO_SPARK',
+            rot: sa,
+            vRot: 16,
+            drag: 3.8,
+          });
+        }
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (Math.hypot(enemy.x - rift.x, enemy.y - rift.y) <= rift.radius * 1.12 + enemy.radius) {
+            const roll = this.rollPhysicalAttack(rift.explosionDamage, 0.35);
+            this.damageEnemy(enemy, roll.damage, true, rift.x, rift.y, true, roll.isCrit);
+            this.applyEnemyFear(enemy, 1.8);
+            this.applyGhostChillIfActive(enemy);
+          }
+        }
+        this.hitDestructibleProps(rift.x, rift.y, rift.radius * 1.1);
+      }
+
+      if (rift.life <= 0) {
+        this.deathsPassageRifts.splice(i, 1);
+      }
+    }
+  }
+
   private applyGoblinPoisonIfActive(enemy: EnemyEntity): void {
     if (this.player.characterId !== CharacterId.Goblin) return;
     const hasNightshade = this.activeBlessingIds.has('gob_viper_toxin');
@@ -4467,9 +7645,12 @@ export class GameEngine {
     rawDamage: number,
     heavy: boolean,
     bonusCritChance = 0,
-    isZombieAttack = false
+    isZombieAttack = false,
+    skeletonSlash?: SlashEffect,
+    isZombieFinisher = false
   ): void {
     let hitAny = false;
+    let landedCrit = false;
     for (const enemy of [...this.world.enemies]) {
       if (enemy.hp <= 0) continue;
       if (this.isEnemyInArc(enemy, ox, oy, angle, reach, halfSpread)) {
@@ -4481,26 +7662,221 @@ export class GameEngine {
           opp.active
         );
         this.damageEnemy(enemy, roll.damage, true, ox, oy, heavy, roll.isCrit);
-        this.applyInfectiousTouch(enemy, 1);
+        this.applyInfectiousTouch(enemy, isZombieFinisher ? 2 : 1);
         this.applyGoblinPoisonIfActive(enemy);
+        this.applyGhostChillIfActive(enemy);
         hitAny = true;
+        if (roll.isCrit) landedCrit = true;
+
+        if (skeletonSlash) {
+          const isGobImpact = this.player.characterId === CharacterId.Goblin;
+          const isGnomeImpact = this.player.characterId === CharacterId.Gnome;
+          const isGhostImpact = this.player.characterId === CharacterId.Ghost;
+          const isGobVenom =
+            isGobImpact &&
+            (this.player.poisonBladesTimer > 0 || this.activeBlessingIds.has('gob_viper_toxin'));
+          const isCritImpact = roll.isCrit || Boolean(skeletonSlash.isCrit);
+          const flashLife = isCritImpact ? 0.22 : 0.15;
+          const flashColor = isGhostImpact
+            ? isCritImpact
+              ? '#67E8F9'
+              : '#C084FC'
+            : isGnomeImpact
+            ? isCritImpact
+              ? '#FDE047'
+              : '#FB923C'
+            : isGobImpact
+            ? isGobVenom
+              ? '#A3E635'
+              : isCritImpact
+              ? '#FDE047'
+              : '#FBBF24'
+            : isCritImpact
+            ? '#FDE047'
+            : '#7DD3FC';
+
+          this.slashes.push({
+            x: enemy.x - Math.cos(angle) * 6,
+            y: enemy.y - Math.sin(angle) * 6,
+            angle,
+            radius: isGnomeImpact ? 32 : isGhostImpact ? 30 : 26,
+            arcSpread: 0,
+            color: flashColor,
+            life: flashLife,
+            maxLife: flashLife,
+            flip: false,
+            kind: isGhostImpact
+              ? 'GHOST_IMPACT_RING'
+              : isGnomeImpact
+              ? 'GNOME_IMPACT_CRACK'
+              : 'SKELETON_IMPACT_FLASH',
+            scale:
+              (isCritImpact ? 1.32 : 0.95) *
+              (this.player.colossusTimer > 0 || this.player.mountainHeartTimer > 0 ? 1.28 : 1.0),
+            isCrit: isCritImpact,
+          });
+
+          if (isGhostImpact) {
+            for (let g = 0; g < (isCritImpact ? 6 : 4); g++) {
+              if (this.particles.length > 240) break;
+              const ga = angle + (Math.random() - 0.5) * 1.6;
+              const gs = 135 + Math.random() * 110;
+              const glife = 0.2 + Math.random() * 0.12;
+              this.particles.push({
+                x: enemy.x,
+                y: enemy.y,
+                vx: Math.cos(ga) * gs,
+                vy: Math.sin(ga) * gs,
+                size: 3.4,
+                color: g % 2 === 0 ? '#67E8F9' : '#D8B4FE',
+                life: glife,
+                maxLife: glife,
+                gravity: 0,
+                fade: true,
+                kind: 'ECTO_SPARK',
+                rot: ga,
+                vRot: (Math.random() - 0.5) * 16,
+                drag: 5.0,
+              });
+            }
+          } else if (isGnomeImpact) {
+            for (let g = 0; g < (isCritImpact ? 6 : 4); g++) {
+              if (this.particles.length > 240) break;
+              const ga = angle + (Math.random() - 0.5) * 1.6;
+              const gs = 130 + Math.random() * 110;
+              const glife = 0.22 + Math.random() * 0.12;
+              const isStone = g % 2 === 0;
+              this.particles.push({
+                x: enemy.x,
+                y: enemy.y,
+                vx: Math.cos(ga) * gs,
+                vy: Math.sin(ga) * gs,
+                size: isStone ? 4.2 : 3.0,
+                color: isStone ? '#A8A29E' : isCritImpact ? '#FDE047' : '#FB923C',
+                life: glife,
+                maxLife: glife,
+                gravity: 0,
+                fade: true,
+                kind: isStone ? 'STONE_CHUNK' : 'RUNE_SPARK',
+                rot: ga,
+                vRot: (Math.random() - 0.5) * 18,
+                len: 6.5,
+                thick: 4.0,
+                drag: 5.2,
+              });
+            }
+          } else if (isGobImpact) {
+            for (let g = 0; g < (isCritImpact ? 6 : 4); g++) {
+              if (this.particles.length > 240) break;
+              const ga = angle + (Math.random() - 0.5) * 1.5;
+              const gs = 155 + Math.random() * 120;
+              const glife = 0.17 + Math.random() * 0.1;
+              const dropVenom = isGobVenom && g % 2 === 1;
+              this.particles.push({
+                x: enemy.x,
+                y: enemy.y,
+                vx: Math.cos(ga) * (dropVenom ? gs * 0.65 : gs),
+                vy: Math.sin(ga) * (dropVenom ? gs * 0.65 : gs),
+                size: 2.6,
+                color: dropVenom ? '#A3E635' : isCritImpact ? '#FEF08A' : '#FBBF24',
+                life: glife,
+                maxLife: glife,
+                gravity: 0,
+                fade: true,
+                kind: dropVenom ? 'VENOM_DROP' : 'SLASH_STREAK',
+                rot: ga,
+                len: dropVenom ? 6.5 : 13 + Math.random() * 6,
+                thick: dropVenom ? 2.8 : 2.1,
+                drag: 6.5,
+              });
+            }
+          } else {
+            // Crisp bone splinters flying off struck enemy
+            for (let b = 0; b < (isCritImpact ? 5 : 3); b++) {
+              if (this.particles.length > 240) break;
+              const ba = angle + (Math.random() - 0.5) * 1.4;
+              const bs = 135 + Math.random() * 110;
+              const blife = 0.2 + Math.random() * 0.12;
+              this.particles.push({
+                x: enemy.x,
+                y: enemy.y,
+                vx: Math.cos(ba) * bs,
+                vy: Math.sin(ba) * bs,
+                size: 2.5,
+                color: b === 0 && isCritImpact ? '#FDE047' : '#F8FAFC',
+                life: blife,
+                maxLife: blife,
+                gravity: 0,
+                fade: true,
+                kind: 'BONE_SHARD',
+                rot: ba,
+                vRot: (Math.random() - 0.5) * 20,
+                len: 6 + Math.random() * 4,
+                thick: 2.4,
+                drag: 5.5,
+              });
+            }
+          }
+        }
 
         if (isZombieAttack) {
+          const isAbom = this.player.abominationTimer > 0;
+          const isEmpowered = isZombieFinisher || roll.isCrit || isAbom;
+          const burstLife = isEmpowered ? 0.34 : 0.27;
           this.slashes.push({
             x: enemy.x,
             y: enemy.y,
             angle: angle + (Math.random() - 0.5) * 0.35,
-            radius: 46 * (this.player.abominationTimer > 0 ? 1.4 : 1.0),
+            radius: (isEmpowered ? 44 : 36) * (isAbom ? 1.28 : 1.0),
             arcSpread: 0,
             color: '#A3E635',
-            life: 0.32,
-            maxLife: 0.32,
+            life: burstLife,
+            maxLife: burstLife,
             flip: Math.random() < 0.5,
             kind: 'ZOMBIE_POISON_BURST',
-            scale: this.player.abominationTimer > 0 ? 1.35 : 1.0,
+            scale: isAbom ? 1.32 : isZombieFinisher ? 1.16 : 1.0,
+            isCrit: isEmpowered,
           });
-          this.spawnBurst(enemy.x, enemy.y, '#A3E635', 6, 60);
+          for (let z = 0; z < (isEmpowered ? 6 : 4); z++) {
+            if (this.particles.length > 240) break;
+            const za = angle + (Math.random() - 0.5) * 2.1;
+            const isPuff = z % 2 === 0;
+            const zs = isPuff ? 45 + Math.random() * 40 : 120 + Math.random() * 95;
+            const zLife = isPuff ? 0.34 + Math.random() * 0.14 : 0.22 + Math.random() * 0.12;
+            this.particles.push({
+              x: enemy.x,
+              y: enemy.y,
+              vx: Math.cos(za) * zs,
+              vy: Math.sin(za) * zs - (isPuff ? 12 : 0),
+              size: isPuff ? 7 + Math.random() * 3.5 : 3.2,
+              color: isPuff ? '#4ADE80' : '#BEF264',
+              life: zLife,
+              maxLife: zLife,
+              gravity: 0,
+              fade: true,
+              kind: isPuff ? 'SPORE_PUFF' : 'VENOM_DROP',
+              rot: za,
+              vRot: 0,
+              len: 6.5,
+              thick: 2.8,
+              drag: isPuff ? 3.5 : 5.0,
+            });
+          }
         }
+      }
+    }
+    if (skeletonSlash && landedCrit) {
+      skeletonSlash.isCrit = true;
+      this.hitstopTimer = Math.max(this.hitstopTimer, 0.024);
+      this.shakeMag = Math.max(this.shakeMag, 5.2);
+    } else if (skeletonSlash && hitAny) {
+      this.shakeMag = Math.max(this.shakeMag, 2.4);
+    } else if (isZombieAttack && hitAny) {
+      if (isZombieFinisher || landedCrit) {
+        this.hitstopTimer = Math.max(this.hitstopTimer, 0.022);
+        this.shakeMag = Math.max(this.shakeMag, 4.8);
+      } else {
+        this.shakeMag = Math.max(this.shakeMag, 2.2);
       }
     }
     if (hitAny && (this.player.abominationTimer > 0 || this.player.colossusTimer > 0)) {
@@ -4948,6 +8324,8 @@ export class GameEngine {
         ? '#F59E0B'
         : this.player.characterId === CharacterId.Gnome
         ? '#FB923C'
+        : this.player.characterId === CharacterId.Ghost
+        ? '#C084FC'
         : '#4ADE80';
     this.spawnBurst(prop.x, prop.y - 20, burstColor, 14, 95);
     this.offerBlessingsAndAdvanceFloor(null);
@@ -4994,7 +8372,12 @@ export class GameEngine {
     this.emitHudSnapshot();
   }
 
-  private resolveWorldCollision(nx: number, ny: number, radius: number): { x: number; y: number } {
+  private resolveWorldCollision(
+    nx: number,
+    ny: number,
+    radius: number,
+    ignoreProps = false
+  ): { x: number; y: number } {
     const activeRoom = this.world.rooms.find((r) => r.id === this.currentRoomId);
 
     let clampedX = nx;
@@ -5045,21 +8428,23 @@ export class GameEngine {
       clampedY = bestY;
     }
 
-    for (const prop of this.world.props) {
-      if (!prop.solid) continue;
-      const halfW = prop.w * 0.44;
-      const halfH = prop.h * 0.4;
-      const nearX = Math.max(prop.x - halfW, Math.min(prop.x + halfW, clampedX));
-      const nearY = Math.max(prop.y - halfH, Math.min(prop.y + halfH, clampedY));
-      const dx = clampedX - nearX;
-      const dy = clampedY - nearY;
-      const dist = Math.hypot(dx, dy);
-      if (dist < radius) {
-        if (dist > 0.001) {
-          clampedX = nearX + (dx / dist) * radius;
-          clampedY = nearY + (dy / dist) * radius;
-        } else {
-          clampedY = prop.y + halfH + radius;
+    if (!ignoreProps) {
+      for (const prop of this.world.props) {
+        if (!prop.solid) continue;
+        const halfW = prop.w * 0.44;
+        const halfH = prop.h * 0.4;
+        const nearX = Math.max(prop.x - halfW, Math.min(prop.x + halfW, clampedX));
+        const nearY = Math.max(prop.y - halfH, Math.min(prop.y + halfH, clampedY));
+        const dx = clampedX - nearX;
+        const dy = clampedY - nearY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < radius) {
+          if (dist > 0.001) {
+            clampedX = nearX + (dx / dist) * radius;
+            clampedY = nearY + (dy / dist) * radius;
+          } else {
+            clampedY = prop.y + halfH + radius;
+          }
         }
       }
     }
@@ -5137,7 +8522,36 @@ export class GameEngine {
         if (eff.totalDrain > 0) {
           this.healPlayer(eff.totalDrain);
           soundEngine.playHeal();
-          this.spawnBurst(this.player.x, this.player.y, '#4ADE80', 20, 110);
+          this.slashes.push({
+            x: this.player.x,
+            y: this.player.y,
+            angle: 0,
+            radius: 84,
+            arcSpread: Math.PI * 2,
+            color: '#4ADE80',
+            life: 0.36,
+            maxLife: 0.36,
+            flip: false,
+            kind: 'ZOMBIE_UNDYING_PULSE',
+          });
+          for (let h = 0; h < 12; h++) {
+            if (this.particles.length > 240) break;
+            const ha = (h / 12) * Math.PI * 2;
+            this.particles.push({
+              x: this.player.x + Math.cos(ha) * 16,
+              y: this.player.y + Math.sin(ha) * 12,
+              vx: Math.cos(ha) * 65,
+              vy: Math.sin(ha) * 50 - 38,
+              size: 5.5,
+              color: h % 2 === 0 ? '#4ADE80' : '#BEF264',
+              life: 0.48,
+              maxLife: 0.48,
+              gravity: 0,
+              fade: true,
+              kind: 'NECRO_CROSS',
+              drag: 2.5,
+            });
+          }
           this.spawnPopup(this.player.x, this.player.y - 28, `+${eff.totalDrain} HP`, '#4ADE80', 1.3);
         }
       }
@@ -5208,9 +8622,20 @@ export class GameEngine {
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const pt = this.particles[i];
       pt.life -= dt;
+      if (pt.life <= 0) {
+        this.particles.splice(i, 1);
+        continue;
+      }
       pt.x += pt.vx * dt;
       pt.y += pt.vy * dt;
-      if (pt.life <= 0) this.particles.splice(i, 1);
+      if (pt.drag) {
+        const damp = Math.max(0, 1 - dt * pt.drag);
+        pt.vx *= damp;
+        pt.vy *= damp;
+      }
+      if (pt.vRot !== undefined && pt.rot !== undefined) {
+        pt.rot += pt.vRot * dt;
+      }
     }
   }
 
@@ -5311,6 +8736,10 @@ export class GameEngine {
         this.player.characterId === CharacterId.Gnome
           ? Math.round(this.getGnomeResolveDefenseBonus() * 100)
           : 0,
+      restlessTimer: +this.player.restlessTimer.toFixed(1),
+      soulDrainTimer: +this.player.soulDrainTimer.toFixed(1),
+      possessionTimer: +this.player.possessionTimer.toFixed(1),
+      nightmareTimer: +this.player.nightmareTimer.toFixed(1),
       ultCharge: Math.floor(this.player.ultCharge),
       ultCooldown: +this.player.ultCooldown.toFixed(1),
       ultMaxCooldown: this.player.ultMaxCooldown,
@@ -5374,6 +8803,8 @@ export class GameEngine {
       daggerRains: this.daggerRains,
       earthenGrasps: this.earthenGrasps,
       stoneRamparts: this.stoneRamparts,
+      deathsPassageRifts: this.deathsPassageRifts,
+      ghostMistZones: this.ghostMistZones,
       pickups: this.pickups,
       minions: this.minions,
       enemies: this.world.enemies,

@@ -28,6 +28,11 @@ import {
   SoulShardIcon,
   UltimateSkillIcon,
 } from './SkillIcons';
+import { GhostAttackPreview } from './GhostAttackPreview';
+import { GnomeAttackPreview } from './GnomeAttackPreview';
+import { GoblinAttackPreview } from './GoblinAttackPreview';
+import { SkeletonAttackPreview } from './SkeletonAttackPreview';
+import { ZombieAttackPreview } from './ZombieAttackPreview';
 
 interface LoadoutModalProps {
   saveData: GuildSaveData;
@@ -56,12 +61,15 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
   const isSkeleton = activeCharId === CharacterId.Skeleton;
   const isGoblin = activeCharId === CharacterId.Goblin;
   const isGnome = activeCharId === CharacterId.Gnome;
+  const isGhost = activeCharId === CharacterId.Ghost;
   const accentTextClass = isSkeleton
     ? 'text-[#7DD3FC]'
     : isGoblin
     ? 'text-[#FDE68A]'
     : isGnome
     ? 'text-[#FDBA74]'
+    : isGhost
+    ? 'text-[#E9D5FF]'
     : 'text-[#86EFAC]';
   const accentBrightTextClass = isSkeleton
     ? 'text-[#38BDF8]'
@@ -69,6 +77,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
     ? 'text-[#FBBF24]'
     : isGnome
     ? 'text-[#FB923C]'
+    : isGhost
+    ? 'text-[#C084FC]'
     : 'text-[#4ADE80]';
   const primaryBtnClass = isSkeleton
     ? 'bg-[#38BDF8] text-[#0B1724]'
@@ -76,6 +86,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
     ? 'bg-[#F59E0B] text-[#170F04]'
     : isGnome
     ? 'bg-[#FB923C] text-[#1C0F06]'
+    : isGhost
+    ? 'bg-[#C084FC] text-[#180B26]'
     : 'bg-[#4ADE80] text-[#0E1912]';
   const equippedCardClass = isSkeleton
     ? 'bg-[#192536] border-[#38BDF8]'
@@ -83,6 +95,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
     ? 'bg-[#2A2015] border-[#F59E0B]'
     : isGnome
     ? 'bg-[#2B1D17] border-[#FB923C]'
+    : isGhost
+    ? 'bg-[#251A36] border-[#C084FC]'
     : 'bg-[#1D2824] border-[#4ADE80]';
 
   const characterLoadout = saveData.loadouts[activeCharId] ?? profile.defaultLoadout;
@@ -144,6 +158,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
     ? profile.baseHp + charRanks.pathA * 11
     : isGnome
     ? profile.baseHp + charRanks.pathA * 26
+    : isGhost
+    ? profile.baseHp + charRanks.pathA * 9
     : profile.baseHp + charRanks.pathA * 24;
   const moveSpeedPreview = Math.round(
     profile.baseSpeed *
@@ -151,6 +167,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
         ? 1 + charRanks.pathE * 0.05
         : isGnome
         ? 1 + charRanks.pathE * 0.04
+        : isGhost
+        ? 1 + charRanks.pathE * 0.055
         : 1)
   );
   const critPctPreview = Math.round((profile.baseCritChance + charRanks.pathC * 0.04) * 100);
@@ -159,6 +177,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
   const skeletonGuardPct = 18 + charRanks.pathA * 3;
   const goblinEvadePct = 25 + charRanks.pathA * 3;
   const gnomeArmorPct = Math.round(22 + charRanks.pathA * 2.5);
+  const ghostEvadePct = Math.round(24 + charRanks.pathA * 2.5);
+  const ghostMagicPct = charRanks.pathB * 14;
 
   return (
     <div
@@ -184,6 +204,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
                     ? 'bg-[#F59E0B] text-[#170F04]'
                     : char.id === CharacterId.Gnome
                     ? 'bg-[#FB923C] text-[#1C0F06]'
+                    : char.id === CharacterId.Ghost
+                    ? 'bg-[#C084FC] text-[#180B26]'
                     : 'bg-[#4ADE80] text-[#0E1912]';
                 return (
                   <button
@@ -238,6 +260,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
                     ? 'border-[#F59E0B]/70'
                     : isGnome
                     ? 'border-[#FB923C]/70'
+                    : isGhost
+                    ? 'border-[#C084FC]/70'
                     : 'border-[#4ADE80]/70'
                 }`}
               >
@@ -303,6 +327,12 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
                       <span>Armor {gnomeArmorPct}%</span>
                       <span className="text-[#5D5470]">·</span>
                       <span>Resolve +42%</span>
+                    </>
+                  ) : isGhost ? (
+                    <>
+                      <span>Phase {ghostEvadePct}%</span>
+                      <span className="text-[#5D5470]">·</span>
+                      <span>Magic +{ghostMagicPct}%</span>
                     </>
                   ) : (
                     <>
@@ -385,32 +415,139 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
               </div>
             </div>
 
-            {/* Zombie Basic Attack Animation Preview */}
-            {!isSkeleton && !isGoblin && !isGnome && (
+            {/* Zombie Basic Attack 60fps Animation Preview */}
+            {!isSkeleton && !isGoblin && !isGnome && !isGhost && (
               <div className="pt-3 border-t border-[#282336] space-y-1.5">
                 <div className="flex items-center justify-between">
                   <div className="text-[11px] font-semibold text-[#86EFAC] flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-[#4ADE80]" />
-                    Basic Attack · Necrotic Claw (8-Frame FX)
+                    Basic Attack · Necrotic Claw (60fps FX)
                   </div>
-                  <span className="text-[10px] text-[#A7F3D0] font-mono-num">0.34s recovery</span>
+                  <span className="text-[10px] text-[#A7F3D0] font-mono-num">3-Hit Combo</span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-[#17241C] border border-[#2B4B36] space-y-2">
                   <p className="text-[11px] text-[#C2D8C9] leading-snug">
-                    Frame-by-frame toxic claw swipe. Connects with sharp impact sparks and bursts lingering poison clouds.
+                    Smooth 3-talon decaying claw swipe with flung venom droplets and spore puffs; every 3rd swing unleashes a virulent rend applying double infection stacks.
                   </p>
                   <div className="flex items-center gap-2.5 pt-0.5">
-                    <div className="relative w-24 h-16 bg-[#081726] rounded-lg border border-[#28573D] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
-                      <img
-                        src="/assets/aistudio/zombie_attack_fx_strip.png"
-                        alt="Zombie basic attack animation frames"
-                        className="w-full h-full object-contain"
-                      />
+                    <div className="relative w-24 h-16 bg-[#091812] rounded-lg border border-[#28573D] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                      <ZombieAttackPreview />
                     </div>
                     <div className="text-[10px] text-[#86EFAC] space-y-0.5 font-mono-num leading-tight">
-                      <div>Reach: 62 (84 in Abomination)</div>
-                      <div>Impact: Virulent Infection Stacks</div>
-                      <div>Effects: Spore Plumes &amp; Droplets</div>
+                      <div>Reach: 62 · 72 on 3rd (94 Abomination)</div>
+                      <div>3rd Strike: +20% DMG &amp; 2x Infection</div>
+                      <div>Effects: 3-Talon Rake &amp; Spore Burst</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Skeleton Basic Attack 60fps Animation Preview */}
+            {isSkeleton && (
+              <div className="pt-3 border-t border-[#282336] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold text-[#7DD3FC] flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#38BDF8]" />
+                    Basic Attack · Sharpened Bone-Blade (60fps FX)
+                  </div>
+                  <span className="text-[10px] text-[#BAE6FD] font-mono-num">3-Hit Combo</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-[#131E2E] border border-[#24405E] space-y-2">
+                  <p className="text-[11px] text-[#C4D7EC] leading-snug">
+                    Swift alternating bone-blade crescent combo with flying ivory splinters; every 3rd swing unleashes a wider critical-empowered cleave.
+                  </p>
+                  <div className="flex items-center gap-2.5 pt-0.5">
+                    <div className="relative w-24 h-16 bg-[#091322] rounded-lg border border-[#275078] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                      <SkeletonAttackPreview />
+                    </div>
+                    <div className="text-[10px] text-[#7DD3FC] space-y-0.5 font-mono-num leading-tight">
+                      <div>Reach: 68 · 80 on 3rd (96 Colossus)</div>
+                      <div>3rd Strike: +22% DMG &amp; +25% Crit</div>
+                      <div>Effects: Bone Shards &amp; Cross-Flash</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Goblin Basic Attack & Assassin Blades 60fps Animation Preview */}
+            {isGoblin && (
+              <div className="pt-3 border-t border-[#282336] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold text-[#FDE68A] flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#F59E0B]" />
+                    Basic Attack · Twin Kukri Blades (60fps FX)
+                  </div>
+                  <span className="text-[10px] text-[#FCD34D] font-mono-num">3-Hit Scissor</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-[#241B11] border border-[#523919] space-y-2">
+                  <p className="text-[11px] text-[#E5D5BE] leading-snug">
+                    Ultra-fast alternating curved dagger slashes that culminate in a 3rd-hit Scissor X-Slash; shifts to toxic emerald-lime when Poisoned Blades is active.
+                  </p>
+                  <div className="flex items-center gap-2.5 pt-0.5">
+                    <div className="relative w-24 h-16 bg-[#140F0A] rounded-lg border border-[#6B481B] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                      <GoblinAttackPreview />
+                    </div>
+                    <div className="text-[10px] text-[#FDE68A] space-y-0.5 font-mono-num leading-tight">
+                      <div>Reach: 56 · 66 on 3rd X-Slash</div>
+                      <div>3rd Strike: +20% DMG &amp; +20% Crit</div>
+                      <div>All 8 Skills: 60fps Assassin FX</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Gnome Basic Attack & Runic Bastion 60fps Animation Preview */}
+            {isGnome && (
+              <div className="pt-3 border-t border-[#282336] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold text-[#FDBA74] flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#FB923C]" />
+                    Basic Attack · Runestone Gauntlets (60fps FX)
+                  </div>
+                  <span className="text-[10px] text-[#FED7AA] font-mono-num">3-Hit Tectonic</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-[#251812] border border-[#5C3622] space-y-2">
+                  <p className="text-[11px] text-[#E6D2C5] leading-snug">
+                    Heavy alternating forged-bronze gauntlet shock-punches with sonic compression rings, culminating in a 3rd-hit Double-Fist Tectonic Smash.
+                  </p>
+                  <div className="flex items-center gap-2.5 pt-0.5">
+                    <div className="relative w-24 h-16 bg-[#17100C] rounded-lg border border-[#734227] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                      <GnomeAttackPreview />
+                    </div>
+                    <div className="text-[10px] text-[#FDBA74] space-y-0.5 font-mono-num leading-tight">
+                      <div>Reach: 66 · 78 on 3rd (104 Mountain)</div>
+                      <div>3rd Strike: +22% DMG &amp; +18% Crit</div>
+                      <div>All 8 Skills: 60fps Seismic FX</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Ghost Basic Attack & Spectral Magic 60fps Animation Preview */}
+            {isGhost && (
+              <div className="pt-3 border-t border-[#282336] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold text-[#E9D5FF] flex items-center gap-1.5">
+                    <span>Basic Attack · Spectral Haunt (60fps FX)</span>
+                  </div>
+                  <span className="text-[10px] text-[#67E8F9] font-mono-num">3-Hit Astral</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-[#1F152E] border border-[#583380] space-y-2">
+                  <p className="text-[11px] text-[#DDD6FE] leading-snug">
+                    Ethereal spirit-claw arcs that phase through obstacles; every 3rd attack unleashes an Abyssal Vortex Rend and launches a piercing spirit orb.
+                  </p>
+                  <div className="flex items-center gap-2.5 pt-0.5">
+                    <div className="relative w-24 h-16 bg-[#110B1C] rounded-lg border border-[#6D28D9] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                      <GhostAttackPreview />
+                    </div>
+                    <div className="text-[10px] text-[#E9D5FF] space-y-0.5 font-mono-num leading-tight">
+                      <div>Reach: 78 · 94 on 3rd + Spirit Orb</div>
+                      <div>Restless Surge: +32% Magic DMG</div>
+                      <div>All 8 Skills: 60fps Spectral FX</div>
                     </div>
                   </div>
                 </div>
@@ -599,23 +736,23 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
                             {ult.detailLine} · {ult.cooldown}s CD
                           </div>
                           {ult.id === UltimateSkillId.DeathsEmbrace && (
-                            <div className="mt-1 pt-2 border-t border-[#294B3D] space-y-1.5 text-left">
-                              <div className="flex items-center justify-between text-[10px] text-[#5EEAD4] font-medium">
-                                <span>60-Frame Ultra-Fluid Plague &amp; Drain VFX</span>
-                                <span className="font-mono-num text-[9px] text-[#A7F3D0]">Bird's-Eye Top View</span>
+                            <div className="mt-1 pt-2 border-t border-[#2B4B36] space-y-1.5 text-left">
+                              <div className="flex items-center justify-between text-[10px] text-[#A3E635] font-medium">
+                                <span>60-Frame Top-View Plague &amp; Drain VFX</span>
+                                <span className="font-mono-num text-[9px] text-[#BEF264]">Simple Artstyle</span>
                               </div>
-                              <div className="relative w-full h-16 bg-[#08151D] rounded-lg border border-[#1E4338] overflow-hidden flex items-center justify-center p-1">
+                              <div className="relative w-full h-16 bg-[#141C18] rounded-lg border border-[#2B4B36] overflow-hidden flex items-center justify-center p-1">
                                 <img
-                                  src="/assets/aistudio/deaths_embrace_fx_sheet.png"
+                                  src="/assets/aistudio/deaths_embrace_fx_sheet.png?v=topview60"
                                   alt="Death's Embrace 60-frame skill effects"
                                   className="w-full h-full object-contain"
                                 />
                               </div>
-                              <div className="text-[9px] text-[#9EE4D4] font-mono-num leading-tight flex justify-between">
-                                <span>1–20 Wave Max</span>
-                                <span>21–30 Life Drain</span>
+                              <div className="text-[9px] text-[#86EFAC] font-mono-num leading-tight flex justify-between">
+                                <span>1–20 Slam &amp; Wave</span>
+                                <span>21–30 Absorb</span>
                                 <span>31–40 Heal Cross</span>
-                                <span>41–60 Dissipate</span>
+                                <span>41–60 Fade</span>
                               </div>
                             </div>
                           )}

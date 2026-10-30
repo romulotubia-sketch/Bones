@@ -1,3 +1,4 @@
+import ghostPortraitImg from '../assets/images/ghost_hero_portrait_1793398455645.jpg';
 import gnomePortraitImg from '../assets/images/gnome_hero_portrait_1793315632139.jpg';
 import goblinPortraitImg from '../assets/images/goblin_hero_portrait_1793313607661.jpg';
 import graveyardBiomeImg from '../assets/images/graveyard_biome_card_1793308236254.jpg';
@@ -23,6 +24,7 @@ export const ZOMBIE_PORTRAIT_URL = zombiePortraitImg;
 export const SKELETON_PORTRAIT_URL = skeletonPortraitImg;
 export const GOBLIN_PORTRAIT_URL = goblinPortraitImg;
 export const GNOME_PORTRAIT_URL = gnomePortraitImg;
+export const GHOST_PORTRAIT_URL = ghostPortraitImg;
 export const GRAVEYARD_BIOME_URL = graveyardBiomeImg;
 export const SKELETON_BOSS_URL = skeletonBossImg;
 
@@ -276,6 +278,63 @@ export const NORMAL_SKILLS: Record<NormalSkillId, NormalSkillDef> = {
     detailLine: 'Stone hands root nearby foes for 2.8s & deal crushing earth DoT',
     accentColor: '#D97706',
   },
+
+  // === GHOST NORMAL SKILLS (5) ===
+  [NormalSkillId.SpectralBolt]: {
+    id: NormalSkillId.SpectralBolt,
+    characterId: CharacterId.Ghost,
+    name: 'Spectral Bolt',
+    tag: 'Magic · Pierce',
+    cooldown: 3.4,
+    description:
+      'The ghost launches a concentrated projectile of spiritual energy toward enemies, passing through multiple targets and damaging everything in its path.',
+    detailLine: 'Piercing astral projectile · Phases through obstacles & all foes in line',
+    accentColor: '#67E8F9',
+  },
+  [NormalSkillId.PhantomDash]: {
+    id: NormalSkillId.PhantomDash,
+    characterId: CharacterId.Ghost,
+    name: 'Phantom Dash',
+    tag: 'Phase · Mist Trail',
+    cooldown: 4.5,
+    description:
+      'The ghost transforms into a fleeting mist and rapidly moves in a chosen direction, phasing through enemies and leaving behind a trail of spectral energy.',
+    detailLine: 'Untargetable mist dash · Phases through foes & leaves haunting DoT wake',
+    accentColor: '#C084FC',
+  },
+  [NormalSkillId.SoulDrain]: {
+    id: NormalSkillId.SoulDrain,
+    characterId: CharacterId.Ghost,
+    name: 'Soul Drain',
+    tag: 'Tendrils · Siphon',
+    cooldown: 7.2,
+    description:
+      'The ghost releases ethereal tendrils that latch onto nearby enemies, draining their life force and transferring it into its own body.',
+    detailLine: '2.4s mobile soul-tether channel · Deals magic DoT & heals per target',
+    accentColor: '#A855F7',
+  },
+  [NormalSkillId.WailingScream]: {
+    id: NormalSkillId.WailingScream,
+    characterId: CharacterId.Ghost,
+    name: 'Wailing Scream',
+    tag: 'Wave · Fear',
+    cooldown: 6.8,
+    description:
+      'The ghost unleashes a terrifying supernatural scream that sends out a wave of energy, damaging nearby enemies and frightening them into temporarily fleeing.',
+    detailLine: 'Supernatural shockwave · Deals AoE magic damage & Fears foes for 2.8s',
+    accentColor: '#E879F9',
+  },
+  [NormalSkillId.HauntedPossession]: {
+    id: NormalSkillId.HauntedPossession,
+    characterId: CharacterId.Ghost,
+    name: 'Haunted Possession',
+    tag: 'Possess · Disrupt',
+    cooldown: 8.5,
+    description:
+      'The ghost temporarily possesses an enemy, disrupting its movements and forcing it to attack nearby enemies before escaping its body.',
+    detailLine: '2.6s untargetable takeover · Host cleaves nearby foes + exorcism burst',
+    accentColor: '#818CF8',
+  },
 };
 
 export const ULTIMATE_SKILLS: Record<UltimateSkillId, UltimateSkillDef> = {
@@ -430,6 +489,44 @@ export const ULTIMATE_SKILLS: Record<UltimateSkillId, UltimateSkillDef> = {
     detailLine: '3 expanding tectonic shockwaves · Heavy AoE stun & knockback',
     accentColor: '#F97316',
   },
+
+  // === GHOST ULTIMATE SKILLS (3) ===
+  [UltimateSkillId.EternalNightmare]: {
+    id: UltimateSkillId.EternalNightmare,
+    characterId: CharacterId.Ghost,
+    name: 'Eternal Nightmare',
+    tag: 'Dark Realm · Fear',
+    cooldown: 20,
+    energyRequired: 100,
+    description:
+      'The ghost transforms the battlefield into a realm of darkness, summoning terrifying apparitions that chase and attack enemies while continuously spreading fear.',
+    detailLine: '8s Darkness Realm · Summons 4 Apparitions that hunt & Fear foes',
+    accentColor: '#A855F7',
+  },
+  [UltimateSkillId.SpiritLegion]: {
+    id: UltimateSkillId.SpiritLegion,
+    characterId: CharacterId.Ghost,
+    name: 'Spirit Legion',
+    tag: 'Orbit · Charge',
+    cooldown: 19,
+    energyRequired: 100,
+    description:
+      'The ghost summons a legion of wandering spirits that surround it and charge toward nearby enemies, overwhelming them with successive spectral attacks.',
+    detailLine: 'Summons 8 orbiting spirits that lock on & charge foes in spectral blasts',
+    accentColor: '#67E8F9',
+  },
+  [UltimateSkillId.DeathsPassage]: {
+    id: UltimateSkillId.DeathsPassage,
+    characterId: CharacterId.Ghost,
+    name: "Death's Passage",
+    tag: 'Rift Pull · Detonate',
+    cooldown: 18,
+    energyRequired: 100,
+    description:
+      'The ghost opens a massive spectral rift beneath the battlefield, pulling nearby enemies into its center before unleashing an enormous explosion of spiritual energy.',
+    detailLine: 'Massive abyssal vortex pulls foes inward then erupts in a spirit nova',
+    accentColor: '#C084FC',
+  },
 };
 
 export const ZOMBIE_PASSIVE_SKILLS: PassiveSkillDef[] = [
@@ -513,6 +610,27 @@ export const GNOME_PASSIVE_SKILLS: PassiveSkillDef[] = [
     description:
       'The closer the gnome gets to defeat, the more determined and resilient it becomes, gradually strengthening its defenses as its health drops.',
     detailLine: 'Grants up to +42% extra Damage Reduction dynamically as HP drops',
+  },
+];
+
+export const GHOST_PASSIVE_SKILLS: PassiveSkillDef[] = [
+  {
+    id: PassiveSkillId.EtherealBody,
+    characterId: CharacterId.Ghost,
+    name: 'Ethereal Body',
+    tag: 'Always Active · Phase',
+    description:
+      "The ghost's incorporeal form allows it to naturally phase through physical obstacles and resist ordinary physical attacks.",
+    detailLine: 'Phases freely through obstacles · 20% Physical Resist & 24% Phase Evasion',
+  },
+  {
+    id: PassiveSkillId.RestlessSpirit,
+    characterId: CharacterId.Ghost,
+    name: 'Restless Spirit',
+    tag: 'Always Active · Surge',
+    description:
+      'Whenever the ghost successfully avoids an enemy attack, its spiritual energy intensifies, temporarily increasing its movement speed and magical power.',
+    detailLine: 'Evading or phasing attacks grants +28% Move Speed & +32% Magic Power for 4s',
   },
 ];
 
@@ -653,6 +771,40 @@ export const CHARACTER_ROSTER: Record<CharacterId, CharacterProfileDef> = {
       ultimateSkill: UltimateSkillId.MountainsHeart,
     },
   },
+  [CharacterId.Ghost]: {
+    id: CharacterId.Ghost,
+    name: 'Lyra the Whispering Wraith',
+    archetypeName: 'Ghost',
+    characterType: 'Magic · Evasion · Crowd Control',
+    role: 'A mysterious spectral entity that manipulates spirits, shadows, and ethereal energy. The Ghost specializes in phasing through enemies, disappearing from danger, and attacking with supernatural abilities. It sacrifices physical durability for exceptional mobility and magical power.',
+    portraitUrl: GHOST_PORTRAIT_URL,
+    accentColor: '#C084FC',
+    attackLabel: 'HAUNT',
+    baseHp: 88,
+    baseSpeed: 242,
+    baseAttackDamage: 20,
+    baseAttackCooldown: 0.28,
+    baseCritChance: 0.22,
+    critMultiplier: 1.85,
+    guildSpot: { x: 105, y: -145, facingX: -1 },
+    normalSkillIds: [
+      NormalSkillId.SpectralBolt,
+      NormalSkillId.PhantomDash,
+      NormalSkillId.SoulDrain,
+      NormalSkillId.WailingScream,
+      NormalSkillId.HauntedPossession,
+    ],
+    ultimateSkillIds: [
+      UltimateSkillId.EternalNightmare,
+      UltimateSkillId.SpiritLegion,
+      UltimateSkillId.DeathsPassage,
+    ],
+    passiveSkills: GHOST_PASSIVE_SKILLS,
+    defaultLoadout: {
+      normalSkills: [NormalSkillId.SpectralBolt, NormalSkillId.PhantomDash],
+      ultimateSkill: UltimateSkillId.EternalNightmare,
+    },
+  },
 };
 
 export const CHARACTER_LIST: CharacterProfileDef[] = [
@@ -660,6 +812,7 @@ export const CHARACTER_LIST: CharacterProfileDef[] = [
   CHARACTER_ROSTER[CharacterId.Skeleton],
   CHARACTER_ROSTER[CharacterId.Goblin],
   CHARACTER_ROSTER[CharacterId.Gnome],
+  CHARACTER_ROSTER[CharacterId.Ghost],
 ];
 
 export function getNormalSkillsForCharacter(charId: CharacterId): NormalSkillDef[] {
@@ -896,6 +1049,58 @@ export const CHARACTER_UPGRADE_PATHS: Record<CharacterId, CharacterUpgradePathDe
         costStep: 16,
         maxRank: 5,
         perRankLabel: '+4% Move Speed · +15% Hit Ult Gain · -6% CDs',
+      },
+    ],
+  },
+  [CharacterId.Ghost]: {
+    characterId: CharacterId.Ghost,
+    pathTitle: 'Path of the Astral Veil',
+    pathSubtitle: 'Incorporeal Evasion · Spirit Magic · Supernatural Terror',
+    nodes: [
+      {
+        slot: 'pathA',
+        name: 'Incorporeal Shroud',
+        summary: 'Deepens spectral density, adding ectoplasmic vitality, phase evasion, and physical resist.',
+        baseCost: 15,
+        costStep: 12,
+        maxRank: 6,
+        perRankLabel: '+12 Max HP · +2.5% Phase Evade · +3% Phys Resist',
+      },
+      {
+        slot: 'pathB',
+        name: 'Supernatural Potency',
+        summary: 'Sharpens basic spirit-claw arcs and Spectral Bolts with concentrated astral force.',
+        baseCost: 18,
+        costStep: 14,
+        maxRank: 6,
+        perRankLabel: '+13% Spectral Attack & Bolt Magic Power',
+      },
+      {
+        slot: 'pathC',
+        name: 'Poltergeist Resonance',
+        summary: 'Amplifies Soul Drain siphons, Phantom mist trails, and Death’s Passage rift explosions.',
+        baseCost: 18,
+        costStep: 14,
+        maxRank: 6,
+        perRankLabel: '+18% Ethereal Skill Power & Drain Healing',
+      },
+      {
+        slot: 'pathD',
+        name: 'Dread Haunting',
+        summary: 'Extends Wailing Scream fear, Haunted Possession control, and Apparition/Spirit strength.',
+        baseCost: 20,
+        costStep: 15,
+        maxRank: 6,
+        perRankLabel: '+0.3s Fear & Possession · +20% Spirit & Apparition Power',
+      },
+      {
+        slot: 'pathE',
+        name: 'Astral Drift',
+        summary: 'Lightens spectral form for swift floating speed, Restless Spirit power, and lower cooldowns.',
+        baseCost: 22,
+        costStep: 16,
+        maxRank: 5,
+        perRankLabel: '+4.5% Move Speed · +8% Restless Surge · -6% CDs',
       },
     ],
   },
@@ -1295,6 +1500,104 @@ export const CHARACTER_STATUE_BLESSINGS: Record<CharacterId, RunBlessing[]> = {
       requiredUltimateSkill: UltimateSkillId.CataclysmicSlam,
     },
   ],
+
+  // === GHOST STATUE BLESSINGS (4 Core/Passive + 5 Normal-Gated + 3 Ult-Gated) ===
+  [CharacterId.Ghost]: [
+    {
+      id: 'ghost_ectoplasm_wisp',
+      characterId: CharacterId.Ghost,
+      name: 'Whispering Lantern',
+      category: 'Basic Haunt · Spirit Wisp',
+      description: 'Every 3rd spectral attack launches an extra homing spirit orb for +20 magic dmg.',
+    },
+    {
+      id: 'ghost_ethereal_veil',
+      characterId: CharacterId.Ghost,
+      name: 'Astral Phase',
+      category: 'Ethereal Body',
+      description: '+24 Max HP, +12% additional Phase Evasion, & +12% Physical Resistance.',
+    },
+    {
+      id: 'ghost_restless_echo',
+      characterId: CharacterId.Ghost,
+      name: 'Poltergeist Surge',
+      category: 'Restless Spirit',
+      description: 'Restless Spirit lasts +2.5s longer and heals 7 HP whenever you evade an attack.',
+    },
+    {
+      id: 'ghost_chilling_touch',
+      characterId: CharacterId.Ghost,
+      name: 'Grave Chill',
+      category: 'Crowd Control · Chill',
+      description: 'All spectral attacks & skills chill foes, slowing movement by 32% for 2.6s.',
+    },
+    // Normal Skill-Specific Blessings (ONLY appear when equipped!)
+    {
+      id: 'ghost_skill_spectral_bolt',
+      characterId: CharacterId.Ghost,
+      name: 'Twin Astral Lance',
+      category: 'Spectral Bolt',
+      description: 'Spectral Bolt fires 2 parallel piercing bolts and deals +25% magic damage.',
+      requiredNormalSkill: NormalSkillId.SpectralBolt,
+    },
+    {
+      id: 'ghost_skill_phantom_dash',
+      characterId: CharacterId.Ghost,
+      name: 'Lingering Ectoplasm',
+      category: 'Phantom Dash',
+      description: 'Phantom Dash leaves wider mist pools (+2.5s duration) & refunds 35% CD on hit.',
+      requiredNormalSkill: NormalSkillId.PhantomDash,
+    },
+    {
+      id: 'ghost_skill_soul_drain',
+      characterId: CharacterId.Ghost,
+      name: 'Ravenous Tether',
+      category: 'Soul Drain',
+      description: 'Soul Drain latches onto +2 extra foes, ticks faster, & heals +50% more HP.',
+      requiredNormalSkill: NormalSkillId.SoulDrain,
+    },
+    {
+      id: 'ghost_skill_wailing_scream',
+      characterId: CharacterId.Ghost,
+      name: "Banshee's Howl",
+      category: 'Wailing Scream',
+      description: 'Wailing Scream expands +35% wider, deals +30% damage, & Fears +1.2s longer.',
+      requiredNormalSkill: NormalSkillId.WailingScream,
+    },
+    {
+      id: 'ghost_skill_haunted_possession',
+      characterId: CharacterId.Ghost,
+      name: 'Malevolent Puppeteer',
+      category: 'Haunted Possession',
+      description: 'Possession lasts +1.2s longer, cleaves faster, & erupts for +45% exorcism dmg.',
+      requiredNormalSkill: NormalSkillId.HauntedPossession,
+    },
+    // Ultimate Skill-Specific Blessings (ONLY appear when equipped!)
+    {
+      id: 'ghost_ult_nightmare',
+      characterId: CharacterId.Ghost,
+      name: 'Endless Terror',
+      category: 'Eternal Nightmare',
+      description: 'Eternal Nightmare summons +2 extra Apparitions, lasts +3s, & resets Skills.',
+      requiredUltimateSkill: UltimateSkillId.EternalNightmare,
+    },
+    {
+      id: 'ghost_ult_legion',
+      characterId: CharacterId.Ghost,
+      name: 'Vengeful Phantoms',
+      category: 'Spirit Legion',
+      description: 'Spirit Legion summons +4 extra wandering spirits, heals 20 HP, & resets Skills.',
+      requiredUltimateSkill: UltimateSkillId.SpiritLegion,
+    },
+    {
+      id: 'ghost_ult_passage',
+      characterId: CharacterId.Ghost,
+      name: 'Abyssal Singularity',
+      category: "Death's Passage",
+      description: "Death's Passage pulls +30% wider, detonates for +40% dmg, & resets Skills.",
+      requiredUltimateSkill: UltimateSkillId.DeathsPassage,
+    },
+  ],
 };
 
 export function getStatueBlessingsForCharacter(charId: CharacterId): RunBlessing[] {
@@ -1330,7 +1633,8 @@ export const EMPTY_UPGRADE_RANKS: CharacterUpgradeRanks = {
   pathE: 0,
 };
 
-const STORAGE_KEY = 'hearth_and_bone_save_v4';
+const STORAGE_KEY = 'hearth_and_bone_save_v5';
+const PREV_V4_STORAGE_KEY = 'hearth_and_bone_save_v4';
 const PREV_V3_STORAGE_KEY = 'hearth_and_bone_save_v3';
 const PREV_STORAGE_KEY = 'hearth_and_bone_save_v2';
 const LEGACY_STORAGE_KEY = 'hearth_and_bone_save_v1';
@@ -1346,12 +1650,14 @@ export const DEFAULT_SAVE_DATA: GuildSaveData = {
     [CharacterId.Skeleton]: { ...EMPTY_UPGRADE_RANKS },
     [CharacterId.Goblin]: { ...EMPTY_UPGRADE_RANKS },
     [CharacterId.Gnome]: { ...EMPTY_UPGRADE_RANKS },
+    [CharacterId.Ghost]: { ...EMPTY_UPGRADE_RANKS },
   },
   loadouts: {
     [CharacterId.Zombie]: structuredClone(CHARACTER_ROSTER[CharacterId.Zombie].defaultLoadout),
     [CharacterId.Skeleton]: structuredClone(CHARACTER_ROSTER[CharacterId.Skeleton].defaultLoadout),
     [CharacterId.Goblin]: structuredClone(CHARACTER_ROSTER[CharacterId.Goblin].defaultLoadout),
     [CharacterId.Gnome]: structuredClone(CHARACTER_ROSTER[CharacterId.Gnome].defaultLoadout),
+    [CharacterId.Ghost]: structuredClone(CHARACTER_ROSTER[CharacterId.Ghost].defaultLoadout),
   },
   muted: false,
 };
@@ -1397,6 +1703,7 @@ export function loadGuildSave(): GuildSaveData {
   try {
     const raw =
       localStorage.getItem(STORAGE_KEY) ??
+      localStorage.getItem(PREV_V4_STORAGE_KEY) ??
       localStorage.getItem(PREV_V3_STORAGE_KEY) ??
       localStorage.getItem(PREV_STORAGE_KEY) ??
       localStorage.getItem(LEGACY_STORAGE_KEY);
@@ -1420,6 +1727,8 @@ export function loadGuildSave(): GuildSaveData {
         ? CharacterId.Goblin
         : parsed.selectedCharacter === CharacterId.Gnome
         ? CharacterId.Gnome
+        : parsed.selectedCharacter === CharacterId.Ghost
+        ? CharacterId.Ghost
         : CharacterId.Zombie;
 
     const zombieLoadout = sanitizeCharacterLoadout(
@@ -1437,6 +1746,10 @@ export function loadGuildSave(): GuildSaveData {
     const gnomeLoadout = sanitizeCharacterLoadout(
       CharacterId.Gnome,
       parsed.loadouts?.[CharacterId.Gnome]
+    );
+    const ghostLoadout = sanitizeCharacterLoadout(
+      CharacterId.Ghost,
+      parsed.loadouts?.[CharacterId.Ghost]
     );
 
     const legacyMapped: CharacterUpgradeRanks | undefined = parsed.upgrades
@@ -1466,6 +1779,10 @@ export function loadGuildSave(): GuildSaveData {
         parsed.characterUpgrades?.[CharacterId.Gnome] ??
           (selectedCharacter === CharacterId.Gnome ? legacyMapped : undefined)
       ),
+      [CharacterId.Ghost]: sanitizeUpgradeRanks(
+        parsed.characterUpgrades?.[CharacterId.Ghost] ??
+          (selectedCharacter === CharacterId.Ghost ? legacyMapped : undefined)
+      ),
     };
 
     return {
@@ -1482,6 +1799,7 @@ export function loadGuildSave(): GuildSaveData {
         [CharacterId.Skeleton]: skeletonLoadout,
         [CharacterId.Goblin]: goblinLoadout,
         [CharacterId.Gnome]: gnomeLoadout,
+        [CharacterId.Ghost]: ghostLoadout,
       },
       muted: Boolean(parsed.muted),
     };

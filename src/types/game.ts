@@ -14,6 +14,7 @@ export enum CharacterId {
   Skeleton = 'SKELETON',
   Goblin = 'GOBLIN',
   Gnome = 'GNOME',
+  Ghost = 'GHOST',
 }
 
 export enum NormalSkillId {
@@ -44,6 +45,13 @@ export enum NormalSkillId {
   Groundbreaker = 'GROUNDBREAKER',
   MagneticGuard = 'MAGNETIC_GUARD',
   EarthenGrasp = 'EARTHEN_GRASP',
+
+  // Ghost Normal Skills (5)
+  SpectralBolt = 'SPECTRAL_BOLT',
+  PhantomDash = 'PHANTOM_DASH',
+  SoulDrain = 'SOUL_DRAIN',
+  WailingScream = 'WAILING_SCREAM',
+  HauntedPossession = 'HAUNTED_POSSESSION',
 }
 
 export enum UltimateSkillId {
@@ -66,6 +74,11 @@ export enum UltimateSkillId {
   MountainsHeart = 'MOUNTAINS_HEART',
   TitansRampart = 'TITANS_RAMPART',
   CataclysmicSlam = 'CATACLYSMIC_SLAM',
+
+  // Ghost Ultimate Skills (3)
+  EternalNightmare = 'ETERNAL_NIGHTMARE',
+  SpiritLegion = 'SPIRIT_LEGION',
+  DeathsPassage = 'DEATHS_PASSAGE',
 }
 
 export enum PassiveSkillId {
@@ -84,6 +97,10 @@ export enum PassiveSkillId {
   // Gnome Passives (2)
   UnbreakableFoundation = 'UNBREAKABLE_FOUNDATION',
   LastingResolve = 'LASTING_RESOLVE',
+
+  // Ghost Passives (2)
+  EtherealBody = 'ETHEREAL_BODY',
+  RestlessSpirit = 'RESTLESS_SPIRIT',
 }
 
 export enum EnemyKind {
@@ -193,6 +210,8 @@ export interface EnemyEntity {
   slowFactor: number;
   stunTimer: number;
   rootTimer: number;
+  fearTimer: number;
+  possessedTimer: number;
   infectionStacks: number;
   infectionTimer: number;
   plagueTimer: number;
@@ -217,7 +236,7 @@ export interface EnemyEntity {
 
 export interface MinionEntity {
   id: number;
-  minionType: 'ZOMBIE_SHAMBLER' | 'SKELETON_WARRIOR_ALLY';
+  minionType: 'ZOMBIE_SHAMBLER' | 'SKELETON_WARRIOR_ALLY' | 'GHOST_APPARITION' | 'GHOST_SPIRIT';
   x: number;
   y: number;
   vx: number;
@@ -254,10 +273,16 @@ export interface ProjectileEntity {
     | 'PLAGUE_SPIT'
     | 'PLAYER_BONE_SPEAR'
     | 'PLAYER_DARK_WAVE'
-    | 'PLAYER_ENCHANTED_DAGGER';
+    | 'PLAYER_ENCHANTED_DAGGER'
+    | 'PLAYER_SPECTRAL_BOLT'
+    | 'PLAYER_SPIRIT_ORB';
   angle: number;
   pierce?: boolean;
   hitEnemyIds?: Set<number>;
+  orbitTimer?: number;
+  orbitAngle?: number;
+  orbitRadius?: number;
+  homing?: boolean;
 }
 
 export interface ExplosiveTrapEntity {
@@ -278,6 +303,31 @@ export interface AfterimageEntity {
   color: string;
   life: number;
   maxLife: number;
+  archetype?: 'GOBLIN' | 'SKELETON' | 'ZOMBIE' | 'GNOME' | 'GHOST';
+}
+
+export interface DeathsPassageRift {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  tickTimer: number;
+  pullDamage: number;
+  explosionDamage: number;
+  detonated: boolean;
+}
+
+export interface GhostMistZone {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  tickTimer: number;
+  damagePerTick: number;
 }
 
 export interface DaggerRainZone {
@@ -336,6 +386,18 @@ export interface PickupOrb {
   bobOffset: number;
 }
 
+export interface DeathsEmbraceEffect {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  totalDrain: number;
+  healed: boolean;
+  followPlayer: boolean;
+}
+
 export interface DeathsEmbraceZone {
   id: number;
   x: number;
@@ -359,8 +421,62 @@ export interface SlashEffect {
   life: number;
   maxLife: number;
   flip: boolean;
-  kind?: 'DEFAULT' | 'ZOMBIE_BASIC_ATTACK' | 'ZOMBIE_POISON_BURST' | 'ZOMBIE_DEATHS_EMBRACE';
+  kind?:
+    | 'DEFAULT'
+    | 'ZOMBIE_BASIC_ATTACK'
+    | 'ZOMBIE_SAVAGE_REND'
+    | 'ZOMBIE_POISON_BURST'
+    | 'ZOMBIE_PLAGUE_NOVA'
+    | 'ZOMBIE_FLESH_RIPPER_WAKE'
+    | 'ZOMBIE_UNDYING_PULSE'
+    | 'ZOMBIE_GRAVE_ERUPTION'
+    | 'ZOMBIE_ABOMINATION_NOVA'
+    | 'ZOMBIE_DEATHS_EMBRACE'
+    | 'SKELETON_BASIC_ATTACK'
+    | 'SKELETON_TWIN_CLEAVE'
+    | 'SKELETON_BONE_SLASH'
+    | 'SKELETON_SPEAR_LAUNCH'
+    | 'SKELETON_RIBCAGE_BURST'
+    | 'SKELETON_RUSH_WAKE'
+    | 'SKELETON_BONE_STORM_BURST'
+    | 'SKELETON_COLOSSUS_NOVA'
+    | 'SKELETON_CRYPT_SUMMON'
+    | 'SKELETON_REAPER_SCYTHE'
+    | 'SKELETON_IMPACT_FLASH'
+    | 'GOBLIN_BASIC_ATTACK'
+    | 'GOBLIN_TWIN_CROSS'
+    | 'GOBLIN_FLURRY_THRUST'
+    | 'GOBLIN_BACKSTAB_X'
+    | 'GOBLIN_TRAP_BLAST'
+    | 'GOBLIN_VENOM_COAT'
+    | 'GOBLIN_SHADOW_TRACE'
+    | 'GNOME_BASIC_ATTACK'
+    | 'GNOME_SEISMIC_SLAM'
+    | 'GNOME_IMPACT_CRACK'
+    | 'GNOME_IRON_FIST_WAVE'
+    | 'GNOME_FORTRESS_AEGIS'
+    | 'GNOME_CRATER_SLAM'
+    | 'GNOME_MAGNETIC_PULSE'
+    | 'GNOME_MAGNETIC_ARC'
+    | 'GNOME_MOUNTAIN_NOVA'
+    | 'GNOME_CATACLYSM_RING'
+    | 'GHOST_BASIC_ARC'
+    | 'GHOST_VORTEX_REND'
+    | 'GHOST_IMPACT_RING'
+    | 'GHOST_BOLT_CAST'
+    | 'GHOST_MIST_WAKE'
+    | 'GHOST_SOUL_DRAIN_PULSE'
+    | 'GHOST_WAILING_SCREAM'
+    | 'GHOST_POSSESS_PULSE'
+    | 'GHOST_EXORCISM_BURST'
+    | 'GHOST_NIGHTMARE_NOVA'
+    | 'GHOST_SPIRIT_RING'
+    | 'GHOST_PASSAGE_DETONATION'
+    | 'GHOST_RESTLESS_SURGE';
   scale?: number;
+  isCrit?: boolean;
+  fromX?: number;
+  fromY?: number;
 }
 
 export interface ShockwaveRing {
@@ -375,8 +491,11 @@ export interface ShockwaveRing {
 export interface SoulTether {
   fromX: number;
   fromY: number;
+  toX?: number;
+  toY?: number;
   life: number;
   maxLife: number;
+  color?: string;
 }
 
 export interface FloatingPopup {
@@ -401,6 +520,27 @@ export interface Particle {
   maxLife: number;
   gravity: number;
   fade: boolean;
+  kind?:
+    | 'CIRCLE'
+    | 'BONE_SHARD'
+    | 'SLASH_STREAK'
+    | 'VENOM_DROP'
+    | 'SPORE_PUFF'
+    | 'SHADOW_PUFF'
+    | 'WIND_CHEVRON'
+    | 'GOLD_COIN_SPARK'
+    | 'BRASS_SHRAPNEL'
+    | 'STONE_CHUNK'
+    | 'RUNE_SPARK'
+    | 'MAGNETIC_ARC'
+    | 'NECRO_CROSS'
+    | 'SOUL_WISP'
+    | 'ECTO_SPARK';
+  rot?: number;
+  vRot?: number;
+  len?: number;
+  thick?: number;
+  drag?: number;
 }
 
 export interface RoomProp {
@@ -488,6 +628,10 @@ export interface HudSnapshot {
   magneticTimer: number;
   mountainHeartTimer: number;
   resolveBonusPct: number;
+  restlessTimer: number;
+  soulDrainTimer: number;
+  possessionTimer: number;
+  nightmareTimer: number;
   ultCharge: number; // 0 to 100
   ultCooldown: number;
   ultMaxCooldown: number;
