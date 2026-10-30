@@ -14,11 +14,13 @@ import {
 import { soundEngine } from '../audio/soundEngine';
 import {
   CHARACTER_ROSTER,
+  DIFFICULTY_LIST,
   NORMAL_SKILLS,
   ULTIMATE_SKILLS,
 } from '../data/zombieData';
 import {
   CharacterId,
+  DifficultyLevel,
   EquippedLoadout,
   GamePhase,
   HudSnapshot,
@@ -35,12 +37,14 @@ interface HudOverlayProps {
   hud: HudSnapshot;
   loadout: EquippedLoadout;
   totalSavedShards: number;
+  selectedDifficulty?: DifficultyLevel;
   muted: boolean;
   isFullscreen: boolean;
   onToggleMute: () => void;
   onToggleFullscreen: () => void;
   onPause: () => void;
   onOpenLoadout: (charId?: CharacterId) => void;
+  onSelectDifficulty?: (diff: DifficultyLevel) => void;
   onJoystickMove: (nx: number, ny: number) => void;
   onMapPanJoystick: (nx: number, ny: number) => void;
   onResetMapPan: () => void;
@@ -53,12 +57,14 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
   hud,
   loadout,
   totalSavedShards,
+  selectedDifficulty,
   muted,
   isFullscreen,
   onToggleMute,
   onToggleFullscreen,
   onPause,
   onOpenLoadout,
+  onSelectDifficulty,
   onJoystickMove,
   onMapPanJoystick,
   onResetMapPan,
@@ -250,49 +256,127 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
             </div>
 
             {!isGuild && (
-              <div className="w-full h-1 bg-[#0E0C14] rounded overflow-hidden mt-1">
-                <div
-                  className="h-full bg-[#A78BFA] origin-left transition-transform duration-150"
-                  style={{ transform: `scaleX(${xpRatio})` }}
-                />
-              </div>
+              <>
+                <div className="w-full h-1 bg-[#0E0C14] rounded overflow-hidden mt-1">
+                  <div
+                    className="h-full bg-[#A78BFA] origin-left transition-transform duration-150"
+                    style={{ transform: `scaleX(${xpRatio})` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-1 mt-1 text-[10px]">
+                  <span
+                    className="px-1.5 py-0.5 rounded font-mono-num font-bold text-[9px] tracking-wide"
+                    style={{
+                      backgroundColor: `${hud.difficultyColor}22`,
+                      color: hud.difficultyColor,
+                      border: `1px solid ${hud.difficultyColor}55`,
+                    }}
+                  >
+                    {hud.difficultyBadge} {hud.difficultyLabel.toUpperCase()}
+                  </span>
+                  <span className="font-mono-num text-[#A39BB5] text-[10px]">
+                    {hud.maxStages > 1 ? `Stage ${hud.currentStage}/${hud.maxStages}` : 'Floor 1-3'}
+                  </span>
+                  <span className="font-mono-num text-[#7DD3FC] text-[10px]">
+                    {hud.difficulty === DifficultyLevel.Nightmare
+                      ? '8.0x'
+                      : hud.difficulty === DifficultyLevel.Torment
+                      ? '4.5x'
+                      : hud.difficulty === DifficultyLevel.Hard
+                      ? '2.8x'
+                      : hud.difficulty === DifficultyLevel.Normal
+                      ? '1.6x'
+                      : '1.0x'} Shards
+                  </span>
+                </div>
+              </>
             )}
           </div>
 
           {isGuild && hud.phase === GamePhase.GuildRoam && (
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playUiClick(580);
-                onOpenLoadout(hud.activeCharacter);
-              }}
-              className={`min-h-[44px] px-3 rounded-xl bg-[#201B2D]/90 active:scale-95 border text-xs font-semibold text-[#F5F0E6] flex items-center gap-1.5 shadow-lg whitespace-nowrap shrink-0 ${
-                isSkeleton
-                  ? 'border-[#38BDF8]/70'
-                  : isGoblin
-                  ? 'border-[#F59E0B]/70'
-                  : isGnome
-                  ? 'border-[#FB923C]/70'
-                  : isGhost
-                  ? 'border-[#C084FC]/70'
-                  : 'border-[#4ADE80]/70'
-              }`}
-            >
-              <SlidersHorizontal
-                className={`w-4 h-4 ${
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiClick(580);
+                  onOpenLoadout(hud.activeCharacter);
+                }}
+                className={`min-h-[44px] px-3 rounded-xl bg-[#201B2D]/90 active:scale-95 border text-xs font-semibold text-[#F5F0E6] flex items-center gap-1.5 shadow-lg whitespace-nowrap shrink-0 ${
                   isSkeleton
-                    ? 'text-[#38BDF8]'
+                    ? 'border-[#38BDF8]/70'
                     : isGoblin
-                    ? 'text-[#FBBF24]'
+                    ? 'border-[#F59E0B]/70'
                     : isGnome
-                    ? 'text-[#FB923C]'
+                    ? 'border-[#FB923C]/70'
                     : isGhost
-                    ? 'text-[#D8B4FE]'
-                    : 'text-[#4ADE80]'
+                    ? 'border-[#C084FC]/70'
+                    : 'border-[#4ADE80]/70'
                 }`}
-              />
-              <span>Heroes &amp; Skills</span>
-            </button>
+              >
+                <SlidersHorizontal
+                  className={`w-4 h-4 ${
+                    isSkeleton
+                      ? 'text-[#38BDF8]'
+                      : isGoblin
+                      ? 'text-[#FBBF24]'
+                      : isGnome
+                      ? 'text-[#FB923C]'
+                      : isGhost
+                      ? 'text-[#D8B4FE]'
+                      : 'text-[#4ADE80]'
+                  }`}
+                />
+                <span>Heroes &amp; Skills</span>
+              </button>
+
+              <div className="flex items-center gap-1 bg-[#16131E]/95 border border-[#302A40] rounded-xl p-1 shadow-lg">
+                {DIFFICULTY_LIST.map((diff) => {
+                  const currentDiff = selectedDifficulty ?? hud.difficulty ?? DifficultyLevel.Easy;
+                  const isSelected = currentDiff === diff.level;
+                  return (
+                    <button
+                      key={diff.level}
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick(500 + DIFFICULTY_LIST.indexOf(diff) * 50);
+                        onSelectDifficulty?.(diff.level);
+                      }}
+                      title={`${diff.label}: ${diff.stages} ${
+                        diff.stages === 1 ? 'Stage' : 'Stages'
+                      } (${diff.maxFloors} floors), ${diff.shardMultiplier}x Shards. ${diff.description}`}
+                      className={`min-h-[38px] px-2 sm:px-2.5 rounded-lg text-xs font-bold transition-all active:scale-95 flex items-center gap-1 shrink-0 ${
+                        isSelected
+                          ? 'shadow-md ring-1 ring-white/30'
+                          : 'text-[#9E96B0] hover:text-[#E2DCED] bg-transparent'
+                      }`}
+                      style={
+                        isSelected
+                          ? {
+                              backgroundColor: diff.color,
+                              color: diff.level === DifficultyLevel.Easy ? '#0F1A12' : '#FFFFFF',
+                              boxShadow: `0 0 10px ${diff.color}66`,
+                            }
+                          : undefined
+                      }
+                    >
+                      <span className="text-xs">{diff.badge}</span>
+                      <span className="hidden sm:inline">{diff.label}</span>
+                      <span
+                        className={`text-[10px] font-mono-num font-normal px-1 py-0.5 rounded ${
+                          isSelected
+                            ? diff.level === DifficultyLevel.Easy
+                              ? 'bg-black/20 text-[#0F1A12]'
+                              : 'bg-black/30 text-white'
+                            : 'bg-white/5 text-[#8E86A0]'
+                        }`}
+                      >
+                        {diff.stages > 1 ? `${diff.stages}S` : '1S'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
 

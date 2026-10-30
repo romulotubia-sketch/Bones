@@ -3921,30 +3921,31 @@ export function drawDeathsEmbraceVFX(
   ctx.restore();
 }
 
-function drawSkeletonBasicAttack(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
-  const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
-  // Fast cubic ease-out head sweep, smooth ease-in tail catch-up
+function drawSkeletonCurvedCrescent(
+  ctx: CanvasRenderingContext2D,
+  progress: number,
+  radius: number,
+  arcSpread: number,
+  flip: boolean,
+  isCrit: boolean,
+  scale: number,
+  alpha: number
+): void {
   const headEase = 1 - Math.pow(1 - Math.min(1, progress * 1.45), 3);
   const tailEase = Math.pow(Math.max(0, (progress - 0.12) / 0.88), 2.1);
-  const alpha = Math.max(0, 1 - Math.pow(progress, 2.4));
 
-  const half = slash.arcSpread * 0.5;
-  const startAng = -half + slash.arcSpread * tailEase;
-  const endAng = -half + slash.arcSpread * headEase;
+  const half = arcSpread * 0.5;
+  const startAng = -half + arcSpread * tailEase;
+  const endAng = -half + arcSpread * headEase;
   if (endAng - startAng <= 0.04) return;
 
-  const isCrit = Boolean(slash.isCrit);
-  const scale = slash.scale ?? 1;
-
   ctx.save();
-  ctx.translate(slash.x, slash.y);
-  ctx.rotate(slash.angle);
-  if (slash.flip) {
+  if (flip) {
     ctx.scale(1, -1);
   }
 
   const steps = 22;
-  const outerR = slash.radius * (0.94 + headEase * 0.08);
+  const outerR = radius * (0.94 + headEase * 0.08);
   const maxBladeWidth = (isCrit ? 28 : 21) * scale * (1 - progress * 0.42);
 
   // Build tapered crescent polygon with bone-tooth serration notch
@@ -4031,6 +4032,27 @@ function drawSkeletonBasicAttack(ctx: CanvasRenderingContext2D, slash: SlashEffe
     ctx.restore();
   }
 
+  ctx.restore();
+}
+
+function drawSkeletonBasicAttack(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
+  const alpha = Math.max(0, 1 - Math.pow(progress, 2.4));
+  const scale = slash.scale ?? 1;
+
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.rotate(slash.angle);
+  drawSkeletonCurvedCrescent(
+    ctx,
+    progress,
+    slash.radius,
+    slash.arcSpread,
+    Boolean(slash.flip),
+    Boolean(slash.isCrit),
+    scale,
+    alpha
+  );
   ctx.restore();
 }
 
@@ -5382,51 +5404,69 @@ function drawZombieAbominationNova(ctx: CanvasRenderingContext2D, slash: SlashEf
 function drawSkeletonTwinCleave(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
   const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
   const alpha = Math.max(0, 1 - Math.pow(progress, 2.2));
-  const scale = slash.scale ?? 1;
+  const scale = slash.scale ?? 1.15;
   const r = Math.max(20, slash.radius * scale);
+
+  const p1 = Math.min(1, progress * 1.18);
+  const p2 = Math.max(0, Math.min(1, (progress - 0.05) / 0.95));
 
   ctx.save();
   ctx.translate(slash.x, slash.y);
   ctx.rotate(slash.angle);
 
-  // Scissor twin bone-katana X-cleave (-0.34 and +0.34 rad)
-  for (let b = 0; b < 2; b++) {
-    const localP = Math.max(0, Math.min(1, (progress - b * 0.07) / (1 - b * 0.07)));
-    if (localP <= 0) continue;
-    const sweep = 1 - Math.pow(1 - Math.min(1, localP * 1.65), 3);
-    const tail = Math.pow(Math.max(0, (localP - 0.16) / 0.84), 2);
-    const cant = b === 0 ? -0.34 : 0.34;
-    const halfSpread = 0.92;
-    const a0 = -halfSpread + halfSpread * 2 * tail * 0.45;
-    const a1 = -halfSpread + halfSpread * 2 * sweep;
-    if (a1 - a0 <= 0.05) continue;
+  // Scissor Blade 1: Upper-left to lower-right bone crescent sweep
+  ctx.save();
+  ctx.rotate(-0.28);
+  drawSkeletonCurvedCrescent(
+    ctx,
+    p1,
+    r,
+    slash.arcSpread,
+    false,
+    true,
+    scale,
+    alpha
+  );
+  ctx.restore();
 
+  // Scissor Blade 2: Lower-left to upper-right mirror bone crescent sweep
+  if (p2 > 0) {
     ctx.save();
-    ctx.rotate(cant);
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = slash.isCrit ? `rgba(253, 224, 71, ${alpha * 0.85})` : `rgba(56, 189, 248, ${alpha * 0.85})`;
-    ctx.lineWidth = 13 * scale * (1 - localP * 0.45);
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.arc(0, 0, r, a0, a1);
-    ctx.stroke();
-
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.strokeStyle = `rgba(248, 250, 252, ${alpha})`;
-    ctx.lineWidth = 4.5 * scale * (1 - localP * 0.4);
-    ctx.beginPath();
-    ctx.arc(0, 0, r, a0, a1);
-    ctx.stroke();
+    ctx.rotate(0.28);
+    drawSkeletonCurvedCrescent(
+      ctx,
+      p2,
+      r * 0.96,
+      slash.arcSpread,
+      true, // Mirror flip for true X-scissor!
+      true,
+      scale * 0.96,
+      alpha
+    );
     ctx.restore();
   }
 
-  // Golden-cyan 4-point star glint at scissor cross-point
-  if (progress < 0.6) {
-    const sAlpha = (1 - progress / 0.6) * alpha;
-    const starL = 18 * scale * (1 - progress * 0.5);
+  // Dazzling golden-cyan 4-point star glint and scissor shock lines at intersection
+  if (progress < 0.65) {
+    const sAlpha = (1 - progress / 0.65) * alpha;
+    const starL = 22 * scale * (1 - progress * 0.45);
+    const crossX = r * 0.88;
+
     ctx.save();
-    ctx.translate(r * 0.92, 0);
+    ctx.translate(crossX, 0);
     ctx.globalCompositeOperation = 'lighter';
+
+    // Radiating kinetic cross lines
+    ctx.strokeStyle = `rgba(253, 224, 71, ${sAlpha * 0.9})`;
+    ctx.lineWidth = 3.2 * (1 - progress);
+    ctx.beginPath();
+    ctx.moveTo(-starL * 0.85, -starL * 0.85);
+    ctx.lineTo(starL * 0.85, starL * 0.85);
+    ctx.moveTo(-starL * 0.85, starL * 0.85);
+    ctx.lineTo(starL * 0.85, -starL * 0.85);
+    ctx.stroke();
+
+    // 4-point diamond star
     ctx.fillStyle = `rgba(254, 249, 195, ${sAlpha})`;
     ctx.beginPath();
     ctx.moveTo(-starL, 0);
@@ -5435,6 +5475,7 @@ function drawSkeletonTwinCleave(ctx: CanvasRenderingContext2D, slash: SlashEffec
     ctx.lineTo(0, starL * 0.28);
     ctx.closePath();
     ctx.fill();
+
     ctx.beginPath();
     ctx.moveTo(0, -starL);
     ctx.lineTo(starL * 0.28, 0);
@@ -5442,6 +5483,13 @@ function drawSkeletonTwinCleave(ctx: CanvasRenderingContext2D, slash: SlashEffec
     ctx.lineTo(-starL * 0.28, 0);
     ctx.closePath();
     ctx.fill();
+
+    // White core hot-spot
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(0, 0, Math.max(1.8, 4.2 * (1 - progress)), 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.restore();
   }
 

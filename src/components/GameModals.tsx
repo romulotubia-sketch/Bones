@@ -11,8 +11,14 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
-import { CHARACTER_ROSTER, GRAVEYARD_BIOME_URL, SKELETON_BOSS_URL } from '../data/zombieData';
-import { CharacterId, GamePhase, RunBlessing } from '../types/game';
+import {
+  CHARACTER_ROSTER,
+  DIFFICULTY_CONFIGS,
+  DIFFICULTY_LIST,
+  GRAVEYARD_BIOME_URL,
+  SKELETON_BOSS_URL,
+} from '../data/zombieData';
+import { CharacterId, DifficultyLevel, GamePhase, RunBlessing } from '../types/game';
 import { requestAppFullscreen, tryLockScreenLandscape } from '../utils/orientation';
 import { ScrollablePane } from './ScrollablePane';
 import { HearthAndBoneTitleSvg, SoulShardIcon } from './SkillIcons';
@@ -211,6 +217,11 @@ interface EndOrPauseModalProps {
   shardsEarned: number;
   kills: number;
   damageDealt: number;
+  difficulty?: DifficultyLevel;
+  currentStage?: number;
+  maxStages?: number;
+  floorLabel?: string;
+  onSelectDifficulty?: (diff: DifficultyLevel) => void;
   onToggleFullscreen: () => void;
   onResume: () => void;
   onReturnToGuild: () => void;
@@ -224,12 +235,18 @@ export const EndOrPauseModal: React.FC<EndOrPauseModalProps> = ({
   shardsEarned,
   kills,
   damageDealt,
+  difficulty = DifficultyLevel.Easy,
+  currentStage = 1,
+  maxStages = 1,
+  floorLabel,
+  onSelectDifficulty,
   onToggleFullscreen,
   onResume,
   onReturnToGuild,
   onPlayAgain,
 }) => {
   const [imgError, setImgError] = useState(false);
+  const diffConfig = DIFFICULTY_CONFIGS[difficulty] ?? DIFFICULTY_CONFIGS[DifficultyLevel.Easy];
 
   if (phase === GamePhase.Paused) {
     return (
@@ -244,6 +261,19 @@ export const EndOrPauseModal: React.FC<EndOrPauseModalProps> = ({
               ? 'Resting inside the Cozy Guild House.'
               : 'Exploring the Whispering Graveyard.'}
           </p>
+
+          <div
+            className="mt-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold"
+            style={{
+              color: diffConfig.color,
+              backgroundColor: `${diffConfig.color}18`,
+              border: `1px solid ${diffConfig.color}44`,
+            }}
+          >
+            <span>{diffConfig.badge}</span>
+            <span>{diffConfig.label} Difficulty</span>
+            {!isGuild && floorLabel && <span className="opacity-80">· {floorLabel}</span>}
+          </div>
 
           <div className="mt-5 flex flex-col gap-2.5">
             <button
@@ -336,11 +366,28 @@ export const EndOrPauseModal: React.FC<EndOrPauseModalProps> = ({
               </h2>
               <p className="text-[11px] text-[#BDB6CC] mt-1 leading-snug">
                 {isVictory
-                  ? 'Lord Marrow has fallen and peace returns to the moonlit plots.'
+                  ? `${diffConfig.label} conquered! All ${diffConfig.stages} ${diffConfig.stages === 1 ? 'stage' : 'stages'} cleared and peace returns to the moonlit plots.`
                   : 'Your Soul Shards were carried safely back to the Guild House.'}
               </p>
 
-              <div className="mt-3 py-2.5 border-y border-[#2A2438] space-y-1.5 text-xs">
+              <div className="mt-2.5 py-2 border-y border-[#2A2438] space-y-1.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#9E96B0]">Difficulty</span>
+                  <span
+                    className="font-mono-num font-bold text-[11px] px-2 py-0.5 rounded flex items-center gap-1"
+                    style={{
+                      color: diffConfig.color,
+                      backgroundColor: `${diffConfig.color}22`,
+                      border: `1px solid ${diffConfig.color}55`,
+                    }}
+                  >
+                    <span>{diffConfig.badge}</span>
+                    <span>{diffConfig.label}</span>
+                    <span className="text-[10px] opacity-80">
+                      ({diffConfig.stages} {diffConfig.stages === 1 ? 'Stage' : 'Stages'} · {diffConfig.maxFloors}F)
+                    </span>
+                  </span>
+                </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[#9E96B0]">Skeletons Defeated</span>
                   <span className="font-mono-num font-semibold text-[#F5F0E6]">{kills}</span>
@@ -350,13 +397,53 @@ export const EndOrPauseModal: React.FC<EndOrPauseModalProps> = ({
                   <span className="font-mono-num font-semibold text-[#F5F0E6]">{damageDealt}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[#9E96B0]">Soul Shards Recovered</span>
+                  <span className="text-[#9E96B0]">Soul Shards ({diffConfig.shardMultiplier}x)</span>
                   <span className="font-mono-num font-semibold text-[#7DD3FC] flex items-center gap-1">
                     <SoulShardIcon className="w-3.5 h-3.5" />+{shardsEarned}
                   </span>
                 </div>
               </div>
             </div>
+
+            {onSelectDifficulty && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-semibold text-[#9E96B0] uppercase tracking-wider">
+                  Next Run Difficulty
+                </span>
+                <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+                  {DIFFICULTY_LIST.map((d) => {
+                    const isSel = difficulty === d.level;
+                    return (
+                      <button
+                        key={d.level}
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiClick(500 + DIFFICULTY_LIST.indexOf(d) * 50);
+                          onSelectDifficulty(d.level);
+                        }}
+                        className={`min-h-[32px] px-2 rounded-lg text-[11px] font-bold transition-all active:scale-95 flex items-center gap-1 shrink-0 ${
+                          isSel ? 'ring-1 ring-white/40 shadow-sm' : 'text-[#8E86A0] bg-[#120E1A]'
+                        }`}
+                        style={
+                          isSel
+                            ? {
+                                backgroundColor: d.color,
+                                color: d.level === DifficultyLevel.Easy ? '#0F1A12' : '#FFFFFF',
+                              }
+                            : undefined
+                        }
+                      >
+                        <span>{d.badge}</span>
+                        <span>{d.label}</span>
+                        <span className="text-[9px] opacity-75 font-mono-num font-normal">
+                          {d.shardMultiplier}x
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center gap-2.5">
               <button

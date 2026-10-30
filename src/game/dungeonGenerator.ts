@@ -1,4 +1,6 @@
 import {
+  DifficultyConfig,
+  DifficultyLevel,
   DungeonRoom,
   EnemyEntity,
   EnemyKind,
@@ -6,6 +8,7 @@ import {
   RoomKind,
   RoomProp,
 } from '../types/game';
+import { DIFFICULTY_CONFIGS } from '../data/zombieData';
 
 export interface WalkableZone {
   x: number;
@@ -42,15 +45,30 @@ export function createProceduralSkeleton(
   x: number,
   y: number,
   roomId: number,
-  floorScale = 1
+  floorScale = 1,
+  diffConfig?: DifficultyConfig,
+  stage = 1
 ): EnemyEntity {
+  const isNightmare = diffConfig?.id === DifficultyLevel.Nightmare;
+  const isTorment = diffConfig?.id === DifficultyLevel.Torment;
+  const speedMult = diffConfig?.enemySpeedMult ?? 1.0;
+  const cdMult = diffConfig?.enemyAttackCooldownMult ?? 1.0;
+
   const traits: ProceduralSkeletonTraits = {
     skullVariant: (Math.floor(Math.random() * 3) as 0 | 1 | 2),
-    hoodColor: HOOD_PALETTE[Math.floor(Math.random() * HOOD_PALETTE.length)],
-    boneTint: BONE_TINTS[Math.floor(Math.random() * BONE_TINTS.length)],
+    hoodColor: isNightmare
+      ? '#7F1D1D'
+      : isTorment
+      ? '#581C87'
+      : HOOD_PALETTE[Math.floor(Math.random() * HOOD_PALETTE.length)],
+    boneTint: isNightmare
+      ? '#FECDD3'
+      : isTorment
+      ? '#E9D5FF'
+      : BONE_TINTS[Math.floor(Math.random() * BONE_TINTS.length)],
     weaponVariant: Math.random() < 0.5 ? 0 : 1,
     hasBuckler: Math.random() < 0.65,
-    scale: 0.94 + Math.random() * 0.14,
+    scale: (0.94 + Math.random() * 0.14) * (stage > 2 ? 1.06 : 1.0),
   };
 
   if (kind === EnemyKind.TrainingDummy) {
@@ -93,7 +111,8 @@ export function createProceduralSkeleton(
   }
 
   if (kind === EnemyKind.SkeletonBoss) {
-    const bossHp = Math.round(920 * floorScale);
+    const baseBossHp = 920 + (stage - 1) * 440;
+    const bossHp = Math.round(baseBossHp * floorScale);
     return {
       id: allocEntityId(),
       kind,
@@ -101,10 +120,10 @@ export function createProceduralSkeleton(
       y,
       vx: 0,
       vy: 0,
-      radius: 34,
+      radius: 34 + (stage > 2 ? 3 : 0),
       hp: bossHp,
       maxHp: bossHp,
-      speed: 98,
+      speed: Math.round((98 + (stage - 1) * 8) * speedMult),
       facing: Math.PI / 2,
       facingX: -1,
       walkPhase: 0,
@@ -122,19 +141,27 @@ export function createProceduralSkeleton(
       plagueTimer: 0,
       aiState: 'IDLE',
       stateTimer: 1.0,
-      attackCooldown: 1.4,
+      attackCooldown: 1.4 * cdMult,
       telegraphAngle: 0,
       telegraphType: 'NONE',
       bossPhase: 1,
       bossPatternIndex: 0,
       roomId,
       traits: {
-        skullVariant: 1,
-        hoodColor: '#6B2D5C',
-        boneTint: '#F2ECE1',
+        skullVariant: (stage % 3) as 0 | 1 | 2,
+        hoodColor: isNightmare
+          ? '#991B1B'
+          : stage === 4
+          ? '#4C0519'
+          : stage === 3
+          ? '#3B0764'
+          : stage === 2
+          ? '#1E3A8A'
+          : '#6B2D5C',
+        boneTint: isNightmare ? '#FFE4E6' : '#F2ECE1',
         weaponVariant: 1,
         hasBuckler: false,
-        scale: 1.35,
+        scale: 1.35 + (stage - 1) * 0.08,
       },
     };
   }
@@ -153,7 +180,7 @@ export function createProceduralSkeleton(
     radius: isArcher ? 16 : 18,
     hp: scaledHp,
     maxHp: scaledHp,
-    speed: isArcher ? 102 : 118,
+    speed: Math.round((isArcher ? 102 : 118) * speedMult),
     facing: Math.random() * Math.PI * 2,
     facingX: Math.random() < 0.5 ? -1 : 1,
     walkPhase: Math.random() * 6,
@@ -171,7 +198,7 @@ export function createProceduralSkeleton(
     plagueTimer: 0,
     aiState: 'CHASE',
     stateTimer: 0.3 + Math.random() * 0.4,
-    attackCooldown: 0.8 + Math.random() * 0.7,
+    attackCooldown: (0.8 + Math.random() * 0.7) * cdMult,
     telegraphAngle: 0,
     telegraphType: 'NONE',
     bossPhase: 1,
@@ -347,21 +374,80 @@ export function buildGuildWorld(): GeneratedWorld {
   };
 }
 
-const FLOOR_NAMES: Record<number, string> = {
-  1: '1-1 · Moonlit Graveyard',
-  2: '1-2 · Weeping Mausoleum',
-  3: '1-3 · Ossuary Throne',
+export function getStageAndFloor(floorIndex: number): {
+  stage: number;
+  stageFloor: number;
+  isStageBoss: boolean;
+} {
+  const safeFloor = Math.max(1, Math.floor(floorIndex));
+  const stage = Math.floor((safeFloor - 1) / 3) + 1;
+  const stageFloor = ((safeFloor - 1) % 3) + 1;
+  return { stage, stageFloor, isStageBoss: stageFloor === 3 };
+}
+
+export const STAGE_THEMES: Record<
+  number,
+  {
+    name: string;
+    floors: [string, string, string];
+    bossName: string;
+    bossTitle: string;
+  }
+> = {
+  1: {
+    name: 'Whispering Graveyard',
+    floors: ['Moonlit Graveyard', 'Weeping Mausoleum', 'Ossuary Throne'],
+    bossName: 'Lord Marrow',
+    bossTitle: 'The Bone Tyrant · Gatekeeper',
+  },
+  2: {
+    name: 'Sunken Catacombs',
+    floors: ['Sunken Catacombs', 'Crypt of the Forgotten', "Sovereign's Sanctum"],
+    bossName: 'Dread Monarch Marrow',
+    bossTitle: 'Ascended Sovereign of the Deep',
+  },
+  3: {
+    name: 'Abyssal Sepulcher',
+    floors: ['Abyssal Sepulcher', 'Hall of Black Flames', "Lich's Dominion"],
+    bossName: 'Arch-Lich Malakar',
+    bossTitle: 'Master of the Black Flame',
+  },
+  4: {
+    name: 'Void Ossuary',
+    floors: ['Void Ossuary', 'River of Styx Gateway', 'Throne of Eternal Doom'],
+    bossName: 'Supreme Sovereign of Doom',
+    bossTitle: 'Death Incarnate · God of the Netherworld',
+  },
 };
 
-export function buildGraveyardFloor(floorNumber: number): GeneratedWorld {
+export function getFloorLabel(floorIndex: number): string {
+  const { stage, stageFloor } = getStageAndFloor(floorIndex);
+  const theme = STAGE_THEMES[stage] ?? STAGE_THEMES[4];
+  const floorSubName = theme.floors[stageFloor - 1] ?? `Chamber ${stageFloor}`;
+  return `${stage}-${stageFloor} · ${floorSubName}`;
+}
+
+export function getBossInfoForFloor(floorIndex: number) {
+  const { stage } = getStageAndFloor(floorIndex);
+  const theme = STAGE_THEMES[stage] ?? STAGE_THEMES[4];
+  return {
+    name: theme.bossName,
+    subtitle: theme.bossTitle,
+  };
+}
+
+export function buildGraveyardFloor(floorIndex: number, diffConfig?: DifficultyConfig): GeneratedWorld {
   const ROOM_W = 820;
   const ROOM_H = 640;
   const STEP_X = 1100;
   const STEP_Y = 920;
   const CORRIDOR_WIDTH = 144;
 
+  const { stage, stageFloor, isStageBoss } = getStageAndFloor(floorIndex);
+  const cfg = diffConfig ?? DIFFICULTY_CONFIGS[DifficultyLevel.Easy];
+
   // Procedurally walk a connected room graph
-  const targetRoomCount = floorNumber === 3 ? 5 : 5 + (floorNumber === 2 ? 1 : 0);
+  const targetRoomCount = isStageBoss ? 5 : 5 + (stageFloor === 2 ? 1 : 0) + (stage > 1 ? 1 : 0);
   interface GridCell {
     id: number;
     gx: number;
@@ -427,9 +513,9 @@ export function buildGraveyardFloor(floorNumber: number): GeneratedWorld {
       kind = RoomKind.Start;
     } else if (cell.id === maxDistRoom.id) {
       kind = RoomKind.Boss;
-      if (floorNumber === 3) {
-        roomW = 940;
-        roomH = 740;
+      if (isStageBoss) {
+        roomW = 960;
+        roomH = 760;
       }
     } else if (shrineCandidate && cell.id === shrineCandidate.id) {
       kind = RoomKind.Shrine;
@@ -452,7 +538,7 @@ export function buildGraveyardFloor(floorNumber: number): GeneratedWorld {
       locked: false,
       wavesRemaining:
         kind === RoomKind.Combat
-          ? 2
+          ? cfg.wavesPerCombatRoom
           : kind === RoomKind.Boss
           ? 1
           : 0,
@@ -613,8 +699,8 @@ export function buildGraveyardFloor(floorNumber: number): GeneratedWorld {
       }
     }
 
-    if (room.kind === RoomKind.Boss && floorNumber === 3) {
-      // Four grand crypt pillars in Lord Marrow's arena
+    if (room.kind === RoomKind.Boss && isStageBoss) {
+      // Four grand crypt pillars in the Boss arena
       const pillarOffsets = [
         [-235, -165],
         [235, -165],
@@ -639,8 +725,8 @@ export function buildGraveyardFloor(floorNumber: number): GeneratedWorld {
 
   return {
     isGuild: false,
-    floorNumber,
-    floorLabel: FLOOR_NAMES[floorNumber] || `1-${floorNumber} · Whispering Graveyard`,
+    floorNumber: floorIndex,
+    floorLabel: getFloorLabel(floorIndex),
     rooms,
     corridors,
     props,
@@ -652,44 +738,55 @@ export function buildGraveyardFloor(floorNumber: number): GeneratedWorld {
 
 export function spawnRoomWave(
   room: DungeonRoom,
-  floorNumber: number,
-  isFinalBossFloor: boolean
+  floorIndex: number,
+  isStageBossFloor: boolean,
+  diffConfig?: DifficultyConfig
 ): EnemyEntity[] {
   const spawned: EnemyEntity[] = [];
-  const floorScale = 1 + (floorNumber - 1) * 0.28;
+  const { stage, stageFloor } = getStageAndFloor(floorIndex);
+  const cfg = diffConfig ?? DIFFICULTY_CONFIGS[DifficultyLevel.Easy];
+  const floorScale = (1 + (floorIndex - 1) * 0.22) * cfg.enemyHpMult;
   const cx = room.x + room.w / 2;
   const cy = room.y + room.h / 2;
 
   if (room.kind === RoomKind.Boss) {
-    if (isFinalBossFloor) {
-      // Spawn Lord Marrow (Skeleton Boss) + 2 Royal Guard Skeletons
-      spawned.push(createProceduralSkeleton(EnemyKind.SkeletonBoss, cx, cy - 80, room.id, 1.0));
-      spawned.push(createProceduralSkeleton(EnemyKind.SkeletonWarrior, cx - 180, cy - 40, room.id, floorScale));
-      spawned.push(createProceduralSkeleton(EnemyKind.SkeletonArcher, cx + 180, cy - 40, room.id, floorScale));
+    if (isStageBossFloor) {
+      // Spawn Stage Boss (Lord Marrow, Dread Monarch, Arch-Lich, or Supreme Sovereign)
+      spawned.push(createProceduralSkeleton(EnemyKind.SkeletonBoss, cx, cy - 80, room.id, floorScale, cfg, stage));
+      // Guard count scales by stage and difficulty
+      const guardCount = Math.min(6, 2 + (stage - 1) + Math.floor(cfg.extraEnemiesPerWave * 0.6));
+      for (let g = 0; g < guardCount; g++) {
+        const ga = (g / guardCount) * Math.PI * 2;
+        const gx = cx + Math.cos(ga) * (180 + (g % 2) * 40);
+        const gy = cy + Math.sin(ga) * (120 + (g % 2) * 30);
+        const kind = g % 2 === 0 ? EnemyKind.SkeletonWarrior : EnemyKind.SkeletonArcher;
+        spawned.push(createProceduralSkeleton(kind, gx, gy, room.id, floorScale * 1.05, cfg, stage));
+      }
       return spawned;
     } else {
-      // Floor 1-1 & 1-2 Gatekeeper Crypt wave (elite pack of Warriors + Archers guarding the exit portal)
-      const count = 4 + floorNumber;
+      // Non-boss floors (e.g. 1-1, 1-2, 2-1 Gatekeepers guarding the descent portal)
+      const count = 4 + stageFloor + (stage - 1) + cfg.extraEnemiesPerWave;
       for (let i = 0; i < count; i++) {
         const ang = (i / count) * Math.PI * 2;
         const ex = cx + Math.cos(ang) * 210;
         const ey = cy + Math.sin(ang) * 145;
         const kind = i % 2 === 0 ? EnemyKind.SkeletonWarrior : EnemyKind.SkeletonArcher;
-        spawned.push(createProceduralSkeleton(kind, ex, ey, room.id, floorScale * 1.12));
+        spawned.push(createProceduralSkeleton(kind, ex, ey, room.id, floorScale * 1.12, cfg, stage));
       }
       return spawned;
     }
   }
 
   // Standard Graveyard Combat Room wave
-  const totalCount = 3 + floorNumber + (Math.random() < 0.45 ? 1 : 0);
+  const totalCount = 3 + stageFloor + (stage - 1) * 2 + cfg.extraEnemiesPerWave + (Math.random() < 0.45 ? 1 : 0);
   for (let i = 0; i < totalCount; i++) {
     const ang = (i / totalCount) * Math.PI * 2 + Math.random() * 0.5;
     const dist = 165 + Math.random() * 95;
     const ex = Math.max(room.x + 85, Math.min(room.x + room.w - 85, cx + Math.cos(ang) * dist));
     const ey = Math.max(room.y + 85, Math.min(room.y + room.h - 85, cy + Math.sin(ang) * (dist * 0.75)));
-    const kind = Math.random() < 0.58 ? EnemyKind.SkeletonWarrior : EnemyKind.SkeletonArcher;
-    spawned.push(createProceduralSkeleton(kind, ex, ey, room.id, floorScale));
+    const archerBias = cfg.id === DifficultyLevel.Nightmare || cfg.id === DifficultyLevel.Torment ? 0.48 : 0.42;
+    const kind = Math.random() < archerBias ? EnemyKind.SkeletonArcher : EnemyKind.SkeletonWarrior;
+    spawned.push(createProceduralSkeleton(kind, ex, ey, room.id, floorScale, cfg, stage));
   }
 
   return spawned;

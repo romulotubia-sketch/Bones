@@ -9,6 +9,41 @@ export enum GamePhase {
   GameOver = 'GAME_OVER',
 }
 
+export enum DifficultyLevel {
+  Easy = 'EASY',
+  Normal = 'NORMAL',
+  Hard = 'HARD',
+  Torment = 'TORMENT',
+  Nightmare = 'NIGHTMARE',
+}
+
+export interface DifficultyConfig {
+  id: DifficultyLevel;
+  level: DifficultyLevel;
+  name: string;
+  label: string;
+  tagline: string;
+  badge: string;
+  color: string;
+  bgGrad: string;
+  borderClass: string;
+  accentText: string;
+  stages: number; // Easy=1, Normal=1, Hard=2, Torment=3, Nightmare=4
+  maxFloors: number; // stages * 3 (e.g. 3, 3, 6, 9, 12)
+  victoryShards: number;
+  enemyHpMult: number;
+  enemyDmgMult: number;
+  enemySpeedMult: number;
+  enemyAttackCooldownMult: number;
+  extraEnemiesPerWave: number;
+  wavesPerCombatRoom: number;
+  shardMultiplier: number;
+  goldMultiplier: number;
+  xpMultiplier: number;
+  description: string;
+  warningNote?: string;
+}
+
 export enum CharacterId {
   Zombie = 'ZOMBIE',
   Skeleton = 'SKELETON',
@@ -160,6 +195,7 @@ export type CharacterUpgradeRanks = Record<UpgradeNodeSlot, number>;
 
 export interface GuildSaveData {
   selectedCharacter: CharacterId;
+  selectedDifficulty: DifficultyLevel;
   soulShards: number;
   totalRuns: number;
   victories: number;
@@ -638,8 +674,16 @@ export interface HudSnapshot {
   normalCooldowns: [number, number];
   normalMaxCooldowns: [number, number];
   activeMinions: number;
-  floorNumber: number; // 0 = Guild, 1, 2, 3
+  floorNumber: number; // 0 = Guild, 1, 2, 3...
   floorLabel: string;
+  difficulty: DifficultyLevel;
+  difficultyLabel: string;
+  difficultyBadge: string;
+  difficultyColor: string;
+  currentStage: number;
+  maxStages: number;
+  stageFloor: number;
+  totalFloorsInRun: number;
   runLevel: number;
   runXp: number;
   runXpNext: number;

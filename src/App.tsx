@@ -21,6 +21,7 @@ import {
 import { GameEngine } from './game/GameEngine';
 import {
   CharacterId,
+  DifficultyLevel,
   EquippedLoadout,
   GamePhase,
   GuildSaveData,
@@ -66,6 +67,14 @@ const INITIAL_HUD: HudSnapshot = {
   activeMinions: 0,
   floorNumber: 0,
   floorLabel: 'Sanctuary · Cozy Guild Hall',
+  difficulty: DifficultyLevel.Easy,
+  difficultyLabel: 'Easy',
+  difficultyBadge: '🌱',
+  difficultyColor: '#4ADE80',
+  currentStage: 1,
+  maxStages: 1,
+  stageFloor: 1,
+  totalFloorsInRun: 3,
   runLevel: 1,
   runXp: 0,
   runXpNext: 55,
@@ -156,6 +165,20 @@ export default function App() {
       };
       persistGuildSave(updated);
       engineRef.current?.updateSaveData(updated);
+      return updated;
+    });
+  }, []);
+
+  const handleSelectDifficulty = useCallback((diff: DifficultyLevel) => {
+    setSaveData((prev) => {
+      if (prev.selectedDifficulty === diff) return prev;
+      const updated: GuildSaveData = {
+        ...prev,
+        selectedDifficulty: diff,
+      };
+      persistGuildSave(updated);
+      engineRef.current?.updateSaveData(updated);
+      engineRef.current?.setDifficulty(diff);
       return updated;
     });
   }, []);
@@ -367,12 +390,14 @@ export default function App() {
             hud={hud}
             loadout={activeLoadout}
             totalSavedShards={saveData.soulShards}
+            selectedDifficulty={saveData.selectedDifficulty}
             muted={saveData.muted}
             isFullscreen={isFullscreen}
             onToggleMute={handleToggleMute}
             onToggleFullscreen={handleToggleFullscreen}
             onPause={handlePause}
             onOpenLoadout={handleOpenLoadout}
+            onSelectDifficulty={handleSelectDifficulty}
             onJoystickMove={handleJoystickMove}
             onMapPanJoystick={handleMapPanJoystick}
             onResetMapPan={handleResetMapPan}
@@ -414,6 +439,11 @@ export default function App() {
           shardsEarned={endSummary.shardsEarned}
           kills={endSummary.kills}
           damageDealt={endSummary.damageDealt}
+          difficulty={saveData.selectedDifficulty}
+          currentStage={hud.currentStage}
+          maxStages={hud.maxStages}
+          floorLabel={hud.floorLabel}
+          onSelectDifficulty={handleSelectDifficulty}
           onToggleFullscreen={handleToggleFullscreen}
           onResume={handleResume}
           onReturnToGuild={handleReturnToGuild}

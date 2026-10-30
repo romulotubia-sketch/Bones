@@ -128,45 +128,32 @@ export const SkeletonAttackPreview: React.FC = () => {
           const startAng = -half + slash.arcSpread * tailEase;
           const endAng = -half + slash.arcSpread * headEase;
 
-          if (slash.isCrit) {
+          const drawMiniBoneCrescent = (
+            subProgress: number,
+            subRadius: number,
+            subSpread: number,
+            flip: boolean,
+            isCrit: boolean,
+            baseAlpha: number
+          ) => {
+            const hEase = 1 - Math.pow(1 - Math.min(1, subProgress * 1.45), 3);
+            const tEase = Math.pow(Math.max(0, (subProgress - 0.12) / 0.88), 2.1);
+            const sHalf = subSpread * 0.5;
+            const sStart = -sHalf + subSpread * tEase;
+            const sEnd = -sHalf + subSpread * hEase;
+            if (sEnd - sStart <= 0.04) return;
+
             ctx.save();
-            ctx.translate(28, h * 0.5);
-            for (let b = 0; b < 2; b++) {
-              const cant = b === 0 ? -0.34 : 0.34;
-              const a0 = -0.82 + 1.64 * tailEase * 0.45;
-              const a1 = -0.82 + 1.64 * headEase;
-              if (a1 - a0 <= 0.05) continue;
-              ctx.save();
-              ctx.rotate(cant);
-              ctx.globalCompositeOperation = 'lighter';
-              ctx.strokeStyle = `rgba(253, 224, 71, ${alpha * 0.85})`;
-              ctx.lineWidth = 7.5 * (1 - progress * 0.45);
-              ctx.lineCap = 'round';
-              ctx.beginPath();
-              ctx.arc(0, 0, slash.radius * 0.92, a0, a1);
-              ctx.stroke();
-              ctx.globalCompositeOperation = 'source-over';
-              ctx.strokeStyle = `rgba(248, 250, 252, ${alpha})`;
-              ctx.lineWidth = 2.6 * (1 - progress * 0.4);
-              ctx.beginPath();
-              ctx.arc(0, 0, slash.radius * 0.92, a0, a1);
-              ctx.stroke();
-              ctx.restore();
-            }
-            ctx.restore();
-          } else if (endAng - startAng > 0.04) {
-            ctx.save();
-            ctx.translate(28, h * 0.5);
-            if (slash.flip) ctx.scale(1, -1);
+            if (flip) ctx.scale(1, -1);
 
             const steps = 16;
-            const outerR = slash.radius * (0.94 + headEase * 0.08);
-            const maxW = 9.5 * (1 - progress * 0.42);
+            const outerR = subRadius * (0.94 + hEase * 0.08);
+            const maxW = (isCrit ? 11.5 : 9.5) * (1 - subProgress * 0.42);
 
             ctx.beginPath();
             for (let i = 0; i <= steps; i++) {
               const t = i / steps;
-              const a = startAng + (endAng - startAng) * t;
+              const a = sStart + (sEnd - sStart) * t;
               const notch = t > 0.58 && t < 0.68 ? -1.8 : 0;
               const r = outerR + notch;
               if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
@@ -174,7 +161,7 @@ export const SkeletonAttackPreview: React.FC = () => {
             }
             for (let i = steps; i >= 0; i--) {
               const t = i / steps;
-              const a = startAng + (endAng - startAng) * t;
+              const a = sStart + (sEnd - sStart) * t;
               const profile = Math.sin(Math.pow(t, 0.75) * Math.PI);
               const r = Math.max(3, outerR - maxW * profile);
               ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
@@ -183,21 +170,74 @@ export const SkeletonAttackPreview: React.FC = () => {
 
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = alpha * 0.5;
-            ctx.fillStyle = '#38BDF8';
+            ctx.globalAlpha = baseAlpha * (isCrit ? 0.65 : 0.5);
+            ctx.fillStyle = isCrit ? '#FDE047' : '#38BDF8';
             ctx.fill();
             ctx.restore();
 
             ctx.save();
-            ctx.globalAlpha = alpha;
+            ctx.globalAlpha = baseAlpha;
             const grad = ctx.createRadialGradient(0, 0, Math.max(2, outerR - maxW), 0, 0, outerR + 1);
-            grad.addColorStop(0, 'rgba(56, 189, 248, 0.22)');
-            grad.addColorStop(0.55, '#7DD3FC');
+            grad.addColorStop(0, isCrit ? 'rgba(253, 224, 71, 0.25)' : 'rgba(56, 189, 248, 0.22)');
+            grad.addColorStop(0.55, isCrit ? '#FEF08A' : '#7DD3FC');
             grad.addColorStop(1, '#FFFFFF');
             ctx.fillStyle = grad;
             ctx.fill();
             ctx.restore();
 
+            ctx.restore();
+          };
+
+          if (slash.isCrit) {
+            ctx.save();
+            ctx.translate(28, h * 0.5);
+            const p1 = Math.min(1, progress * 1.16);
+            const p2 = Math.max(0, Math.min(1, (progress - 0.06) / 0.94));
+
+            // Blade 1: upper-left to lower-right
+            ctx.save();
+            ctx.rotate(-0.28);
+            drawMiniBoneCrescent(p1, slash.radius * 1.04, 1.7, false, true, alpha);
+            ctx.restore();
+
+            // Blade 2: lower-left to upper-right mirror scissor
+            if (p2 > 0) {
+              ctx.save();
+              ctx.rotate(0.28);
+              drawMiniBoneCrescent(p2, slash.radius * 0.96, 1.7, true, true, alpha);
+              ctx.restore();
+            }
+
+            // Cross star glint at scissor center
+            if (progress < 0.6) {
+              const sAlpha = (1 - progress / 0.6) * alpha;
+              const starL = 12 * (1 - progress * 0.45);
+              ctx.save();
+              ctx.translate(slash.radius * 0.88, 0);
+              ctx.globalCompositeOperation = 'lighter';
+              ctx.fillStyle = `rgba(254, 249, 195, ${sAlpha})`;
+              ctx.beginPath();
+              ctx.moveTo(-starL, 0);
+              ctx.lineTo(0, -starL * 0.28);
+              ctx.lineTo(starL, 0);
+              ctx.lineTo(0, starL * 0.28);
+              ctx.closePath();
+              ctx.fill();
+              ctx.beginPath();
+              ctx.moveTo(0, -starL);
+              ctx.lineTo(starL * 0.28, 0);
+              ctx.lineTo(0, starL);
+              ctx.lineTo(-starL * 0.28, 0);
+              ctx.closePath();
+              ctx.fill();
+              ctx.restore();
+            }
+
+            ctx.restore();
+          } else if (endAng - startAng > 0.04) {
+            ctx.save();
+            ctx.translate(28, h * 0.5);
+            drawMiniBoneCrescent(progress, slash.radius, slash.arcSpread, slash.flip, false, alpha);
             ctx.restore();
           }
         }

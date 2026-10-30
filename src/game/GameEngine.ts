@@ -17,6 +17,8 @@ import {
   EarthenGraspZone,
   EnemyEntity,
   EnemyKind,
+  DifficultyConfig,
+  DifficultyLevel,
   EquippedLoadout,
   ExplosiveTrapEntity,
   FloatingPopup,
@@ -41,6 +43,7 @@ import {
   UltimateSkillId,
   DeathsEmbraceEffect,
 } from '../types/game';
+import { DIFFICULTY_CONFIGS } from '../data/zombieData';
 import { clientToLandscapePoint } from '../utils/orientation';
 import {
   allocEntityId,
@@ -48,7 +51,11 @@ import {
   buildGuildWorld,
   createProceduralSkeleton,
   GeneratedWorld,
+  getBossInfoForFloor,
+  getFloorLabel,
+  getStageAndFloor,
   spawnRoomWave,
+  STAGE_THEMES,
 } from './dungeonGenerator';
 import { renderGameWorld } from './renderer';
 
@@ -236,6 +243,7 @@ export class GameEngine {
   private runDamageDealt = 0;
   private corpseBloomCounter = 0;
   private pendingNextFloor: number | null = null;
+  private currentDifficulty: DifficultyLevel = DifficultyLevel.Easy;
 
   // Dynamic entities
   private minions: MinionEntity[] = [];
@@ -278,6 +286,7 @@ export class GameEngine {
     this.ctx = context;
     this.saveData = saveData;
     this.callbacks = callbacks;
+    this.currentDifficulty = saveData.selectedDifficulty ?? DifficultyLevel.Easy;
 
     this.world = buildGuildWorld();
     const profile = this.getActiveProfile();
@@ -392,9 +401,22 @@ export class GameEngine {
     this.bufferedActions.set('INTERACT', 0.22);
   }
 
+  public getDifficultyConfig(): DifficultyConfig {
+    return DIFFICULTY_CONFIGS[this.currentDifficulty] ?? DIFFICULTY_CONFIGS[DifficultyLevel.Easy];
+  }
+
+  public setDifficulty(difficulty: DifficultyLevel): void {
+    this.currentDifficulty = difficulty;
+    this.saveData.selectedDifficulty = difficulty;
+    this.emitHudSnapshot();
+  }
+
   public updateSaveData(newSave: GuildSaveData): void {
     const prevChar = this.saveData.selectedCharacter;
     this.saveData = newSave;
+    if (newSave.selectedDifficulty) {
+      this.currentDifficulty = newSave.selectedDifficulty;
+    }
     const nextChar = this.saveData.selectedCharacter;
 
     if (this.world.isGuild && prevChar !== nextChar) {
@@ -470,7 +492,13 @@ export class GameEngine {
     this.emitHudSnapshot();
   }
 
-  public startGraveyardRun(): void {
+  public startGraveyardRun(difficulty?: DifficultyLevel): void {
+    if (difficulty) {
+      this.currentDifficulty = difficulty;
+      this.saveData.selectedDifficulty = difficulty;
+    } else {
+      this.currentDifficulty = this.saveData.selectedDifficulty ?? DifficultyLevel.Easy;
+    }
     this.activeBlessingIds.clear();
     this.runLevel = 1;
     this.runXp = 0;
@@ -536,7 +564,7 @@ export class GameEngine {
 
   private loadDungeonFloor(floorNum: number): void {
     this.clearTransientEntities();
-    this.world = buildGraveyardFloor(floorNum);
+    this.world = buildGraveyardFloor(floorNum, this.getDifficultyConfig());
     this.player.x = this.world.spawnX;
     this.player.y = this.world.spawnY;
     this.player.vx = 0;
@@ -1090,7 +1118,8 @@ export class GameEngine {
           return;
         }
         if (prop.kind === 'PORTAL_ARCH' && tapDist <= 68 && playerDist <= 105) {
-          if (this.world.floorNumber >= 3) {
+          const maxFloors = this.getDifficultyConfig().maxFloors;
+          if (this.world.floorNumber >= maxFloors) {
             this.finishRun(true);
           } else {
             this.offerBlessingsAndAdvanceFloor(this.world.floorNumber + 1);
@@ -2674,24 +2703,30 @@ export class GameEngine {
 
     // Skeleton Basic Attack: tangential velocity streaks & flying ivory bone splinters
     if (isSkel) {
-      const shardCount = isSkelFinisher ? 12 : 7;
+      if (isSkelFinisher) {
+        soundEngine.playBoneBreak();
+        this.shakeMag = Math.max(this.shakeMag, 3.8);
+      }
+      const shardCount = isSkelFinisher ? 14 : 7;
       for (let i = 0; i < shardCount; i++) {
         if (this.particles.length > 240) break;
         const t = (i / Math.max(1, shardCount - 1) - 0.5) * spread;
-        const dir = p.aimAngle + (p.comboFlip ? -t : t);
+        // In finisher, alternate scissor arm angles
+        const scissorArm = isSkelFinisher ? (i % 2 === 0 ? -1 : 1) : (p.comboFlip ? -1 : 1);
+        const dir = p.aimAngle + scissorArm * t;
         const r = reach * (0.72 + Math.random() * 0.3);
         const sx = originX + Math.cos(dir) * r;
         const sy = originY + Math.sin(dir) * r;
-        const tangent = dir + (p.comboFlip ? -Math.PI * 0.38 : Math.PI * 0.38);
-        const spd = (isSkelFinisher ? 215 : 155) + Math.random() * 120;
+        const tangent = dir + scissorArm * Math.PI * 0.38;
+        const spd = (isSkelFinisher ? 225 : 155) + Math.random() * 120;
         const isBonePiece = i % 2 === 0;
-        const life = 0.21 + Math.random() * 0.14;
+        const life = 0.22 + Math.random() * 0.14;
         this.particles.push({
           x: sx,
           y: sy,
           vx: Math.cos(tangent) * spd,
           vy: Math.sin(tangent) * spd,
-          size: 2.5,
+          size: 2.6,
           color: isBonePiece ? '#F8FAFC' : isSkelFinisher ? '#FDE047' : '#38BDF8',
           life,
           maxLife: life,
@@ -2837,7 +2872,9 @@ export class GameEngine {
 
     const rawDmg =
       profile.baseAttackDamage *
-      (isSkelFinisher || isGnomeFinisher || isGhostFinisher
+      (isSkelFinisher
+        ? 1.55
+        : isGnomeFinisher || isGhostFinisher
         ? 1.24
         : isZombieFinisher || isGobFinisher
         ? 1.2
@@ -2851,7 +2888,7 @@ export class GameEngine {
       spread * 0.65,
       rawDmg,
       isGnome || isSkelFinisher || isZombieFinisher || isGobFinisher || isGhostFinisher,
-      isSkelFinisher ? 0.25 : isGobFinisher || isGhostFinisher ? 0.22 : isGnomeFinisher ? 0.18 : 0,
+      isSkelFinisher ? 0.35 : isGobFinisher || isGhostFinisher ? 0.22 : isGnomeFinisher ? 0.18 : 0,
       isZombie,
       isSkel || isGob || isGnome || isGhost ? createdSlash : undefined,
       isZombieFinisher
@@ -6338,7 +6375,11 @@ export class GameEngine {
         e.attackCooldown = 1.85;
         e.telegraphType = 'NONE';
         soundEngine.playArrow();
-        const arrowDmg = this.applyWeakenedEnemyMultiplier(e, 14 + (this.world.floorNumber - 1) * 3);
+        const baseArrow = 14 + (this.world.floorNumber - 1) * 3;
+        const arrowDmg = this.applyWeakenedEnemyMultiplier(
+          e,
+          Math.round(baseArrow * this.getDifficultyConfig().enemyDmgMult)
+        );
         this.spawnEnemyProjectile(e.x, e.y, e.telegraphAngle, 340, arrowDmg, 'BONE_ARROW', '#F87171');
       }
       return;
@@ -6431,8 +6472,12 @@ export class GameEngine {
           e.stateTimer = enraged ? 0.55 : 0.8;
         } else if (tType === 'BOSS_VOLLEY') {
           soundEngine.playArrow();
-          const fanCount = enraged ? 9 : 7;
-          const boltDmg = this.applyWeakenedEnemyMultiplier(e, 18);
+          const isNightmare = this.currentDifficulty === DifficultyLevel.Nightmare;
+          const fanCount = isNightmare ? (enraged ? 13 : 11) : (enraged ? 9 : 7);
+          const boltDmg = this.applyWeakenedEnemyMultiplier(
+            e,
+            Math.round(18 * this.getDifficultyConfig().enemyDmgMult)
+          );
           for (let k = 0; k < fanCount; k++) {
             const a = e.telegraphAngle - 0.95 + (k / (fanCount - 1)) * 1.9;
             this.spawnEnemyProjectile(e.x, e.y, a, 300, boltDmg, 'BOSS_BOLT', '#38BDF8');
@@ -6536,7 +6581,8 @@ export class GameEngine {
     halfSpread: number,
     rawDamage: number
   ): void {
-    const finalDmg = this.applyWeakenedEnemyMultiplier(attacker, rawDamage);
+    const diffScaledDmg = Math.round(rawDamage * this.getDifficultyConfig().enemyDmgMult);
+    const finalDmg = this.applyWeakenedEnemyMultiplier(attacker, diffScaledDmg);
 
     const pdx = this.player.x - attacker.x;
     const pdy = this.player.y - attacker.y;
@@ -8037,15 +8083,21 @@ export class GameEngine {
       this.spawnOrb('GOLD_COIN', enemy.x, enemy.y, 4 + Math.floor(Math.random() * 4));
     }
 
+    const shardMult = this.getDifficultyConfig().shardMultiplier;
     if (enemy.kind === EnemyKind.SkeletonBoss) {
       this.hitstopTimer = 0.08;
       this.shakeMag = 15;
       for (let s = 0; s < 12; s++) {
-        this.spawnOrb('SOUL_SHARD', enemy.x, enemy.y, 4);
+        this.spawnOrb('SOUL_SHARD', enemy.x, enemy.y, Math.max(1, Math.round(4 * shardMult)));
       }
       soundEngine.playVictory();
     } else if (Math.random() < 0.55) {
-      this.spawnOrb('SOUL_SHARD', enemy.x, enemy.y, 2 + Math.floor(this.world.floorNumber * 0.7));
+      this.spawnOrb(
+        'SOUL_SHARD',
+        enemy.x,
+        enemy.y,
+        Math.max(1, Math.round((2 + Math.floor(this.world.floorNumber * 0.7)) * shardMult))
+      );
     }
   }
 
@@ -8159,14 +8211,18 @@ export class GameEngine {
         if (!room.cleared && !room.locked && room.wavesRemaining > 0) {
           room.locked = true;
           room.wavesRemaining--;
-          const isFinalBoss = this.world.floorNumber === 3 && room.kind === RoomKind.Boss;
-          const wave = spawnRoomWave(room, this.world.floorNumber, isFinalBoss);
+          const { isStageBoss } = getStageAndFloor(this.world.floorNumber);
+          const isBossRoom = room.kind === RoomKind.Boss;
+          const isFinalBoss = isBossRoom && isStageBoss;
+          const diffConfig = this.getDifficultyConfig();
+          const wave = spawnRoomWave(room, this.world.floorNumber, isFinalBoss, diffConfig);
           this.world.enemies.push(...wave);
           for (const w of wave) {
             this.spawnBurst(w.x, w.y, '#94A3B8', 10, 85);
           }
-          if (isFinalBoss) {
-            this.showBanner('Lord Marrow · Keeper of the Graveyard');
+          if (isBossRoom) {
+            const bossInfo = getBossInfoForFloor(this.world.floorNumber);
+            this.showBanner(`${bossInfo.name} · ${bossInfo.subtitle}`);
             soundEngine.playBossSlam();
           }
           this.emitHudSnapshot();
@@ -8179,7 +8235,7 @@ export class GameEngine {
     if (activeRoom && activeRoom.locked && this.world.enemies.length === 0) {
       if (activeRoom.wavesRemaining > 0) {
         activeRoom.wavesRemaining--;
-        const wave = spawnRoomWave(activeRoom, this.world.floorNumber, false);
+        const wave = spawnRoomWave(activeRoom, this.world.floorNumber, false, this.getDifficultyConfig());
         this.world.enemies.push(...wave);
         for (const w of wave) {
           this.spawnBurst(w.x, w.y, '#94A3B8', 10, 85);
@@ -8204,11 +8260,20 @@ export class GameEngine {
             destructible: false,
             hp: 999,
           });
-          this.showBanner(
-            this.world.floorNumber === 3
-              ? 'Lord Marrow Defeated! Enter the Sanctuary Portal'
-              : 'Crypt Cleared! Step into the Descent Portal'
-          );
+          const maxFloors = this.getDifficultyConfig().maxFloors;
+          const bossInfo = getBossInfoForFloor(this.world.floorNumber);
+          if (this.world.floorNumber >= maxFloors) {
+            this.showBanner(`${bossInfo.name} Slain! Enter the Sanctum Portal to Claim Victory`);
+          } else {
+            const nextFloor = this.world.floorNumber + 1;
+            const nextInfo = getStageAndFloor(nextFloor);
+            if (nextInfo.stageFloor === 1) {
+              const theme = STAGE_THEMES[nextInfo.stage] ?? STAGE_THEMES[1];
+              this.showBanner(`Boss Slain! Ascend to Stage ${nextInfo.stage}-1: ${theme.name}`);
+            } else {
+              this.showBanner(`${bossInfo.name} Defeated! Step into the Descent Portal`);
+            }
+          }
         } else {
           this.world.props.push({
             id: allocEntityId(),
@@ -8262,16 +8327,25 @@ export class GameEngine {
           }
         }
       } else if (prop.kind === 'PORTAL_ARCH' && !this.world.isGuild && dist <= 76) {
-        prompt =
-          this.world.floorNumber === 3
-            ? 'Claim Victory & Return'
-            : `Descend to Floor 1-${this.world.floorNumber + 1}`;
+        const maxFloors = this.getDifficultyConfig().maxFloors;
+        const isRunVictory = this.world.floorNumber >= maxFloors;
+        const nextFloor = this.world.floorNumber + 1;
+        const nextInfo = getStageAndFloor(nextFloor);
+        if (isRunVictory) {
+          prompt = 'Claim Victory & Return to Guild';
+        } else if (nextInfo.stageFloor === 1) {
+          const theme = STAGE_THEMES[nextInfo.stage] ?? STAGE_THEMES[1];
+          prompt = `Ascend to Stage ${nextInfo.stage}-1 · ${theme.name}`;
+        } else {
+          prompt = `Descend to Floor ${nextInfo.stage}-${nextInfo.stageFloor}`;
+        }
+
         if (pressedInteract || dist <= 32) {
           this.bufferedActions.delete('INTERACT');
-          if (this.world.floorNumber >= 3) {
+          if (isRunVictory) {
             this.finishRun(true);
           } else {
-            this.offerBlessingsAndAdvanceFloor(this.world.floorNumber + 1);
+            this.offerBlessingsAndAdvanceFloor(nextFloor);
           }
           return;
         }
@@ -8306,7 +8380,13 @@ export class GameEngine {
     prop.opened = true;
     soundEngine.playPickup();
     this.spawnBurst(prop.x, prop.y, '#FBBF24', 14, 110);
-    this.spawnOrb('SOUL_SHARD', prop.x, prop.y, 5 + this.world.floorNumber * 2);
+    const shardMult = this.getDifficultyConfig().shardMultiplier;
+    this.spawnOrb(
+      'SOUL_SHARD',
+      prop.x,
+      prop.y,
+      Math.max(1, Math.round((5 + this.world.floorNumber * 2) * shardMult))
+    );
     this.spawnOrb('ESSENCE_HEAL', prop.x, prop.y, 18);
     this.spawnOrb('GOLD_COIN', prop.x, prop.y, 12);
   }
@@ -8365,7 +8445,8 @@ export class GameEngine {
     this.joyX = 0;
     this.joyY = 0;
     this.attackHeld = false;
-    const bonusShards = victory ? 25 : 5;
+    const diff = this.getDifficultyConfig();
+    const bonusShards = victory ? diff.victoryShards : Math.max(3, Math.round(5 * diff.shardMultiplier));
     const totalEarned = this.runShardsEarned + bonusShards;
     this.runShardsEarned = totalEarned;
     this.callbacks.onRunFinished(victory, totalEarned, this.runKills, this.runDamageDealt);
@@ -8751,6 +8832,14 @@ export class GameEngine {
       activeMinions: this.minions.length,
       floorNumber: this.world.floorNumber,
       floorLabel: this.world.floorLabel,
+      difficulty: this.currentDifficulty,
+      difficultyLabel: this.getDifficultyConfig().label,
+      difficultyBadge: this.getDifficultyConfig().badge,
+      difficultyColor: this.getDifficultyConfig().color,
+      currentStage: getStageAndFloor(this.world.floorNumber).stage,
+      maxStages: this.getDifficultyConfig().stages,
+      stageFloor: getStageAndFloor(this.world.floorNumber).stageFloor,
+      totalFloorsInRun: this.getDifficultyConfig().maxFloors,
       runLevel: this.runLevel,
       runXp: this.runXp,
       runXpNext: this.runXpNext,
@@ -8763,8 +8852,8 @@ export class GameEngine {
       roomBannerText: this.roomBannerText,
       bossInfo: boss
         ? {
-            name: 'Lord Marrow',
-            subtitle: 'Keeper of the Graveyard',
+            name: getBossInfoForFloor(this.world.floorNumber).name,
+            subtitle: getBossInfoForFloor(this.world.floorNumber).subtitle,
             hp: Math.max(0, Math.ceil(boss.hp)),
             maxHp: boss.maxHp,
           }
