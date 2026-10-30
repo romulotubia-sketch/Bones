@@ -385,6 +385,38 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
               </div>
             </div>
 
+            {/* Zombie Basic Attack Animation Preview */}
+            {!isSkeleton && !isGoblin && !isGnome && (
+              <div className="pt-3 border-t border-[#282336] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold text-[#86EFAC] flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#4ADE80]" />
+                    Basic Attack · Necrotic Claw (8-Frame FX)
+                  </div>
+                  <span className="text-[10px] text-[#A7F3D0] font-mono-num">0.34s recovery</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-[#17241C] border border-[#2B4B36] space-y-2">
+                  <p className="text-[11px] text-[#C2D8C9] leading-snug">
+                    Frame-by-frame toxic claw swipe. Connects with sharp impact sparks and bursts lingering poison clouds.
+                  </p>
+                  <div className="flex items-center gap-2.5 pt-0.5">
+                    <div className="relative w-24 h-16 bg-[#081726] rounded-lg border border-[#28573D] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                      <img
+                        src="/assets/aistudio/zombie_attack_fx_strip.png"
+                        alt="Zombie basic attack animation frames"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    <div className="text-[10px] text-[#86EFAC] space-y-0.5 font-mono-num leading-tight">
+                      <div>Reach: 62 (84 in Abomination)</div>
+                      <div>Impact: Virulent Infection Stacks</div>
+                      <div>Effects: Spore Plumes &amp; Droplets</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Both Innate Passives */}
             <div className="pt-3 border-t border-[#282336] space-y-2.5">
               <div className="text-[11px] font-semibold text-[#D6D0C4]">

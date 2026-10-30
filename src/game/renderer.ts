@@ -2564,7 +2564,198 @@ function drawPickup(ctx: CanvasRenderingContext2D, orb: PickupOrb, time: number)
   ctx.restore();
 }
 
+// Reference to user-provided Zombie Basic Attack animation sheet and transparent strip
+export const ZOMBIE_ATTACK_SHEET_URL = '/assets/aistudio/Zombie_Basic_Attack_Animation_Sheet_0016d4e5.png';
+export const ZOMBIE_ATTACK_STRIP_URL = '/assets/aistudio/zombie_attack_fx_strip.png';
+
+let cachedZombieSheetImg: HTMLImageElement | null = null;
+let cachedZombieStripImg: HTMLImageElement | null = null;
+
+function getZombieAttackImages(): {
+  sheet: HTMLImageElement | null;
+  strip: HTMLImageElement | null;
+} {
+  if (typeof window === 'undefined') return { sheet: null, strip: null };
+  if (!cachedZombieSheetImg) {
+    cachedZombieSheetImg = new Image();
+    cachedZombieSheetImg.src = ZOMBIE_ATTACK_SHEET_URL;
+  }
+  if (!cachedZombieStripImg) {
+    cachedZombieStripImg = new Image();
+    cachedZombieStripImg.src = ZOMBIE_ATTACK_STRIP_URL;
+  }
+  return { sheet: cachedZombieSheetImg, strip: cachedZombieStripImg };
+}
+
+// Bounding boxes for the 8 animation frames on the original master sheet
+const RAW_ZOMBIE_FRAME_BBOXES = [
+  { sx: 32, sy: 260, sw: 340, sh: 260 },   // Frame 0: Wind-up
+  { sx: 410, sy: 260, sw: 340, sh: 260 },  // Frame 1: Swing Start
+  { sx: 785, sy: 260, sw: 340, sh: 260 },  // Frame 2: Hit Frame 1
+  { sx: 1161, sy: 260, sw: 340, sh: 260 }, // Frame 3: Hit Frame 2
+  { sx: 32, sy: 650, sw: 340, sh: 260 },   // Frame 4: Poison Spread 1
+  { sx: 410, sy: 650, sw: 340, sh: 260 },  // Frame 5: Poison Spread 2
+  { sx: 785, sy: 650, sw: 340, sh: 260 },  // Frame 6: Poison Spread 3
+  { sx: 1161, sy: 650, sw: 340, sh: 260 }, // Frame 7: End
+];
+
+function drawZombieBasicAttack(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
+  const alpha = Math.max(0, 1 - Math.pow(progress, 2.5));
+  // 8 sequential frames of the attack
+  const frameIndex = Math.min(7, Math.floor(progress * 8));
+
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.rotate(slash.angle);
+  if (slash.flip) {
+    ctx.scale(1, -1);
+  }
+
+  const scale = slash.scale ?? 1;
+  const drawW = slash.radius * 2.35 * scale;
+  const drawH = slash.radius * 1.8 * scale;
+  const drawX = -drawW * 0.34;
+  const drawY = -drawH * 0.5;
+
+  const { sheet, strip } = getZombieAttackImages();
+  const stripReady = strip && strip.complete && strip.naturalWidth > 0;
+  const sheetReady = sheet && sheet.complete && sheet.naturalWidth > 0;
+
+  if (stripReady) {
+    const sw = 340;
+    const sh = 260;
+    const sx = frameIndex * sw;
+    const sy = 0;
+
+    // Luminous bloom pass for Soul Knight neon glow
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha * 0.7;
+    ctx.drawImage(strip, sx, sy, sw, sh, drawX, drawY, drawW, drawH);
+    ctx.restore();
+
+    // Crisp full-color pass
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(strip, sx, sy, sw, sh, drawX, drawY, drawW, drawH);
+    ctx.restore();
+  } else if (sheetReady) {
+    const box = RAW_ZOMBIE_FRAME_BBOXES[frameIndex];
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha * 0.95;
+    ctx.drawImage(sheet, box.sx, box.sy, box.sw, box.sh, drawX, drawY, drawW, drawH);
+    ctx.restore();
+  } else {
+    // Stylized fallback arc while images are initializing
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = '#4ADE80';
+    ctx.lineWidth = 12 * (1 - progress * 0.4);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, slash.radius, -slash.arcSpread / 2, slash.arcSpread / 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#FEF08A';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, slash.radius - 2, -slash.arcSpread * 0.35, slash.arcSpread * 0.35);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Accent energetic slash sparks during initial swing frames
+  if (frameIndex >= 1 && frameIndex <= 3) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha * 0.8;
+    ctx.strokeStyle = '#86EFAC';
+    ctx.lineWidth = 2.5 * (1 - progress);
+    ctx.beginPath();
+    ctx.arc(0, 0, slash.radius * 0.92, -0.65, 0.65);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawZombiePoisonBurst(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
+  const alpha = Math.max(0, 1 - progress);
+  // Frames 2..7: Hit spark, impact spikes, billowing poison cloud, fading mist
+  const frameIndex = 2 + Math.min(5, Math.floor(progress * 6));
+
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.rotate(slash.angle);
+  if (slash.flip) {
+    ctx.scale(1, -1);
+  }
+
+  const scale = slash.scale ?? 1;
+  const burstW = slash.radius * 2.3 * scale;
+  const burstH = slash.radius * 1.75 * scale;
+  const drawX = -burstW / 2;
+  const drawY = -burstH / 2;
+
+  const { sheet, strip } = getZombieAttackImages();
+  const stripReady = strip && strip.complete && strip.naturalWidth > 0;
+  const sheetReady = sheet && sheet.complete && sheet.naturalWidth > 0;
+
+  if (stripReady) {
+    const sw = 340;
+    const sh = 260;
+    const sx = frameIndex * sw;
+    const sy = 0;
+
+    // Glowing impact pass
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha * 0.85;
+    ctx.drawImage(strip, sx, sy, sw, sh, drawX, drawY, burstW, burstH);
+    ctx.restore();
+
+    // Base body pass
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(strip, sx, sy, sw, sh, drawX, drawY, burstW, burstH);
+    ctx.restore();
+  } else if (sheetReady) {
+    const box = RAW_ZOMBIE_FRAME_BBOXES[frameIndex];
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(sheet, box.sx, box.sy, box.sw, box.sh, drawX, drawY, burstW, burstH);
+    ctx.restore();
+  }
+
+  // Soft expanding toxic floor ring under the impact
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = 'rgba(74, 222, 128, 0.16)';
+  ctx.beginPath();
+  ctx.arc(0, 0, slash.radius * (0.45 + progress * 0.55), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.restore();
+}
+
 function drawSlashArc(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  if (slash.kind === 'ZOMBIE_BASIC_ATTACK') {
+    drawZombieBasicAttack(ctx, slash);
+    return;
+  }
+  if (slash.kind === 'ZOMBIE_POISON_BURST') {
+    drawZombiePoisonBurst(ctx, slash);
+    return;
+  }
+
   const progress = 1 - slash.life / slash.maxLife;
   const alpha = Math.max(0, 1 - progress * progress);
   ctx.save();

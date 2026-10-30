@@ -1557,6 +1557,7 @@ export class GameEngine {
     const gobVenomActive = p.poisonBladesTimer > 0 || this.activeBlessingIds.has('gob_viper_toxin');
 
     soundEngine.playSlash(p.comboFlip ? 1 : 0);
+    const isZombie = profile.id === CharacterId.Zombie;
     this.slashes.push({
       x: p.x + Math.cos(p.aimAngle) * 14,
       y: p.y + Math.sin(p.aimAngle) * 14,
@@ -1578,13 +1579,15 @@ export class GameEngine {
         : p.abominationTimer > 0
         ? '#A3E635'
         : '#4ADE80',
-      life: isGob ? 0.11 : 0.14,
-      maxLife: isGob ? 0.11 : 0.14,
+      life: isGob ? 0.11 : isZombie ? 0.28 : 0.14,
+      maxLife: isGob ? 0.11 : isZombie ? 0.28 : 0.14,
       flip: p.comboFlip,
+      kind: isZombie ? 'ZOMBIE_BASIC_ATTACK' : 'DEFAULT',
+      scale: isZombie && p.abominationTimer > 0 ? 1.45 : 1.0,
     });
 
     const rawDmg = profile.baseAttackDamage * this.getPhysicalDamageMultiplier();
-    this.hitEnemiesInArc(p.x, p.y, p.aimAngle, reach, spread * 0.65, rawDmg, isGnome, 0);
+    this.hitEnemiesInArc(p.x, p.y, p.aimAngle, reach, spread * 0.65, rawDmg, isGnome, 0, isZombie);
     this.hitDestructibleProps(p.x, p.y, reach);
 
     // Goblin Statue Blessing: Zephyr Gale — Windrunner basic attacks throw enchanted daggers!
@@ -2603,9 +2606,11 @@ export class GameEngine {
       radius: reach,
       arcSpread: 1.55,
       color: '#4ADE80',
-      life: 0.15,
-      maxLife: 0.15,
+      life: 0.22,
+      maxLife: 0.22,
       flip: step % 2 === 0,
+      kind: 'ZOMBIE_BASIC_ATTACK',
+      scale: p.abominationTimer > 0 ? 1.4 : 1.05,
     });
 
     const rawDmg = 16 * (festering ? 1.25 : 1.0) * this.getPhysicalDamageMultiplier();
@@ -2626,6 +2631,20 @@ export class GameEngine {
         enemy.slowTimer = Math.max(enemy.slowTimer, slowDuration);
         enemy.slowFactor = 0.6;
         this.applyInfectiousTouch(enemy, festering ? 2 : 1);
+        this.slashes.push({
+          x: enemy.x,
+          y: enemy.y,
+          angle: angle + (Math.random() - 0.5) * 0.4,
+          radius: 46 * (p.abominationTimer > 0 ? 1.4 : 1.0),
+          arcSpread: 0,
+          color: '#A3E635',
+          life: 0.32,
+          maxLife: 0.32,
+          flip: Math.random() < 0.5,
+          kind: 'ZOMBIE_POISON_BURST',
+          scale: p.abominationTimer > 0 ? 1.35 : 1.0,
+        });
+        this.spawnBurst(enemy.x, enemy.y, '#A3E635', 6, 60);
       }
     }
     this.hitDestructibleProps(p.x, p.y, reach);
@@ -3227,6 +3246,20 @@ export class GameEngine {
               const hitDmg = isCrit ? Math.round(m.damage * 1.75) : m.damage;
               this.damageEnemy(target, hitDmg, true, m.x, m.y, false, isCrit);
             } else {
+              const ang = Math.atan2(dy, dx);
+              this.slashes.push({
+                x: m.x + Math.cos(ang) * 8,
+                y: m.y + Math.sin(ang) * 8,
+                angle: ang,
+                radius: 30,
+                arcSpread: 1.25,
+                color: '#4ADE80',
+                life: 0.22,
+                maxLife: 0.22,
+                flip: Math.random() < 0.5,
+                kind: 'ZOMBIE_BASIC_ATTACK',
+                scale: 0.65,
+              });
               this.damageEnemy(target, m.damage, true, m.x, m.y);
               this.applyInfectiousTouch(target, 1);
             }
@@ -4417,7 +4450,8 @@ export class GameEngine {
     halfSpread: number,
     rawDamage: number,
     heavy: boolean,
-    bonusCritChance = 0
+    bonusCritChance = 0,
+    isZombieAttack = false
   ): void {
     let hitAny = false;
     for (const enemy of [...this.world.enemies]) {
@@ -4434,6 +4468,23 @@ export class GameEngine {
         this.applyInfectiousTouch(enemy, 1);
         this.applyGoblinPoisonIfActive(enemy);
         hitAny = true;
+
+        if (isZombieAttack) {
+          this.slashes.push({
+            x: enemy.x,
+            y: enemy.y,
+            angle: angle + (Math.random() - 0.5) * 0.35,
+            radius: 46 * (this.player.abominationTimer > 0 ? 1.4 : 1.0),
+            arcSpread: 0,
+            color: '#A3E635',
+            life: 0.32,
+            maxLife: 0.32,
+            flip: Math.random() < 0.5,
+            kind: 'ZOMBIE_POISON_BURST',
+            scale: this.player.abominationTimer > 0 ? 1.35 : 1.0,
+          });
+          this.spawnBurst(enemy.x, enemy.y, '#A3E635', 6, 60);
+        }
       }
     }
     if (hitAny && (this.player.abominationTimer > 0 || this.player.colossusTimer > 0)) {

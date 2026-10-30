@@ -346,6 +346,8 @@ export interface SlashEffect {
   life: number;
   maxLife: number;
   flip: boolean;
+  kind?: 'DEFAULT' | 'ZOMBIE_BASIC_ATTACK' | 'ZOMBIE_POISON_BURST';
+  scale?: number;
 }
 
 export interface ShockwaveRing {
