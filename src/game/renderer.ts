@@ -12,6 +12,7 @@ import {
   GuildCompanionRenderState,
   MinionEntity,
   Particle,
+  DeathsEmbraceEffect,
   PickupOrb,
   PoisonCloudEntity,
   ProjectileEntity,
@@ -85,6 +86,7 @@ export interface WorldRenderInput {
   projectiles: ProjectileEntity[];
   slashes: SlashEffect[];
   shockwaves: ShockwaveRing[];
+  deathsEmbraceEffects?: DeathsEmbraceEffect[];
   tethers: SoulTether[];
   particles: Particle[];
   popups: FloatingPopup[];
@@ -138,6 +140,7 @@ export function renderGameWorld(input: WorldRenderInput): void {
     projectiles,
     slashes,
     shockwaves,
+    deathsEmbraceEffects,
     tethers,
     particles,
     popups,
@@ -199,6 +202,13 @@ export function renderGameWorld(input: WorldRenderInput): void {
     ctx.arc(ring.x, ring.y, currentR, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
+  }
+
+  // 4b. Zombie's Death's Embrace 60-frame skill VFX
+  if (deathsEmbraceEffects && deathsEmbraceEffects.length > 0) {
+    for (const fx of deathsEmbraceEffects) {
+      drawDeathsEmbraceVFX(ctx, fx, time);
+    }
   }
 
   for (const enemy of enemies) {
@@ -2742,6 +2752,110 @@ function drawZombiePoisonBurst(ctx: CanvasRenderingContext2D, slash: SlashEffect
   ctx.arc(0, 0, slash.radius * (0.45 + progress * 0.55), 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+
+  ctx.restore();
+}
+
+// Reference to Zombie's Death's Embrace 60-frame skill effects sheet
+export const DEATHS_EMBRACE_SHEET_URL = '/assets/aistudio/deaths_embrace_fx_sheet.png';
+
+let cachedDeathsEmbraceSheetImg: HTMLImageElement | null = null;
+
+function getDeathsEmbraceSheetImage(): HTMLImageElement | null {
+  if (typeof window === 'undefined') return null;
+  if (!cachedDeathsEmbraceSheetImg) {
+    cachedDeathsEmbraceSheetImg = new Image();
+    cachedDeathsEmbraceSheetImg.src = DEATHS_EMBRACE_SHEET_URL;
+  }
+  return cachedDeathsEmbraceSheetImg;
+}
+
+export function drawDeathsEmbraceVFX(
+  ctx: CanvasRenderingContext2D,
+  fx: DeathsEmbraceEffect,
+  time: number
+): void {
+  const progress = Math.max(0, Math.min(1, 1 - fx.life / fx.maxLife));
+  // 60 total frames (0 to 59)
+  const frameIndex = Math.min(59, Math.floor(progress * 60));
+
+  // 10 columns by 6 rows in the 1400x840 master sheet (each frame 140x140)
+  const col = frameIndex % 10;
+  const row = Math.floor(frameIndex / 10);
+  const sw = 140;
+  const sh = 140;
+  const sx = col * sw;
+  const sy = row * sh;
+
+  // Sized to match the skill's reach (slam radius 250 -> diameter ~550)
+  const drawDiameter = fx.radius * 2.2;
+  const half = drawDiameter / 2;
+
+  // Smooth fade-in on first few frames and fade-out at dissipation
+  let alpha = 1;
+  if (progress < 0.03) {
+    alpha = progress / 0.03;
+  } else if (progress > 0.85) {
+    alpha = Math.max(0, (1 - progress) / 0.15);
+  }
+
+  const sheet = getDeathsEmbraceSheetImage();
+  const sheetReady = sheet && sheet.complete && sheet.naturalWidth > 0;
+
+  ctx.save();
+  ctx.translate(fx.x, fx.y);
+
+  if (sheetReady) {
+    // 1. Luminous bloom pass (screen/lighter) for intense Soul Knight neon plague aura
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha * 0.75;
+    ctx.drawImage(sheet, sx, sy, sw, sh, -half, -half, drawDiameter, drawDiameter);
+    ctx.restore();
+
+    // 2. Crisp full-color pass
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = alpha * 0.95;
+    ctx.drawImage(sheet, sx, sy, sw, sh, -half, -half, drawDiameter, drawDiameter);
+    ctx.restore();
+
+    // Ground impact ring accent during early frames (Phase 1: Ground Slam 1-8)
+    if (frameIndex <= 8) {
+      const pSlam = frameIndex / 8;
+      ctx.save();
+      ctx.globalAlpha = (1 - pSlam) * 0.5;
+      ctx.strokeStyle = '#5EEAD4';
+      ctx.lineWidth = 4 * (1 - pSlam);
+      ctx.beginPath();
+      ctx.arc(0, 0, fx.radius * pSlam * 0.9, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Radiant core heal pulse during frames 31-42 (Phase 4 & 5: Life Drain & Healing Restore)
+    if (frameIndex >= 31 && frameIndex <= 42) {
+      const pHeal = Math.sin(((frameIndex - 31) / 11) * Math.PI);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = pHeal * 0.35;
+      ctx.fillStyle = '#4ADE80';
+      ctx.beginPath();
+      ctx.arc(0, 0, fx.radius * 0.38, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  } else {
+    // Stylized emerald nova fallback while image finishes loading
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.8;
+    ctx.strokeStyle = '#2DD4BF';
+    ctx.lineWidth = 8 * (1 - progress);
+    ctx.beginPath();
+    ctx.arc(0, 0, fx.radius * Math.min(1, progress * 1.5), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   ctx.restore();
 }

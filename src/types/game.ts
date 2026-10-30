@@ -336,6 +336,19 @@ export interface PickupOrb {
   bobOffset: number;
 }
 
+export interface DeathsEmbraceZone {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  hitEnemyIds: Set<number>;
+  totalDrainedHp: number;
+  healGiven: boolean;
+  ravenous: boolean;
+}
+
 export interface SlashEffect {
   x: number;
   y: number;
@@ -346,7 +359,7 @@ export interface SlashEffect {
   life: number;
   maxLife: number;
   flip: boolean;
-  kind?: 'DEFAULT' | 'ZOMBIE_BASIC_ATTACK' | 'ZOMBIE_POISON_BURST';
+  kind?: 'DEFAULT' | 'ZOMBIE_BASIC_ATTACK' | 'ZOMBIE_POISON_BURST' | 'ZOMBIE_DEATHS_EMBRACE';
   scale?: number;
 }
 

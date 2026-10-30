@@ -37,6 +37,7 @@ import {
   SoulTether,
   StoneRampartEntity,
   UltimateSkillId,
+  DeathsEmbraceEffect,
 } from '../types/game';
 import { clientToLandscapePoint } from '../utils/orientation';
 import {
@@ -218,6 +219,7 @@ export class GameEngine {
   private slashes: SlashEffect[] = [];
   private shockwaves: ShockwaveRing[] = [];
   private tethers: SoulTether[] = [];
+  private deathsEmbraceEffects: DeathsEmbraceEffect[] = [];
   private particles: Particle[] = [];
   private popups: FloatingPopup[] = [];
 
@@ -524,6 +526,7 @@ export class GameEngine {
     this.slashes = [];
     this.shockwaves = [];
     this.tethers = [];
+    this.deathsEmbraceEffects = [];
     this.particles = [];
     this.popups = [];
     this.joyX = 0;
@@ -2729,21 +2732,35 @@ export class GameEngine {
       case UltimateSkillId.DeathsEmbrace: {
         soundEngine.playBossSlam();
         const ravenous = this.activeBlessingIds.has('zombie_ult_embrace');
-        this.hitstopTimer = 0.07;
-        this.shakeMag = 13;
-        p.squashX = 1.4;
-        p.squashY = 0.65;
+        this.hitstopTimer = 0.08;
+        this.shakeMag = 14;
+        p.squashX = 1.45;
+        p.squashY = 0.6;
         if (ravenous) {
           p.normalCooldowns = [0, 0];
         }
         const slamRadius = 250;
+        const animDuration = 1.25; // 60 sequential frames (~48 fps)
+        const embraceEffect: DeathsEmbraceEffect = {
+          id: Math.random(),
+          x: p.x,
+          y: p.y,
+          radius: slamRadius,
+          life: animDuration,
+          maxLife: animDuration,
+          totalDrain: 0,
+          healed: false,
+          followPlayer: true,
+        };
+        this.deathsEmbraceEffects.push(embraceEffect);
+
         this.shockwaves.push({
           x: p.x,
           y: p.y,
           maxRadius: slamRadius,
           color: '#2DD4BF',
-          life: 0.42,
-          maxLife: 0.42,
+          life: 0.38,
+          maxLife: 0.38,
         });
         this.spawnBurst(p.x, p.y, '#2DD4BF', 28, 190);
         this.spawnPopup(p.x, p.y - 34, "DEATH'S EMBRACE", '#5EEAD4', 1.15);
@@ -2755,20 +2772,19 @@ export class GameEngine {
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
           if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= slamRadius + enemy.radius) {
+            // Life-drain tethers stretch across the life-drain vortex stages (frames 21-30)
             this.tethers.push({
               fromX: enemy.x,
               fromY: enemy.y,
-              life: 0.45,
-              maxLife: 0.45,
+              life: 0.75,
+              maxLife: 0.75,
             });
             this.damageEnemy(enemy, waveDmg, false, p.x, p.y, true);
             this.applyInfectiousTouch(enemy, 3);
             totalDrain += ravenous ? 24 : 14;
           }
         }
-        if (totalDrain > 0) {
-          this.healPlayer(totalDrain);
-        }
+        embraceEffect.totalDrain = totalDrain;
         this.hitDestructibleProps(p.x, p.y, slamRadius);
         break;
       }
@@ -5107,6 +5123,33 @@ export class GameEngine {
       this.tethers[i].life -= dt;
       if (this.tethers[i].life <= 0) this.tethers.splice(i, 1);
     }
+    for (let i = this.deathsEmbraceEffects.length - 1; i >= 0; i--) {
+      const eff = this.deathsEmbraceEffects[i];
+      eff.life -= dt;
+      if (eff.followPlayer) {
+        eff.x = this.player.x;
+        eff.y = this.player.y;
+      }
+      const progress = 1 - eff.life / eff.maxLife;
+      // Precise sync with Healing Start through Heal Peak (frames 31-36) where radiant cross illuminates
+      if (!eff.healed && progress >= 0.52) {
+        eff.healed = true;
+        if (eff.totalDrain > 0) {
+          this.healPlayer(eff.totalDrain);
+          soundEngine.playHeal();
+          this.spawnBurst(this.player.x, this.player.y, '#4ADE80', 20, 110);
+          this.spawnPopup(this.player.x, this.player.y - 28, `+${eff.totalDrain} HP`, '#4ADE80', 1.3);
+        }
+      }
+      if (eff.life <= 0) {
+        // Fallback safeguard: if ended without healing yet, heal now
+        if (!eff.healed && eff.totalDrain > 0) {
+          eff.healed = true;
+          this.healPlayer(eff.totalDrain);
+        }
+        this.deathsEmbraceEffects.splice(i, 1);
+      }
+    }
     for (let i = this.popups.length - 1; i >= 0; i--) {
       const pop = this.popups[i];
       pop.life -= dt;
@@ -5340,6 +5383,7 @@ export class GameEngine {
       slashes: this.slashes,
       shockwaves: this.shockwaves,
       tethers: this.tethers,
+      deathsEmbraceEffects: this.deathsEmbraceEffects,
       particles: this.particles,
       popups: this.popups,
       panJoystick: this.isDraggingMap

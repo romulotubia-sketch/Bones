@@ -548,7 +548,7 @@ export const CHARACTER_ROSTER: Record<CharacterId, CharacterProfileDef> = {
     passiveSkills: ZOMBIE_PASSIVE_SKILLS,
     defaultLoadout: {
       normalSkills: [NormalSkillId.RottingClaw, NormalSkillId.GraveCall],
-      ultimateSkill: UltimateSkillId.AbominationForm,
+      ultimateSkill: UltimateSkillId.DeathsEmbrace,
     },
   },
   [CharacterId.Skeleton]: {
