@@ -1346,7 +1346,7 @@ export class GameEngine {
         maxLife: 0.36,
         archetype: 'GHOST',
       });
-    } else if (skillId === NormalSkillId.SoulDrain || skillId === NormalSkillId.SpiritOrbs) {
+    } else if (skillId === NormalSkillId.SoulDrain || skillId === NormalSkillId.SpectralBolt) {
       soundEngine.playDash();
       this.slashes.push({
         x,
@@ -1478,7 +1478,7 @@ export class GameEngine {
           maxLife: 10,
         });
       }
-    } else if (skillId === UltimateSkillId.DaggerRain) {
+    } else if (skillId === UltimateSkillId.ThousandDaggers) {
       soundEngine.playSlash(2);
       this.daggerRains.push({
         id: allocEntityId(),
@@ -9817,7 +9817,7 @@ export class GameEngine {
           const plagueDmg =
             e.plagueTimer > 0 ? Math.round(6 * this.getPlagueOrSkillMultiplier() * strainMult) : 0;
           const totalDot = infDmg + plagueDmg;
-          if (totalDot > 0) {
+          if (totalDot > 0 && !this.isInCoop()) {
             this.damageEnemy(e, totalDot, false, e.x, e.y);
             if (e.hp <= 0) continue;
           }
@@ -9908,12 +9908,14 @@ export class GameEngine {
       const isRooted = e.rootTimer > 0;
       const moveSpeed = isRooted ? 0 : e.speed * e.slowFactor;
 
-      if (e.kind === EnemyKind.SkeletonWarrior) {
-        this.updateWarriorAi(e, dt, dist, angleToTarget, moveSpeed);
-      } else if (e.kind === EnemyKind.SkeletonArcher) {
-        this.updateArcherAi(e, dt, dist, angleToTarget, moveSpeed);
-      } else if (e.kind === EnemyKind.SkeletonBoss) {
-        this.updateBossAi(e, dt, dist, angleToTarget, moveSpeed);
+      if (!this.isInCoop()) {
+        if (e.kind === EnemyKind.SkeletonWarrior) {
+          this.updateWarriorAi(e, dt, dist, angleToTarget, moveSpeed);
+        } else if (e.kind === EnemyKind.SkeletonArcher) {
+          this.updateArcherAi(e, dt, dist, angleToTarget, moveSpeed);
+        } else if (e.kind === EnemyKind.SkeletonBoss) {
+          this.updateBossAi(e, dt, dist, angleToTarget, moveSpeed);
+        }
       }
 
       if (isRooted) {
@@ -11217,7 +11219,10 @@ export class GameEngine {
         continue;
       }
 
-      if (Math.hypot(pr.x - this.player.x, pr.y - this.player.y) <= pr.radius + this.player.radius - 2) {
+      if (
+        !this.isInCoop() &&
+        Math.hypot(pr.x - this.player.x, pr.y - this.player.y) <= pr.radius + this.player.radius - 2
+      ) {
         this.damagePlayer(pr.damage, true);
         this.projectiles.splice(i, 1);
         continue;
@@ -12593,8 +12598,8 @@ export class GameEngine {
           room.discovered = true;
         }
 
-        // In Co-op mode, only the host/party leader spawns waves and locks rooms
-        if (this.isInCoop() && !this.networkManager?.isHost()) {
+        // In Co-op mode, the server authoritatively controls waves and enemy spawning
+        if (this.isInCoop()) {
           break;
         }
 
@@ -12621,8 +12626,8 @@ export class GameEngine {
       }
     }
 
-    // In Co-op mode, non-host client receives room clearance and next waves from host sync
-    if (this.isInCoop() && !this.networkManager?.isHost()) {
+    // In Co-op mode, room clearance and wave progression are server-authoritative
+    if (this.isInCoop()) {
       return;
     }
 
@@ -12754,7 +12759,11 @@ export class GameEngine {
             return;
           }
           if (isRunVictory) {
-            this.finishRun(true);
+            if (this.isInCoop()) {
+              this.networkManager?.sendClaimVictory();
+            } else {
+              this.finishRun(true);
+            }
           } else if (this.isInCoop()) {
             const seed = Math.floor(Math.random() * 1000000);
             this.networkManager?.sendAdvanceFloor(nextFloor, seed);
@@ -13356,6 +13365,7 @@ export class GameEngine {
           mode: room.mode,
           isHost: room.hostId === localId,
           playerCount: room.players.length,
+          maxPlayers: room.maxPlayers,
           ping: this.networkManager?.getPing() ?? 0,
           partyMembers,
         };

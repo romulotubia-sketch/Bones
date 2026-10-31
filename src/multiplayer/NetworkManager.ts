@@ -6,6 +6,8 @@ import {
   EnemySyncState,
   MultiplayerMode,
   PlayerTransformSync,
+  PvpMatchSyncState,
+  PvpTeam,
   RoomInfo,
   RoomProgressSyncState,
   ServerMessage,
@@ -102,6 +104,53 @@ export interface NetworkCallbacks {
   onError?: (message: string) => void;
   onConnectionChange?: (connected: boolean) => void;
   onPlayerLeft?: (playerId: string, playerName?: string, newHostName?: string) => void;
+  onPvpSync?: (matchState: PvpMatchSyncState) => void;
+  onPvpBaseDamaged?: (
+    team: PvpTeam,
+    newHp: number,
+    maxHp: number,
+    damage: number,
+    attackerId: string,
+    hitX: number,
+    hitY: number
+  ) => void;
+  onPvpBaseDestroyed?: (winningTeam: PvpTeam, destroyedTeam: PvpTeam) => void;
+  onPvpPlayerEliminated?: (
+    victimId: string,
+    victimName: string,
+    victimTeam: PvpTeam,
+    killerId: string,
+    killerName: string,
+    killerTeam: PvpTeam,
+    respawnDelay: number
+  ) => void;
+  onPvpPlayerRespawned?: (playerId: string, x: number, y: number, hp: number, maxHp: number) => void;
+  onPvpMinionAttackFx?: (
+    minionId: number,
+    team: PvpTeam,
+    kind: 'MELEE' | 'RANGED',
+    x: number,
+    y: number,
+    targetX: number,
+    targetY: number
+  ) => void;
+  onPvpMinionDamaged?: (
+    minionId: number,
+    newHp: number,
+    maxHp: number,
+    damage: number,
+    isCrit?: boolean,
+    hitX?: number,
+    hitY?: number,
+    attackerId?: string
+  ) => void;
+  onPvpMinionDefeated?: (minionId: number, killerId: string, dropX: number, dropY: number) => void;
+  onPvpMatchEnded?: (
+    winningTeam: PvpTeam,
+    blueScore: number,
+    redScore: number,
+    matchDuration: number
+  ) => void;
 }
 
 export class NetworkManager {
@@ -557,6 +606,94 @@ export class NetworkManager {
           break;
         }
 
+        case 'S2C_PVP_SYNC': {
+          this.emit('onPvpSync', msg.matchState);
+          break;
+        }
+
+        case 'S2C_PVP_BASE_DAMAGED': {
+          this.emit(
+            'onPvpBaseDamaged',
+            msg.team,
+            msg.newHp,
+            msg.maxHp,
+            msg.damage,
+            msg.attackerId,
+            msg.hitX,
+            msg.hitY
+          );
+          break;
+        }
+
+        case 'S2C_PVP_BASE_DESTROYED': {
+          this.emit('onPvpBaseDestroyed', msg.winningTeam, msg.destroyedTeam);
+          break;
+        }
+
+        case 'S2C_PVP_PLAYER_ELIMINATED': {
+          this.emit(
+            'onPvpPlayerEliminated',
+            msg.victimId,
+            msg.victimName,
+            msg.victimTeam,
+            msg.killerId,
+            msg.killerName,
+            msg.killerTeam,
+            msg.respawnDelay
+          );
+          break;
+        }
+
+        case 'S2C_PVP_PLAYER_RESPAWNED': {
+          this.emit('onPvpPlayerRespawned', msg.playerId, msg.x, msg.y, msg.hp, msg.maxHp);
+          break;
+        }
+
+        case 'S2C_PVP_MINION_ATTACK_FX': {
+          this.emit(
+            'onPvpMinionAttackFx',
+            msg.minionId,
+            msg.team,
+            msg.kind,
+            msg.x,
+            msg.y,
+            msg.targetX,
+            msg.targetY
+          );
+          break;
+        }
+
+        case 'S2C_PVP_MINION_DAMAGED': {
+          this.emit(
+            'onPvpMinionDamaged',
+            msg.minionId,
+            msg.newHp,
+            msg.maxHp,
+            msg.damage,
+            msg.isCrit,
+            msg.hitX,
+            msg.hitY,
+            msg.attackerId
+          );
+          break;
+        }
+
+        case 'S2C_PVP_MINION_DEFEATED': {
+          this.emit('onPvpMinionDefeated', msg.minionId, msg.killerId, msg.dropX, msg.dropY);
+          break;
+        }
+
+        case 'S2C_PVP_MATCH_ENDED': {
+          this.emit(
+            'onPvpMatchEnded',
+            msg.winningTeam,
+            msg.blueScore,
+            msg.redScore,
+            msg.matchDuration
+          );
+          break;
+        }
+
         case 'S2C_ERROR': {
           this.emit('onError', msg.message);
           break;
@@ -731,6 +868,77 @@ export class NetworkManager {
   public sendReturnPartyToGuild(): void {
     this.send({
       type: 'C2S_RETURN_PARTY_TO_GUILD',
+    });
+  }
+
+  public sendDamagePvpPlayer(
+    targetPlayerId: string,
+    damage: number,
+    isCrit = false,
+    hitX = 0,
+    hitY = 0,
+    statusEffects?: EnemyStatusPayload
+  ): void {
+    this.send({
+      type: 'C2S_DAMAGE_PVP_PLAYER',
+      eventId: this.nextEventId('pvp_hit'),
+      targetPlayerId,
+      damage,
+      isCrit,
+      hitX,
+      hitY,
+      statusEffects,
+    });
+  }
+
+  public sendDamageBase(
+    targetTeam: PvpTeam,
+    damage: number,
+    isCrit = false,
+    hitX = 0,
+    hitY = 0
+  ): void {
+    this.send({
+      type: 'C2S_DAMAGE_BASE',
+      eventId: this.nextEventId('base_hit'),
+      targetTeam,
+      damage,
+      isCrit,
+      hitX,
+      hitY,
+    });
+  }
+
+  public sendDamageMinion(
+    minionId: number,
+    damage: number,
+    isCrit = false,
+    hitX = 0,
+    hitY = 0,
+    statusEffects?: EnemyStatusPayload
+  ): void {
+    this.send({
+      type: 'C2S_DAMAGE_MINION',
+      eventId: this.nextEventId('minion_hit'),
+      minionId,
+      damage,
+      isCrit,
+      hitX,
+      hitY,
+      statusEffects,
+    });
+  }
+
+  public sendSetTeam(team: PvpTeam): void {
+    this.send({
+      type: 'C2S_SET_TEAM',
+      team,
+    });
+  }
+
+  public sendRequestRematch(): void {
+    this.send({
+      type: 'C2S_REQUEST_REMATCH',
     });
   }
 

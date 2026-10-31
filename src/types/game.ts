@@ -362,6 +362,7 @@ export interface ExplosiveTrapEntity {
   damage: number;
   armTimer: number;
   life: number;
+  maxLife?: number;
   isVisualOnly?: boolean;
 }
 
@@ -827,6 +828,65 @@ export interface HudSnapshot {
       color: string;
     }[];
   } | null;
+  pvpMatchInfo?: PvpMatchHudInfo | null;
+}
+
+export type PvpTeamId = 'BLUE' | 'RED';
+
+export interface PvpBaseHudInfo {
+  hp: number;
+  maxHp: number;
+  x: number;
+  y: number;
+  isDestroyed: boolean;
+  hitFlashTimer: number;
+}
+
+export interface PvpMinionHudInfo {
+  id: number;
+  team: PvpTeamId;
+  kind: 'MELEE' | 'RANGED';
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  hp: number;
+  maxHp: number;
+  facingX: number;
+  aiState: 'MARCH' | 'ATTACK' | 'COOLDOWN' | 'DEATH';
+  attackAngle: number;
+  hitFlashTimer: number;
+}
+
+export interface PvpPlayerHudItem {
+  id: string;
+  name: string;
+  characterId: CharacterId;
+  team: PvpTeamId;
+  isSelf: boolean;
+  hp: number;
+  maxHp: number;
+  kills: number;
+  deaths: number;
+  damage: number;
+  respawnTimer: number;
+  invulnTimer: number;
+  color: string;
+}
+
+export interface PvpMatchHudInfo {
+  blueBase: PvpBaseHudInfo;
+  redBase: PvpBaseHudInfo;
+  minions: PvpMinionHudInfo[];
+  matchTime: number;
+  blueScore: number;
+  redScore: number;
+  myTeam: PvpTeamId;
+  isMatchEnded: boolean;
+  winnerTeam?: PvpTeamId;
+  myRespawnTimer: number;
+  myInvulnTimer: number;
+  players: PvpPlayerHudItem[];
 }
 
 export type SkillSlotKey = 'NORMAL_0' | 'NORMAL_1' | 'ULTIMATE';

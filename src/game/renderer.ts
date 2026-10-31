@@ -29,6 +29,7 @@ import {
   SoulTether,
   StoneRampartEntity,
 } from '../types/game';
+import { PvpBaseSyncState, PvpMatchSyncState, PvpMinionSyncState, PvpTeam } from '../multiplayer/networkTypes';
 import { WalkableZone } from './dungeonGenerator';
 
 export interface RenderPlayerState {
@@ -91,6 +92,8 @@ export interface RemoteRenderPlayer extends RenderPlayerState {
   isDowned?: boolean;
   bleedoutTimer?: number;
   reviveProgress?: number;
+  team?: PvpTeam;
+  invulnTimer?: number;
 }
 
 export interface WorldRenderInput {
@@ -139,6 +142,9 @@ export interface WorldRenderInput {
     knobY: number;
   } | null;
   skillAimTelegraph?: SkillAimTelegraph | null;
+  pvpMatchState?: PvpMatchSyncState | null;
+  myPvpTeam?: PvpTeam;
+  myPvpInvulnTimer?: number;
 }
 
 function drawRoundedRect(
@@ -464,6 +470,345 @@ function drawSkillAimTelegraph(
       ctx.stroke();
     }
   }
+
+  ctx.restore();
+}
+
+function drawPvpBase(
+  ctx: CanvasRenderingContext2D,
+  base: PvpBaseSyncState,
+  team: PvpTeam,
+  time: number
+): void {
+  const isBlue = team === 'BLUE';
+  const primaryColor = isBlue ? '#38BDF8' : '#F43F5E';
+  const glowColor = isBlue ? 'rgba(56, 189, 248, 0.25)' : 'rgba(244, 63, 94, 0.25)';
+  const coreGlint = isBlue ? '#BAE6FD' : '#FECDD3';
+  const x = base.x;
+  const y = base.y;
+
+  ctx.save();
+
+  // 1. Ground Sanctum Runic Circle
+  ctx.save();
+  ctx.strokeStyle = glowColor;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(x, y, 78, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Orbiting rune notches
+  const numRunes = 8;
+  for (let i = 0; i < numRunes; i++) {
+    const ang = time * (isBlue ? 0.6 : -0.6) + (i * Math.PI * 2) / numRunes;
+    const rx = x + Math.cos(ang) * 78;
+    const ry = y + Math.sin(ang) * 78;
+    ctx.fillStyle = primaryColor;
+    ctx.beginPath();
+    ctx.arc(rx, ry, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // 2. Stone Hexagonal Dais Base
+  ctx.save();
+  ctx.fillStyle = '#1A1822';
+  ctx.strokeStyle = '#383244';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  for (let s = 0; s < 6; s++) {
+    const sa = (s * Math.PI) / 3;
+    const sx = x + Math.cos(sa) * 44;
+    const sy = y + Math.sin(sa) * 22;
+    if (s === 0) ctx.moveTo(sx, sy);
+    else ctx.lineTo(sx, sy);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Inner metallic filigree rim
+  ctx.strokeStyle = primaryColor;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  for (let s = 0; s < 6; s++) {
+    const sa = (s * Math.PI) / 3;
+    const sx = x + Math.cos(sa) * 32;
+    const sy = y + Math.sin(sa) * 16;
+    if (s === 0) ctx.moveTo(sx, sy);
+    else ctx.lineTo(sx, sy);
+  }
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+
+  if (base.isDestroyed) {
+    // Destroyed Ruin State: Shattered obsidian chunks, smoke, sparks
+    ctx.save();
+    ctx.fillStyle = '#26222F';
+    ctx.strokeStyle = '#181520';
+    ctx.lineWidth = 1.5;
+
+    // Shattered jagged shards
+    const shards = [
+      { dx: -18, dy: -6, w: 14, h: 22, rot: -0.4 },
+      { dx: 14, dy: -4, w: 16, h: 18, rot: 0.35 },
+      { dx: -4, dy: 6, w: 18, h: 14, rot: 0.1 },
+    ];
+    for (const sh of shards) {
+      ctx.save();
+      ctx.translate(x + sh.dx, y + sh.dy);
+      ctx.rotate(sh.rot);
+      ctx.fillRect(-sh.w / 2, -sh.h / 2, sh.w, sh.h);
+      ctx.strokeRect(-sh.w / 2, -sh.h / 2, sh.w, sh.h);
+      ctx.restore();
+    }
+
+    // Dying ember glow
+    const emberPulse = 0.5 + Math.sin(time * 6) * 0.3;
+    ctx.fillStyle = isBlue ? `rgba(56, 189, 248, ${emberPulse * 0.4})` : `rgba(244, 63, 94, ${emberPulse * 0.4})`;
+    ctx.beginPath();
+    ctx.arc(x, y - 5, 20, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Floating smoke puffs
+    for (let p = 0; p < 3; p++) {
+      const pOffset = (time * 18 + p * 12) % 40;
+      const puffAlpha = Math.max(0, 1 - pOffset / 40) * 0.45;
+      ctx.fillStyle = `rgba(50, 45, 60, ${puffAlpha})`;
+      ctx.beginPath();
+      ctx.arc(x + Math.sin(p + time) * 8, y - 10 - pOffset, 8 + pOffset * 0.25, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  } else {
+    // Alive Crystal Monolith
+    const bob = Math.sin(time * 2.8) * 6;
+    const crystalY = y - 36 + bob;
+
+    ctx.save();
+    // Hit flash flare
+    if (base.hitFlashTimer > 0) {
+      ctx.fillStyle = '#FFFFFF';
+      ctx.shadowColor = '#FFFFFF';
+      ctx.shadowBlur = 18;
+    } else {
+      ctx.shadowColor = primaryColor;
+      ctx.shadowBlur = 12 + Math.sin(time * 4) * 4;
+    }
+
+    // Crystal main faceted diamond spire
+    const cWidth = 34;
+    const cHeight = 64;
+    ctx.beginPath();
+    ctx.moveTo(x, crystalY - cHeight / 2); // Top apex
+    ctx.lineTo(x + cWidth / 2, crystalY - 6); // Right waist
+    ctx.lineTo(x, crystalY + cHeight / 2); // Bottom apex
+    ctx.lineTo(x - cWidth / 2, crystalY - 6); // Left waist
+    ctx.closePath();
+
+    if (base.hitFlashTimer > 0) {
+      ctx.fillStyle = '#FFFFFF';
+    } else {
+      const grad = ctx.createLinearGradient(x - cWidth / 2, crystalY, x + cWidth / 2, crystalY);
+      grad.addColorStop(0, isBlue ? '#0369A1' : '#BE123C');
+      grad.addColorStop(0.5, primaryColor);
+      grad.addColorStop(1, isBlue ? '#0284C7' : '#E11D48');
+      ctx.fillStyle = grad;
+    }
+    ctx.fill();
+    ctx.strokeStyle = coreGlint;
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    // Central faceted spine line
+    ctx.strokeStyle = coreGlint;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x, crystalY - cHeight / 2);
+    ctx.lineTo(x, crystalY + cHeight / 2);
+    ctx.stroke();
+
+    // Orbiting magical particle rings
+    const ringAngle = time * 2.2;
+    ctx.strokeStyle = primaryColor;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(x, crystalY, 26, 9, ringAngle * 0.2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 3. Overhead Health Bar
+  const hpRatio = Math.max(0, Math.min(1, base.hp / base.maxHp));
+  const barW = 84;
+  const barH = 7;
+  const barX = x - barW / 2;
+  const barY = y - 82;
+
+  ctx.save();
+  // Frame background
+  ctx.fillStyle = 'rgba(12, 10, 16, 0.94)';
+  ctx.strokeStyle = base.hitFlashTimer > 0 ? '#FFFFFF' : '#334155';
+  ctx.lineWidth = 1.5;
+  drawRoundedRect(ctx, barX - 2, barY - 14, barW + 4, barH + 18, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  // Team Title
+  ctx.font = '700 9px "Plus Jakarta Sans", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = isBlue ? '#7DD3FC' : '#FDA4AF';
+  ctx.fillText(
+    `${isBlue ? 'BLUE BASE' : 'RED BASE'} · ${Math.max(0, Math.ceil(base.hp))}/${base.maxHp}`,
+    x,
+    barY - 6
+  );
+
+  // Health fill
+  ctx.fillStyle = '#1E1B26';
+  ctx.fillRect(barX, barY + 2, barW, barH);
+  if (hpRatio > 0) {
+    ctx.fillStyle = base.hitFlashTimer > 0 ? '#FFFFFF' : primaryColor;
+    ctx.fillRect(barX, barY + 2, barW * hpRatio, barH);
+  }
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawPvpMinion(
+  ctx: CanvasRenderingContext2D,
+  minion: PvpMinionSyncState,
+  time: number
+): void {
+  const isBlue = minion.team === 'BLUE';
+  const primaryColor = isBlue ? '#38BDF8' : '#F43F5E';
+  const facing = minion.facingX >= 0 ? 1 : -1;
+  const x = minion.x;
+  const y = minion.y;
+  const isMelee = minion.kind === 'MELEE';
+
+  ctx.save();
+
+  // Shadow on ground
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 2, 12, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Walking bobbing oscillation
+  const walkBob = minion.aiState === 'MARCH' ? Math.abs(Math.sin(time * 12 + minion.id)) * 2.5 : 0;
+  const drawY = y - walkBob;
+
+  ctx.save();
+  ctx.translate(x, drawY);
+  ctx.scale(facing, 1);
+
+  if (isMelee) {
+    // --- MELEE VANGUARD MINION ---
+    // Torso armor plate
+    ctx.fillStyle = minion.hitFlashTimer > 0 ? '#FFFFFF' : '#2A2736';
+    ctx.strokeStyle = primaryColor;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(-7, -20, 14, 15, 3);
+    ctx.fill();
+    ctx.stroke();
+
+    // Team chest emblem
+    ctx.fillStyle = primaryColor;
+    ctx.beginPath();
+    ctx.arc(0, -13, 2.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Horned Skull Helmet
+    ctx.fillStyle = minion.hitFlashTimer > 0 ? '#FFFFFF' : '#E2E8F0';
+    ctx.beginPath();
+    ctx.arc(0, -25, 6.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Visor eye glow
+    ctx.fillStyle = primaryColor;
+    ctx.fillRect(2, -26, 3, 2);
+
+    // Left arm: Tower Shield
+    ctx.fillStyle = minion.hitFlashTimer > 0 ? '#FFFFFF' : '#1E1B26';
+    ctx.strokeStyle = primaryColor;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(-12, -22, 6, 17, 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Right arm: Broadsword
+    const attackSwing =
+      minion.aiState === 'ATTACK' ? Math.sin(time * 16) * 0.9 : 0;
+    ctx.save();
+    ctx.translate(6, -15);
+    ctx.rotate(0.3 + attackSwing);
+    ctx.fillStyle = minion.hitFlashTimer > 0 ? '#FFFFFF' : '#94A3B8';
+    ctx.fillRect(0, -14, 3, 16); // Blade
+    ctx.fillStyle = primaryColor;
+    ctx.fillRect(-2, 0, 7, 2.5); // Crossguard
+    ctx.restore();
+  } else {
+    // --- RANGED ACOLYTE MINION ---
+    // Flowing hooded cloak
+    ctx.fillStyle = minion.hitFlashTimer > 0 ? '#FFFFFF' : '#1E293B';
+    ctx.strokeStyle = primaryColor;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(0, -28);
+    ctx.lineTo(8, -4);
+    ctx.lineTo(-8, -4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Hood & glowing eyes
+    ctx.fillStyle = minion.hitFlashTimer > 0 ? '#FFFFFF' : '#0F172A';
+    ctx.beginPath();
+    ctx.arc(0, -24, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = primaryColor;
+    ctx.fillRect(1, -25, 3.2, 2);
+
+    // Ranged Catalyst Staff
+    ctx.save();
+    ctx.translate(7, -18);
+    ctx.fillStyle = minion.hitFlashTimer > 0 ? '#FFFFFF' : '#64748B';
+    ctx.fillRect(0, -12, 2.5, 20); // Staff pole
+    // Glowing orb tip
+    ctx.fillStyle = primaryColor;
+    ctx.shadowColor = primaryColor;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(1.2, -13, 3.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  // Overhead Health Bar
+  const hpRatio = Math.max(0, Math.min(1, minion.hp / minion.maxHp));
+  const barW = 26;
+  const barH = 3.5;
+  const barX = x - barW / 2;
+  const barY = y - 35;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+  ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+  ctx.fillStyle = '#334155';
+  ctx.fillRect(barX, barY, barW, barH);
+  if (hpRatio > 0) {
+    ctx.fillStyle = minion.hitFlashTimer > 0 ? '#FFFFFF' : primaryColor;
+    ctx.fillRect(barX, barY, barW * hpRatio, barH);
+  }
+  ctx.restore();
 
   ctx.restore();
 }

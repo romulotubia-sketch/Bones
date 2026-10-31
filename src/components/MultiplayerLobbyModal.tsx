@@ -12,15 +12,18 @@ import {
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { CHARACTER_LIST, CHARACTER_ROSTER } from '../data/zombieData';
+import { DIFFICULTY_CONFIGS } from '../data/difficultyData';
 import { NetworkManager } from '../multiplayer/NetworkManager';
 import { MultiplayerMode, RoomInfo } from '../multiplayer/networkTypes';
-import { CharacterId } from '../types/game';
+import { CharacterId, DifficultyLevel } from '../types/game';
 import { ScrollablePane } from './ScrollablePane';
 
 interface MultiplayerLobbyModalProps {
   networkManager: NetworkManager;
   room: RoomInfo | null;
   selectedCharacter: CharacterId;
+  selectedDifficulty?: DifficultyLevel;
+  onSelectDifficulty?: (diff: DifficultyLevel) => void;
   onClose: () => void;
   onStartMultiplayerGame: () => void;
 }
@@ -78,6 +81,8 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
   networkManager,
   room,
   selectedCharacter,
+  selectedDifficulty = DifficultyLevel.Easy,
+  onSelectDifficulty,
   onClose,
   onStartMultiplayerGame,
 }) => {
@@ -87,6 +92,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
     return localStorage.getItem('hb_mp_name') || 'Hero_' + Math.floor(100 + Math.random() * 900);
   });
   const [characterId, setCharacterId] = useState<CharacterId>(selectedCharacter);
+  const [difficulty, setDifficulty] = useState<DifficultyLevel>(() => room?.difficulty ?? selectedDifficulty);
   const [joinCode, setJoinCode] = useState('');
   const [maxPlayers, setMaxPlayers] = useState<number>(4);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -145,6 +151,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
         characterId,
         selectedMode,
         maxPlayers,
+        difficulty,
         customLanHost.trim() || undefined
       );
     } catch {
@@ -209,7 +216,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
   const handleStartGame = () => {
     if (!isHost) return;
     soundEngine.playSummon();
-    networkManager.startGame();
+    networkManager.startGame(difficulty);
     onStartMultiplayerGame();
   };
 
@@ -451,6 +458,19 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                             </span>
                           </div>
                         </div>
+                        {isHost && !isSelf && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playUiClick(560);
+                              networkManager.promoteLeader(p.id);
+                            }}
+                            title="Make Party Leader"
+                            className="p-1 rounded-md bg-[#2B213D] hover:bg-[#3D2F56] text-[#FBBF24] border border-[#523F6E] active:scale-90 transition-transform shrink-0"
+                          >
+                            <Crown className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     );
                   })}
@@ -464,6 +484,56 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                         Waiting for player...
                       </div>
                     )
+                  )}
+                </div>
+
+                {/* Expedition Difficulty Sync Strip */}
+                <div className="flex items-center justify-between mt-2 px-2.5 py-1.5 rounded-xl bg-[#1A1526] border border-[#2E2540]">
+                  <span className="text-[10px] font-semibold text-[#A69FB4]">
+                    Expedition Difficulty
+                  </span>
+                  {isHost ? (
+                    <div className="flex items-center gap-1">
+                      {[
+                        DifficultyLevel.Easy,
+                        DifficultyLevel.Normal,
+                        DifficultyLevel.Hard,
+                        DifficultyLevel.Nightmare,
+                      ].map((d) => {
+                        const isChosen = (room.difficulty ?? difficulty) === d;
+                        const cfg = DIFFICULTY_CONFIGS[d];
+                        return (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playUiClick(500);
+                              setDifficulty(d);
+                              networkManager.setDifficulty(d);
+                              onSelectDifficulty?.(d);
+                            }}
+                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors ${
+                              isChosen
+                                ? 'bg-[#31254A] text-[#F3EFE6]'
+                                : 'bg-transparent border-transparent text-[#7A708D] hover:text-[#B8AFC6]'
+                            }`}
+                            style={{
+                              borderColor: isChosen ? cfg.color : 'transparent',
+                              color: isChosen ? cfg.color : undefined,
+                            }}
+                          >
+                            {cfg.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div
+                      className="text-[10px] font-bold"
+                      style={{ color: DIFFICULTY_CONFIGS[room.difficulty ?? difficulty]?.color }}
+                    >
+                      {DIFFICULTY_CONFIGS[room.difficulty ?? difficulty]?.name} (Leader set)
+                    </div>
                   )}
                 </div>
               </div>
@@ -555,6 +625,46 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                         </button>
                       ))}
                     </div>
+                  </div>
+                </div>
+
+                {/* Create Room Difficulty Selector */}
+                <div>
+                  <span className="block text-[10px] font-semibold text-[#A69FB4] mb-1">
+                    Expedition Difficulty
+                  </span>
+                  <div className="grid grid-cols-4 gap-1">
+                    {[
+                      DifficultyLevel.Easy,
+                      DifficultyLevel.Normal,
+                      DifficultyLevel.Hard,
+                      DifficultyLevel.Nightmare,
+                    ].map((d) => {
+                      const isChosen = difficulty === d;
+                      const cfg = DIFFICULTY_CONFIGS[d];
+                      return (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playUiClick(500);
+                            setDifficulty(d);
+                            onSelectDifficulty?.(d);
+                          }}
+                          className={`h-8 rounded-lg text-[10px] font-bold border transition-colors ${
+                            isChosen
+                              ? 'bg-[#31254A] text-[#F3EFE6]'
+                              : 'bg-[#1C1727] border-[#352B48] text-[#8E869E] hover:text-[#B8AFC6]'
+                          }`}
+                          style={{
+                            borderColor: isChosen ? cfg.color : undefined,
+                            color: isChosen ? cfg.color : undefined,
+                          }}
+                        >
+                          {cfg.name}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

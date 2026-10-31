@@ -931,7 +931,7 @@ export class ServerCoopSession {
           angle: e.telegraphAngle,
         });
 
-        const baseDmg = Math.round((16 + this.floorNumber * 2.5) * diffCfg.enemyDamageMult);
+        const baseDmg = Math.round((16 + this.floorNumber * 2.5) * diffCfg.enemyDmgMult);
         for (const p of this.players.values()) {
           if (p.isDowned) continue;
           const pDist = distance(e.x, e.y, p.x, p.y);
@@ -985,7 +985,7 @@ export class ServerCoopSession {
         e.telegraphType = 'NONE';
 
         const arrowSpeed = 350 * (diffCfg.enemySpeedMult > 1 ? 1.08 : 1);
-        const dmg = Math.round((14 + this.floorNumber * 2.2) * diffCfg.enemyDamageMult);
+        const dmg = Math.round((14 + this.floorNumber * 2.2) * diffCfg.enemyDmgMult);
         this.enemyProjectiles.push({
           id: this.allocId(),
           x: e.x + Math.cos(e.telegraphAngle) * 18,
@@ -1060,7 +1060,7 @@ export class ServerCoopSession {
       e.vx = Math.cos(e.telegraphAngle) * dashSpd;
       e.vy = Math.sin(e.telegraphAngle) * dashSpd;
 
-      const spinDmg = Math.round((18 + this.floorNumber * 2.4) * diffCfg.enemyDamageMult);
+      const spinDmg = Math.round((18 + this.floorNumber * 2.4) * diffCfg.enemyDmgMult);
       for (const p of livingPlayers) {
         if (distance(e.x, e.y, p.x, p.y) <= e.radius + 36) {
           this.damageServerPlayer(p, spinDmg, false);
@@ -1085,7 +1085,7 @@ export class ServerCoopSession {
         e.telegraphType = 'NONE';
 
         if (tType === 'BOSS_CLEAVE') {
-          const cleaveDmg = Math.round((26 + this.floorNumber * 3.2) * diffCfg.enemyDamageMult);
+          const cleaveDmg = Math.round((26 + this.floorNumber * 3.2) * diffCfg.enemyDmgMult);
           this.hooks.broadcast({
             type: 'S2C_ENEMY_ATTACK_FX',
             kind: 'BOSS_CLEAVE',
@@ -1106,7 +1106,7 @@ export class ServerCoopSession {
         } else if (tType === 'BOSS_VOLLEY') {
           const count = e.bossPhase === 2 ? 12 : 8;
           const boltSpd = 290 * (e.bossPhase === 2 ? 1.15 : 1);
-          const boltDmg = Math.round((18 + this.floorNumber * 2.5) * diffCfg.enemyDamageMult);
+          const boltDmg = Math.round((18 + this.floorNumber * 2.5) * diffCfg.enemyDmgMult);
           for (let i = 0; i < count; i++) {
             const a = e.telegraphAngle + (i / count) * Math.PI * 2;
             this.enemyProjectiles.push({
@@ -1402,7 +1402,7 @@ export class ServerCoopSession {
       plagueTimer: e.plagueTimer,
       infectionStacks: e.infectionStacks,
       roomId: e.roomId,
-      bossPhase: e.bossPhase,
+      bossPhase: (e.bossPhase === 2 ? 2 : 1) as 1 | 2,
     }));
 
     const roomsState: RoomProgressSyncState[] = this.world.rooms.map((r) => ({

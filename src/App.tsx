@@ -395,6 +395,9 @@ export default function App() {
 
   const handleReturnToGuild = useCallback(() => {
     setLoadoutModalOpen(false);
+    if (networkManagerRef.current?.getRoom() && networkManagerRef.current.isHost()) {
+      networkManagerRef.current.sendReturnPartyToGuild();
+    }
     engineRef.current?.enterGuildRoam();
   }, []);
 
@@ -598,6 +601,8 @@ export default function App() {
           networkManager={networkManagerRef.current}
           room={multiplayerRoom}
           selectedCharacter={saveData.selectedCharacter}
+          selectedDifficulty={saveData.selectedDifficulty}
+          onSelectDifficulty={handleSelectDifficulty}
           onClose={() => setMultiplayerModalOpen(false)}
           onStartMultiplayerGame={() => {
             setMultiplayerModalOpen(false);

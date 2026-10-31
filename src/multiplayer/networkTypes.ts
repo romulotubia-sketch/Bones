@@ -2,6 +2,8 @@ import { CharacterId, DifficultyLevel, EnemyKind } from '../types/game';
 
 export type MultiplayerMode = 'ONLINE_COOP' | 'LAN_COOP' | 'ONLINE_PVP' | 'LAN_PVP';
 
+export type PvpTeam = 'BLUE' | 'RED';
+
 export interface RoomPlayer {
   id: string;
   name: string;
@@ -10,6 +12,9 @@ export interface RoomPlayer {
   isReady: boolean;
   ping: number;
   color: string;
+  team?: PvpTeam;
+  kills?: number;
+  deaths?: number;
 }
 
 export interface RoomInfo {
@@ -97,6 +102,51 @@ export interface SpawnedPropSyncState {
   w: number;
   h: number;
   opened?: boolean;
+}
+
+export interface PvpMinionSyncState {
+  id: number;
+  team: PvpTeam;
+  kind: 'MELEE' | 'RANGED';
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  hp: number;
+  maxHp: number;
+  facingX: number;
+  aiState: 'MARCH' | 'ATTACK' | 'COOLDOWN' | 'DEATH';
+  attackAngle: number;
+  hitFlashTimer: number;
+}
+
+export interface PvpBaseSyncState {
+  hp: number;
+  maxHp: number;
+  x: number;
+  y: number;
+  isDestroyed: boolean;
+  hitFlashTimer: number;
+}
+
+export interface PvpPlayerStats {
+  kills: number;
+  deaths: number;
+  damage: number;
+  respawnTimer: number;
+  invulnTimer: number;
+}
+
+export interface PvpMatchSyncState {
+  blueBase: PvpBaseSyncState;
+  redBase: PvpBaseSyncState;
+  minions: PvpMinionSyncState[];
+  matchTime: number;
+  blueScore: number;
+  redScore: number;
+  playerStats: Record<string, PvpPlayerStats>;
+  isMatchEnded: boolean;
+  winnerTeam?: PvpTeam;
 }
 
 export interface PlayerTransformSync {
@@ -235,6 +285,42 @@ export type ClientMessage =
     }
   | {
       type: 'C2S_RETURN_PARTY_TO_GUILD';
+    }
+  | {
+      type: 'C2S_DAMAGE_PVP_PLAYER';
+      eventId: string;
+      targetPlayerId: string;
+      damage: number;
+      isCrit?: boolean;
+      hitX: number;
+      hitY: number;
+      statusEffects?: EnemyStatusPayload;
+    }
+  | {
+      type: 'C2S_DAMAGE_BASE';
+      eventId: string;
+      targetTeam: PvpTeam;
+      damage: number;
+      isCrit?: boolean;
+      hitX: number;
+      hitY: number;
+    }
+  | {
+      type: 'C2S_DAMAGE_MINION';
+      eventId: string;
+      minionId: number;
+      damage: number;
+      isCrit?: boolean;
+      hitX: number;
+      hitY: number;
+      statusEffects?: EnemyStatusPayload;
+    }
+  | {
+      type: 'C2S_SET_TEAM';
+      team: PvpTeam;
+    }
+  | {
+      type: 'C2S_REQUEST_REMATCH';
     }
   | {
       type: 'C2S_PING';
@@ -389,6 +475,71 @@ export type ServerMessage =
     }
   | {
       type: 'S2C_RETURN_TO_GUILD';
+    }
+  | {
+      type: 'S2C_PVP_SYNC';
+      matchState: PvpMatchSyncState;
+    }
+  | {
+      type: 'S2C_PVP_BASE_DAMAGED';
+      team: PvpTeam;
+      newHp: number;
+      maxHp: number;
+      damage: number;
+      attackerId: string;
+      hitX: number;
+      hitY: number;
+    }
+  | {
+      type: 'S2C_PVP_BASE_DESTROYED';
+      winningTeam: PvpTeam;
+      destroyedTeam: PvpTeam;
+    }
+  | {
+      type: 'S2C_PVP_PLAYER_ELIMINATED';
+      victimId: string;
+      victimName: string;
+      victimTeam: PvpTeam;
+      killerId: string;
+      killerName: string;
+      killerTeam: PvpTeam;
+      respawnDelay: number;
+    }
+  | {
+      type: 'S2C_PVP_PLAYER_RESPAWNED';
+      playerId: string;
+      x: number;
+      y: number;
+      hp: number;
+      maxHp: number;
+    }
+  | {
+      type: 'S2C_PVP_MINION_ATTACK_FX';
+      minionId: number;
+      team: PvpTeam;
+      kind: 'MELEE' | 'RANGED';
+      x: number;
+      y: number;
+      targetX: number;
+      targetY: number;
+    }
+  | {
+      type: 'S2C_PVP_MINION_DAMAGED';
+      minionId: number;
+      newHp: number;
+      maxHp: number;
+      damage: number;
+      isCrit?: boolean;
+      hitX: number;
+      hitY: number;
+      attackerId: string;
+    }
+  | {
+      type: 'S2C_PVP_MINION_DEFEATED';
+      minionId: number;
+      killerId: string;
+      dropX: number;
+      dropY: number;
     }
   | {
       type: 'S2C_PONG';
