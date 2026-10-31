@@ -1949,7 +1949,19 @@ function drawCorridor(ctx: CanvasRenderingContext2D, cor: WalkableZone): void {
 
   ctx.strokeStyle = '#363E4F';
   ctx.lineWidth = 3;
-  ctx.strokeRect(cor.x, cor.y, cor.w, cor.h);
+  ctx.beginPath();
+  if (cor.w > cor.h) {
+    ctx.moveTo(cor.x, cor.y);
+    ctx.lineTo(cor.x + cor.w, cor.y);
+    ctx.moveTo(cor.x, cor.y + cor.h);
+    ctx.lineTo(cor.x + cor.w, cor.y + cor.h);
+  } else {
+    ctx.moveTo(cor.x, cor.y);
+    ctx.lineTo(cor.x, cor.y + cor.h);
+    ctx.moveTo(cor.x + cor.w, cor.y);
+    ctx.lineTo(cor.x + cor.w, cor.y + cor.h);
+  }
+  ctx.stroke();
 }
 
 function drawGraveyardRoom(ctx: CanvasRenderingContext2D, room: DungeonRoom, time: number): void {
@@ -1977,9 +1989,61 @@ function drawGraveyardRoom(ctx: CanvasRenderingContext2D, room: DungeonRoom, tim
   ctx.lineWidth = 2;
   ctx.stroke();
 
+  const doorHalfW = 72;
+  const hasN = room.connections.some((c) => c.dir === 'N');
+  const hasS = room.connections.some((c) => c.dir === 'S');
+  const hasE = room.connections.some((c) => c.dir === 'E');
+  const hasW = room.connections.some((c) => c.dir === 'W');
+
   ctx.strokeStyle = '#394356';
   ctx.lineWidth = 4;
-  ctx.strokeRect(room.x, room.y, room.w, room.h);
+  ctx.beginPath();
+
+  // North wall (with doorway opening if connected)
+  if (hasN) {
+    ctx.moveTo(room.x, room.y);
+    ctx.lineTo(cx - doorHalfW, room.y);
+    ctx.moveTo(cx + doorHalfW, room.y);
+    ctx.lineTo(room.x + room.w, room.y);
+  } else {
+    ctx.moveTo(room.x, room.y);
+    ctx.lineTo(room.x + room.w, room.y);
+  }
+
+  // South wall (with doorway opening if connected)
+  if (hasS) {
+    ctx.moveTo(room.x, room.y + room.h);
+    ctx.lineTo(cx - doorHalfW, room.y + room.h);
+    ctx.moveTo(cx + doorHalfW, room.y + room.h);
+    ctx.lineTo(room.x + room.w, room.y + room.h);
+  } else {
+    ctx.moveTo(room.x, room.y + room.h);
+    ctx.lineTo(room.x + room.w, room.y + room.h);
+  }
+
+  // East wall (with doorway opening if connected)
+  if (hasE) {
+    ctx.moveTo(room.x + room.w, room.y);
+    ctx.lineTo(room.x + room.w, cy - doorHalfW);
+    ctx.moveTo(room.x + room.w, cy + doorHalfW);
+    ctx.lineTo(room.x + room.w, room.y + room.h);
+  } else {
+    ctx.moveTo(room.x + room.w, room.y);
+    ctx.lineTo(room.x + room.w, room.y + room.h);
+  }
+
+  // West wall (with doorway opening if connected)
+  if (hasW) {
+    ctx.moveTo(room.x, room.y);
+    ctx.lineTo(room.x, cy - doorHalfW);
+    ctx.moveTo(room.x, cy + doorHalfW);
+    ctx.lineTo(room.x, room.y + room.h);
+  } else {
+    ctx.moveTo(room.x, room.y);
+    ctx.lineTo(room.x, room.y + room.h);
+  }
+
+  ctx.stroke();
 
   if (room.locked) {
     ctx.save();

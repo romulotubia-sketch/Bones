@@ -147,12 +147,14 @@ export type ClientMessage =
       mode: MultiplayerMode;
       maxPlayers?: number;
       difficulty?: DifficultyLevel;
+      sessionToken?: string;
     }
   | {
       type: 'C2S_JOIN_ROOM';
       code: string;
       playerName: string;
       characterId: CharacterId;
+      sessionToken?: string;
     }
   | {
       type: 'C2S_LEAVE_ROOM';

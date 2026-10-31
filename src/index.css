@@ -72,6 +72,14 @@
   padding-right: max(0.625rem, env(safe-area-inset-right));
 }
 
+/* When rotated 90deg in mobile portrait, map physical device top status bar/notch to stage left */
+.landscape-stage-ForcedPortrait .safe-hud-insets {
+  padding-top: max(0.75rem, env(safe-area-inset-right, 12px));
+  padding-bottom: max(0.75rem, env(safe-area-inset-left, 12px));
+  padding-left: max(1.5rem, env(safe-area-inset-top, 28px));
+  padding-right: max(1.25rem, env(safe-area-inset-bottom, 16px));
+}
+
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;

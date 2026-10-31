@@ -449,10 +449,12 @@ export class GameEngine {
         const activeIds = new Set<string>();
         const room = manager.getRoom();
         const isPvp = room?.mode === 'ONLINE_PVP' || room?.mode === 'LAN_PVP';
+        const validRoomPlayerIds = new Set(room?.players.map((rp) => rp.id) ?? []);
 
         for (const p of players) {
           if (!p.id || p.id === localId) continue;
           if (!localId && room && room.hostId === p.id && manager.isHost()) continue;
+          if (validRoomPlayerIds.size > 0 && !validRoomPlayerIds.has(p.id)) continue;
           activeIds.add(p.id);
 
           const roomPlayer = room?.players.find((rp) => rp.id === p.id);
@@ -537,7 +539,11 @@ export class GameEngine {
         }
 
         for (const id of Array.from(this.remotePlayers.keys())) {
-          if (!activeIds.has(id) || (localId && id === localId)) {
+          if (
+            !activeIds.has(id) ||
+            (localId && id === localId) ||
+            (validRoomPlayerIds.size > 0 && !validRoomPlayerIds.has(id))
+          ) {
             this.remotePlayers.delete(id);
           }
         }
@@ -1846,7 +1852,8 @@ export class GameEngine {
 
       // Prime remote party members safely around the entrance room so they never spawn in walls
       room.players.forEach((rp, idx) => {
-        if (rp.id !== myId) {
+        const isSelf = myId ? rp.id === myId : idx === myIdx;
+        if (!isSelf) {
           const rOffX = idx === 0 ? -28 : idx === 1 ? 28 : idx === 2 ? -28 : 28;
           const rOffY = idx >= 2 ? 28 : 0;
           const rResolved = this.resolveWorldCollision(
@@ -12528,24 +12535,48 @@ export class GameEngine {
       let bestY = ny;
 
       for (const r of this.world.rooms) {
-        const cx = Math.max(r.x + radius + 4, Math.min(r.x + r.w - radius - 4, nx));
-        const cy = Math.max(r.y + radius + 4, Math.min(r.y + r.h - radius - 4, ny));
-        const dSq = (cx - nx) * (cx - nx) + (cy - ny) * (cy - ny);
+        const minX = r.x + radius + 4;
+        const maxX = r.x + r.w - radius - 4;
+        const minY = r.y + radius + 4;
+        const maxY = r.y + r.h - radius - 4;
+
+        const cx = r.x + r.w / 2;
+        const cy = r.y + r.h / 2;
+        const doorHalf = Math.max(20, 68 - radius);
+
+        const hasN = r.connections.some((c) => c.dir === 'N');
+        const hasS = r.connections.some((c) => c.dir === 'S');
+        const hasE = r.connections.some((c) => c.dir === 'E');
+        const hasW = r.connections.some((c) => c.dir === 'W');
+
+        const inDoorX = nx >= cx - doorHalf && nx <= cx + doorHalf;
+        const inDoorY = ny >= cy - doorHalf && ny <= cy + doorHalf;
+
+        // Allow seamless transition across wall thresholds strictly within doorway openings
+        const effMinX = hasW && inDoorY ? r.x - 32 : minX;
+        const effMaxX = hasE && inDoorY ? r.x + r.w + 32 : maxX;
+        const effMinY = hasN && inDoorX ? r.y - 32 : minY;
+        const effMaxY = hasS && inDoorX ? r.y + r.h + 32 : maxY;
+
+        const rx = Math.max(effMinX, Math.min(effMaxX, nx));
+        const ry = Math.max(effMinY, Math.min(effMaxY, ny));
+        const dSq = (rx - nx) * (rx - nx) + (ry - ny) * (ry - ny);
         if (dSq < bestDistSq) {
           bestDistSq = dSq;
-          bestX = cx;
-          bestY = cy;
+          bestX = rx;
+          bestY = ry;
         }
       }
 
       for (const c of this.world.corridors) {
         const isHorizontal = c.w > c.h;
-        const cx = isHorizontal
-          ? Math.max(c.x, Math.min(c.x + c.w, nx))
-          : Math.max(c.x + radius + 4, Math.min(c.x + c.w - radius - 4, nx));
-        const cy = isHorizontal
-          ? Math.max(c.y + radius + 4, Math.min(c.y + c.h - radius - 4, ny))
-          : Math.max(c.y, Math.min(c.y + c.h, ny));
+        const minX = isHorizontal ? c.x : c.x + radius + 4;
+        const maxX = isHorizontal ? c.x + c.w : c.x + c.w - radius - 4;
+        const minY = isHorizontal ? c.y + radius + 4 : c.y;
+        const maxY = isHorizontal ? c.y + c.h - radius - 4 : c.y + c.h;
+
+        const cx = Math.max(minX, Math.min(maxX, nx));
+        const cy = Math.max(minY, Math.min(maxY, ny));
         const dSq = (cx - nx) * (cx - nx) + (cy - ny) * (cy - ny);
         if (dSq < bestDistSq) {
           bestDistSq = dSq;

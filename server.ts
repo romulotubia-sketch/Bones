@@ -31,6 +31,8 @@ interface ConnectedPeer {
   roomCode: string | null;
   player: RoomPlayer;
   latestTransform?: PlayerTransformSync;
+  sessionToken?: string;
+  isAlive?: boolean;
 }
 
 interface ServerRoom {
@@ -169,7 +171,13 @@ async function startServer() {
         color: PLAYER_COLORS[0],
       },
     };
+    peer.isAlive = true;
+    peer.sessionToken = undefined;
     peers.set(ws, peer);
+
+    ws.on('pong', () => {
+      peer.isAlive = true;
+    });
 
     ws.on('message', (raw) => {
       try {
@@ -188,6 +196,7 @@ async function startServer() {
             peer.player.color = PLAYER_COLORS[0];
             peer.player.team = 'BLUE';
             peer.roomCode = code;
+            peer.sessionToken = msg.sessionToken;
 
             const room: ServerRoom = {
               code,
@@ -231,6 +240,25 @@ async function startServer() {
               return;
             }
 
+            const incomingName = (msg.playerName || 'Adventurer').trim().slice(0, 14);
+
+            // Clean up any stale/disconnected peer or existing peer with same name/sessionToken
+            for (const [existingId, existingPeer] of Array.from(room.players.entries())) {
+              const isDisconnected = existingPeer.ws.readyState !== WebSocket.OPEN;
+              const isSameSession =
+                Boolean(msg.sessionToken) && existingPeer.sessionToken === msg.sessionToken;
+              const isSameName =
+                existingPeer.player.name.toLowerCase() === incomingName.toLowerCase();
+
+              if (isDisconnected || isSameSession || isSameName) {
+                cleanupPeerFromRoom(existingPeer);
+                peers.delete(existingPeer.ws);
+                try {
+                  existingPeer.ws.terminate();
+                } catch {}
+              }
+            }
+
             if (room.players.size >= room.maxPlayers) {
               sendToPeer(ws, {
                 type: 'S2C_ERROR',
@@ -252,13 +280,14 @@ async function startServer() {
             const blueCount = Array.from(room.players.values()).filter((p) => (p.player.team || 'BLUE') === 'BLUE').length;
             const redCount = Array.from(room.players.values()).filter((p) => p.player.team === 'RED').length;
 
-            peer.player.name = (msg.playerName || 'Adventurer').trim().slice(0, 14);
+            peer.player.name = incomingName;
             peer.player.characterId = msg.characterId || DEFAULT_CHARACTER;
             peer.player.isHost = false;
             peer.player.isReady = false;
             peer.player.color = PLAYER_COLORS[room.players.size % PLAYER_COLORS.length];
             peer.player.team = blueCount <= redCount ? 'BLUE' : 'RED';
             peer.roomCode = code;
+            peer.sessionToken = msg.sessionToken;
 
             room.players.set(peer.id, peer);
 
@@ -395,7 +424,11 @@ async function startServer() {
                 return;
               }
               const transforms: PlayerTransformSync[] = [];
-              for (const p of room.players.values()) {
+              for (const [pid, p] of Array.from(room.players.entries())) {
+                if (p.ws.readyState !== WebSocket.OPEN) {
+                  cleanupPeerFromRoom(p);
+                  continue;
+                }
                 if (p.latestTransform) {
                   transforms.push(p.latestTransform);
                 }
@@ -679,6 +712,32 @@ async function startServer() {
       peers.delete(ws);
     });
   });
+
+  // Heartbeat loop to detect abruptly dropped sockets (mobile sleeping/switching network)
+  const heartbeatInterval = setInterval(() => {
+    for (const [ws, peer] of Array.from(peers.entries())) {
+      if (ws.readyState !== WebSocket.OPEN) {
+        cleanupPeerFromRoom(peer);
+        peers.delete(ws);
+        continue;
+      }
+      if (peer.isAlive === false) {
+        cleanupPeerFromRoom(peer);
+        peers.delete(ws);
+        try {
+          ws.terminate();
+        } catch {}
+        continue;
+      }
+      peer.isAlive = false;
+      try {
+        ws.ping();
+      } catch {
+        cleanupPeerFromRoom(peer);
+        peers.delete(ws);
+      }
+    }
+  }, 5000);
 
   // REST API status endpoint
   app.get('/api/health', (_req, res) => {

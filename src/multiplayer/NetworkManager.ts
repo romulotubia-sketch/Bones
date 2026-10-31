@@ -67,6 +67,18 @@ export class NetworkManager {
   private currentPing = 0;
   private shouldStayConnected = false;
   private serverHost: string | null = null;
+  private sessionToken: string = (() => {
+    try {
+      let tok = sessionStorage.getItem('hb_mp_session_token');
+      if (!tok) {
+        tok = 's_' + Math.random().toString(36).substring(2, 10);
+        sessionStorage.setItem('hb_mp_session_token', tok);
+      }
+      return tok;
+    } catch {
+      return 's_' + Math.random().toString(36).substring(2, 10);
+    }
+  })();
 
   constructor(callbacks?: NetworkCallbacks) {
     if (callbacks) this.listenerList.push(callbacks);
@@ -384,6 +396,7 @@ export class NetworkManager {
       mode,
       maxPlayers,
       difficulty,
+      sessionToken: this.sessionToken,
     });
   }
 
@@ -400,6 +413,7 @@ export class NetworkManager {
       code: code.trim().toUpperCase(),
       playerName,
       characterId,
+      sessionToken: this.sessionToken,
     });
   }
 
