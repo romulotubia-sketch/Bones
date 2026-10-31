@@ -14,7 +14,6 @@ import {
 import { soundEngine } from '../audio/soundEngine';
 import {
   CHARACTER_ROSTER,
-  DIFFICULTY_LIST,
   NORMAL_SKILLS,
   ULTIMATE_SKILLS,
 } from '../data/zombieData';
@@ -179,119 +178,122 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
     <div className="absolute inset-0 z-20 pointer-events-none flex flex-col justify-between safe-hud-insets">
       {/* Compact Top Perimeter Row */}
       <div className="flex items-start justify-between gap-2">
-        {/* Top-Left: Compact Vitality + Shards + Guild Loadout Trigger */}
+        {/* Top-Left: Vitality + Shards + Guild Loadout Trigger */}
         <div className="flex items-start gap-2 pointer-events-auto">
-          <div className="bg-[#16131E]/90 border border-[#302A40] rounded-xl px-3 py-1.5 shadow-lg min-w-[184px]">
-            <div className="flex items-center justify-between gap-2 text-[11px] mb-1">
-              <span className="font-semibold text-[#F5F0E6]">
-                HP <span className="font-mono-num">{hud.hp}/{hud.maxHp}</span>
-              </span>
-              <span
-                className={`font-mono-num text-[10px] font-semibold ${
-                  hasBuffActive
-                    ? isGoblin
-                      ? 'text-[#FDE047]'
+          {isGuild ? (
+            <div className="bg-[#16131E]/90 border border-[#302A40] rounded-xl px-3 py-1.5 shadow-lg min-w-[160px]">
+              <div className="flex items-center justify-between gap-2 text-[11px] mb-1">
+                <span className="font-semibold text-[#F5F0E6]">
+                  HP <span className="font-mono-num">{hud.hp}/{hud.maxHp}</span>
+                </span>
+                <span className="font-mono-num text-[10px] font-semibold text-[#86EFAC]">
+                  {healthStatusLabel}
+                </span>
+              </div>
+              <div className="w-full h-2 bg-[#0E0C14] rounded overflow-hidden border border-[#282336]">
+                <div
+                  className="h-full bg-[#4ADE80] transition-transform duration-150 origin-left"
+                  style={{ transform: `scaleX(${hpRatio})` }}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-2 mt-1 text-[11px] text-[#BDB6CC] font-mono-num">
+                <span>Lv {hud.runLevel}</span>
+                <span>·</span>
+                <span className="flex items-center gap-1 text-[#7DD3FC]">
+                  <SoulShardIcon className="w-3 h-3" />
+                  {totalSavedShards}
+                </span>
+              </div>
+            </div>
+          ) : (
+            /* Dungeon Compact Combat Bar (ultra-sleek, non-intrusive) */
+            <div className="bg-[#14111B]/85 backdrop-blur-xs border border-[#2D263B] rounded-lg px-2 py-1 shadow-md w-[148px]">
+              {/* Row 1: HP & Status */}
+              <div className="flex items-baseline justify-between gap-1 text-[10px] leading-tight">
+                <span className="font-semibold text-[#F5F0E6] font-mono-num">
+                  <span className="text-[9px] text-[#9E96B0] mr-0.5 font-normal">HP</span>
+                  {hud.hp}
+                  <span className="text-[8.5px] text-[#7E7790] font-normal">/{hud.maxHp}</span>
+                </span>
+                <span
+                  className={`font-mono-num text-[9px] font-semibold truncate max-w-[65px] text-right ${
+                    hasBuffActive
+                      ? isGoblin
+                        ? 'text-[#FDE047]'
+                        : isGnome
+                        ? 'text-[#FDBA74]'
+                        : isGhost
+                        ? 'text-[#E9D5FF]'
+                        : 'text-[#7DD3FC]'
+                      : hpRatio <= 0.3
+                      ? 'text-[#F87171]'
+                      : isSkeleton
+                      ? 'text-[#7DD3FC]'
+                      : isGoblin
+                      ? 'text-[#FBBF24]'
                       : isGnome
-                      ? 'text-[#FDBA74]'
+                      ? 'text-[#FB923C]'
                       : isGhost
-                      ? 'text-[#E9D5FF]'
-                      : 'text-[#7DD3FC]'
-                    : hpRatio <= 0.3
-                    ? 'text-[#F87171]'
-                    : isSkeleton
-                    ? 'text-[#7DD3FC]'
-                    : isGoblin
-                    ? 'text-[#FBBF24]'
-                    : isGnome
-                    ? 'text-[#FB923C]'
-                    : isGhost
-                    ? 'text-[#D8B4FE]'
-                    : 'text-[#86EFAC]'
-                }`}
-              >
-                {healthStatusLabel}
-              </span>
-            </div>
+                      ? 'text-[#D8B4FE]'
+                      : 'text-[#86EFAC]'
+                  }`}
+                >
+                  {healthStatusLabel}
+                </span>
+              </div>
 
-            <div className="w-full h-2 bg-[#0E0C14] rounded overflow-hidden border border-[#282336]">
-              <div
-                className={`h-full transition-transform duration-150 origin-left ${
-                  hpRatio <= 0.3
-                    ? 'bg-[#EF4444]'
-                    : isSkeleton
-                    ? 'bg-[#38BDF8]'
-                    : isGoblin
-                    ? 'bg-[#F59E0B]'
-                    : isGnome
-                    ? 'bg-[#FB923C]'
-                    : isGhost
-                    ? 'bg-[#C084FC]'
-                    : 'bg-[#4ADE80]'
-                }`}
-                style={{ transform: `scaleX(${hpRatio})` }}
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-2 mt-1 text-[11px] text-[#BDB6CC] font-mono-num">
-              <span>Lv {hud.runLevel}</span>
-              <span>·</span>
-              <span className="flex items-center gap-1 text-[#7DD3FC]">
-                <SoulShardIcon className="w-3 h-3" />
-                {isGuild ? totalSavedShards : totalSavedShards + hud.runShardsEarned}
-              </span>
-              {!isGuild && (
-                <>
-                  <span>·</span>
-                  <span className="text-[#FBBF24]">{hud.runCoins}g</span>
-                </>
-              )}
-              {hud.activeMinions > 0 && (
-                <>
-                  <span>·</span>
-                  <span className={isSkeleton ? 'text-[#7DD3FC]' : isGhost ? 'text-[#D8B4FE]' : 'text-[#86EFAC]'}>
-                    {hud.activeMinions}ally
-                  </span>
-                </>
-              )}
-            </div>
-
-            {!isGuild && (
-              <>
-                <div className="w-full h-1 bg-[#0E0C14] rounded overflow-hidden mt-1">
+              {/* Row 2: Dual Gauge (HP Bar + Underline XP Bar) */}
+              <div className="w-full mt-1">
+                <div className="w-full h-1.5 bg-[#0C0A10] rounded-xs overflow-hidden border border-[#252030]">
+                  <div
+                    className={`h-full transition-transform duration-150 origin-left ${
+                      hpRatio <= 0.3
+                        ? 'bg-[#EF4444]'
+                        : isSkeleton
+                        ? 'bg-[#38BDF8]'
+                        : isGoblin
+                        ? 'bg-[#F59E0B]'
+                        : isGnome
+                        ? 'bg-[#FB923C]'
+                        : isGhost
+                        ? 'bg-[#C084FC]'
+                        : 'bg-[#4ADE80]'
+                    }`}
+                    style={{ transform: `scaleX(${hpRatio})` }}
+                  />
+                </div>
+                <div className="w-full h-[1.5px] bg-[#0C0A10] overflow-hidden mt-0.5">
                   <div
                     className="h-full bg-[#A78BFA] origin-left transition-transform duration-150"
                     style={{ transform: `scaleX(${xpRatio})` }}
                   />
                 </div>
-                <div className="flex items-center justify-between gap-1 mt-1 text-[10px]">
-                  <span
-                    className="px-1.5 py-0.5 rounded font-mono-num font-bold text-[9px] tracking-wide"
-                    style={{
-                      backgroundColor: `${hud.difficultyColor}22`,
-                      color: hud.difficultyColor,
-                      border: `1px solid ${hud.difficultyColor}55`,
-                    }}
-                  >
-                    {hud.difficultyBadge} {hud.difficultyLabel.toUpperCase()}
-                  </span>
-                  <span className="font-mono-num text-[#A39BB5] text-[10px]">
-                    {hud.maxStages > 1 ? `Stage ${hud.currentStage}/${hud.maxStages}` : 'Floor 1-3'}
-                  </span>
-                  <span className="font-mono-num text-[#7DD3FC] text-[10px]">
-                    {hud.difficulty === DifficultyLevel.Nightmare
-                      ? '8.0x'
-                      : hud.difficulty === DifficultyLevel.Torment
-                      ? '4.5x'
-                      : hud.difficulty === DifficultyLevel.Hard
-                      ? '2.8x'
-                      : hud.difficulty === DifficultyLevel.Normal
-                      ? '1.6x'
-                      : '1.0x'} Shards
+              </div>
+
+              {/* Row 3: Single Compact Inline Metrics */}
+              <div className="flex items-center justify-between text-[9px] font-mono-num text-[#A39BB5] mt-1 leading-none">
+                <div className="flex items-center gap-1">
+                  <span>L{hud.runLevel}</span>
+                  <span className="text-[#554E66]">·</span>
+                  <span className="text-[#FBBF24]">{hud.runCoins}g</span>
+                  <span className="text-[#554E66]">·</span>
+                  <span className="text-[#7DD3FC] flex items-center gap-0.5">
+                    <SoulShardIcon className="w-2.5 h-2.5" />
+                    +{hud.runShardsEarned}
                   </span>
                 </div>
-              </>
-            )}
-          </div>
+                <span
+                  className="font-bold text-[8.5px] px-1 py-0.5 rounded leading-none shrink-0"
+                  style={{
+                    backgroundColor: `${hud.difficultyColor}1F`,
+                    color: hud.difficultyColor,
+                  }}
+                >
+                  {hud.difficultyBadge.split(' ')[0]} {hud.maxStages > 1 ? `${hud.currentStage}-${hud.stageFloor}` : `F${hud.stageFloor}`}
+                </span>
+              </div>
+            </div>
+          )}
 
           {isGuild && hud.phase === GamePhase.GuildRoam && (
             <div className="flex items-center gap-1.5">
@@ -328,54 +330,6 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                 />
                 <span>Heroes &amp; Skills</span>
               </button>
-
-              <div className="flex items-center gap-1 bg-[#16131E]/95 border border-[#302A40] rounded-xl p-1 shadow-lg">
-                {DIFFICULTY_LIST.map((diff) => {
-                  const currentDiff = selectedDifficulty ?? hud.difficulty ?? DifficultyLevel.Easy;
-                  const isSelected = currentDiff === diff.level;
-                  return (
-                    <button
-                      key={diff.level}
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playUiClick(500 + DIFFICULTY_LIST.indexOf(diff) * 50);
-                        onSelectDifficulty?.(diff.level);
-                      }}
-                      title={`${diff.label}: ${diff.stages} ${
-                        diff.stages === 1 ? 'Stage' : 'Stages'
-                      } (${diff.maxFloors} floors), ${diff.shardMultiplier}x Shards. ${diff.description}`}
-                      className={`min-h-[38px] px-2 sm:px-2.5 rounded-lg text-xs font-bold transition-all active:scale-95 flex items-center gap-1 shrink-0 ${
-                        isSelected
-                          ? 'shadow-md ring-1 ring-white/30'
-                          : 'text-[#9E96B0] hover:text-[#E2DCED] bg-transparent'
-                      }`}
-                      style={
-                        isSelected
-                          ? {
-                              backgroundColor: diff.color,
-                              color: diff.level === DifficultyLevel.Easy ? '#0F1A12' : '#FFFFFF',
-                              boxShadow: `0 0 10px ${diff.color}66`,
-                            }
-                          : undefined
-                      }
-                    >
-                      <span className="text-xs">{diff.badge}</span>
-                      <span className="hidden sm:inline">{diff.label}</span>
-                      <span
-                        className={`text-[10px] font-mono-num font-normal px-1 py-0.5 rounded ${
-                          isSelected
-                            ? diff.level === DifficultyLevel.Easy
-                              ? 'bg-black/20 text-[#0F1A12]'
-                              : 'bg-black/30 text-white'
-                            : 'bg-white/5 text-[#8E86A0]'
-                        }`}
-                      >
-                        {diff.stages > 1 ? `${diff.stages}S` : '1S'}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
             </div>
           )}
         </div>

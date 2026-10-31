@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { soundEngine } from './audio/soundEngine';
 import {
   BlessingModal,
+  DungeonDifficultyModal,
   EndOrPauseModal,
   TitleScreenOverlay,
 } from './components/GameModals';
@@ -126,6 +127,7 @@ export default function App() {
     activeCharacter: saveData.selectedCharacter,
   }));
   const [loadoutModalOpen, setLoadoutModalOpen] = useState(false);
+  const [difficultyModalOpen, setDifficultyModalOpen] = useState(false);
   const [blessingChoices, setBlessingChoices] = useState<RunBlessing[]>([]);
   const [endSummary, setEndSummary] = useState({
     shardsEarned: 0,
@@ -225,6 +227,9 @@ export default function App() {
         };
         persistGuildSave(updated);
         setSaveData(updated);
+      },
+      onRequestDifficultySelect: () => {
+        setDifficultyModalOpen(true);
       },
     });
 
@@ -327,12 +332,29 @@ export default function App() {
 
   const handlePlayAgain = useCallback(() => {
     setLoadoutModalOpen(false);
-    engineRef.current?.startGraveyardRun();
+    setDifficultyModalOpen(true);
   }, []);
 
+  const handleConfirmDifficultyAndStart = useCallback(
+    (diff: DifficultyLevel) => {
+      handleSelectDifficulty(diff);
+      setDifficultyModalOpen(false);
+      engineRef.current?.startGraveyardRun(diff);
+    },
+    [handleSelectDifficulty]
+  );
+
+  const handleCloseDifficultyModal = useCallback(() => {
+    setDifficultyModalOpen(false);
+    if (hud.phase === GamePhase.GameOver || hud.phase === GamePhase.Victory) {
+      engineRef.current?.enterGuildRoam();
+    }
+  }, [hud.phase]);
+
   const handleJoystickMove = useCallback((nx: number, ny: number) => {
+    if (difficultyModalOpen || loadoutModalOpen) return;
     engineRef.current?.setJoystickInput(nx, ny);
-  }, []);
+  }, [difficultyModalOpen, loadoutModalOpen]);
 
   const handleMapPanJoystick = useCallback((nx: number, ny: number) => {
     engineRef.current?.setMinimapPanJoystick(nx, ny);
@@ -385,7 +407,8 @@ export default function App() {
       {(hud.phase === GamePhase.GuildPicking ||
         hud.phase === GamePhase.GuildRoam ||
         hud.phase === GamePhase.Dungeon) &&
-        !loadoutModalOpen && (
+        !loadoutModalOpen &&
+        !difficultyModalOpen && (
           <HudOverlay
             hud={hud}
             loadout={activeLoadout}
@@ -416,6 +439,15 @@ export default function App() {
           onUpdateLoadout={handleUpdateLoadout}
           onPurchaseUpgrade={handlePurchaseUpgrade}
           onConfirmAndRoam={handleConfirmLoadoutAndRoam}
+        />
+      )}
+
+      {/* Dungeon Difficulty Selection Modal upon entering the dungeon */}
+      {difficultyModalOpen && (
+        <DungeonDifficultyModal
+          currentDifficulty={saveData.selectedDifficulty}
+          onConfirmDifficulty={handleConfirmDifficultyAndStart}
+          onCancel={handleCloseDifficultyModal}
         />
       )}
 

@@ -64,6 +64,7 @@ export interface EngineCallbacks {
   onOpenLoadout: (charId?: CharacterId) => void;
   onOfferBlessings: (choices: RunBlessing[]) => void;
   onRunFinished: (victory: boolean, shardsEarned: number, kills: number, damageDealt: number) => void;
+  onRequestDifficultySelect?: () => void;
 }
 
 export class GameEngine {
@@ -1099,7 +1100,11 @@ export class GameEngine {
           Math.hypot(this.player.x - door.x, this.player.y - door.y) <= 120
         ) {
           soundEngine.playUiClick(640);
-          this.startGraveyardRun();
+          if (this.callbacks.onRequestDifficultySelect) {
+            this.callbacks.onRequestDifficultySelect();
+          } else {
+            this.startGraveyardRun();
+          }
         }
       }
       return;
@@ -8319,10 +8324,15 @@ export class GameEngine {
       if (prop.kind === 'GUILD_DOOR' && this.world.isGuild) {
         const steppedOutside = p.y <= prop.y - 22 && Math.abs(p.x - prop.x) <= 68;
         if (dist <= 96 || steppedOutside) {
-          prompt = 'Open Door · Go Outside';
+          prompt = 'Open Door · Enter Dungeon';
           if (pressedInteract || steppedOutside) {
             this.bufferedActions.delete('INTERACT');
-            this.startGraveyardRun();
+            if (this.callbacks.onRequestDifficultySelect) {
+              this.player.y = prop.y + 16;
+              this.callbacks.onRequestDifficultySelect();
+            } else {
+              this.startGraveyardRun();
+            }
             return;
           }
         }

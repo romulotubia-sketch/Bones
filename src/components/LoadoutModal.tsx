@@ -735,27 +735,6 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
                           <div className="text-[10px] text-[#FDE68A] font-mono-num">
                             {ult.detailLine} · {ult.cooldown}s CD
                           </div>
-                          {ult.id === UltimateSkillId.DeathsEmbrace && (
-                            <div className="mt-1 pt-2 border-t border-[#2B4B36] space-y-1.5 text-left">
-                              <div className="flex items-center justify-between text-[10px] text-[#A3E635] font-medium">
-                                <span>60-Frame Top-View Plague &amp; Drain VFX</span>
-                                <span className="font-mono-num text-[9px] text-[#BEF264]">Simple Artstyle</span>
-                              </div>
-                              <div className="relative w-full h-16 bg-[#141C18] rounded-lg border border-[#2B4B36] overflow-hidden flex items-center justify-center p-1">
-                                <img
-                                  src="/assets/aistudio/deaths_embrace_fx_sheet.png?v=topview60"
-                                  alt="Death's Embrace 60-frame skill effects"
-                                  className="w-full h-full object-contain"
-                                />
-                              </div>
-                              <div className="text-[9px] text-[#86EFAC] font-mono-num leading-tight flex justify-between">
-                                <span>1–20 Slam &amp; Wave</span>
-                                <span>21–30 Absorb</span>
-                                <span>31–40 Heal Cross</span>
-                                <span>41–60 Fade</span>
-                              </div>
-                            </div>
-                          )}
                         </button>
                       );
                     })}

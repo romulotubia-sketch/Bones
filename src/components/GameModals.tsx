@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import {
+  AlertTriangle,
+  Compass,
   Crown,
   Download,
   Maximize2,
@@ -7,8 +9,10 @@ import {
   RotateCcw,
   Shield,
   Skull,
+  Swords,
   Volume2,
   VolumeX,
+  X,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import {
@@ -475,3 +479,208 @@ export const EndOrPauseModal: React.FC<EndOrPauseModalProps> = ({
     </div>
   );
 };
+
+export interface DungeonDifficultyModalProps {
+  currentDifficulty?: DifficultyLevel;
+  onConfirmDifficulty: (diff: DifficultyLevel) => void;
+  onCancel: () => void;
+}
+
+export const DungeonDifficultyModal: React.FC<DungeonDifficultyModalProps> = ({
+  currentDifficulty = DifficultyLevel.Easy,
+  onConfirmDifficulty,
+  onCancel,
+}) => {
+  const [selectedDiff, setSelectedDiff] = useState<DifficultyLevel>(currentDifficulty);
+  const cfg = DIFFICULTY_CONFIGS[selectedDiff] ?? DIFFICULTY_CONFIGS[DifficultyLevel.Easy];
+
+  return (
+    <div
+      onPointerDown={(e) => e.stopPropagation()}
+      className="absolute inset-0 z-40 flex items-center justify-center bg-black/85 backdrop-blur-xs p-2 sm:p-4"
+    >
+      <ScrollablePane className="w-full max-w-xl max-h-[96%] bg-[#15121D] border border-[#302A40] rounded-2xl p-4 sm:p-5 shadow-2xl flex flex-col text-[#F3EFE6]">
+        {/* Header */}
+        <div className="flex items-center justify-between pb-3 border-b border-[#282236]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-[#201A2C] border border-[#3D3352] flex items-center justify-center text-[#C084FC] shadow-inner">
+              <Compass className="w-5 h-5 text-[#C084FC]" />
+            </div>
+            <div>
+              <h2 className="font-display text-lg sm:text-xl font-bold tracking-tight text-[#F5F0E6]">
+                Choose Expedition Difficulty
+              </h2>
+              <p className="text-[11px] sm:text-xs text-[#9E96B0]">
+                Choose your descent into the graveyard before venturing past the Hearth.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playUiClick(440);
+              onCancel();
+            }}
+            aria-label="Close difficulty selection"
+            className="w-8 h-8 rounded-lg bg-[#221D2E] hover:bg-[#2E273E] text-[#9E96B0] hover:text-white flex items-center justify-center transition-colors active:scale-95"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Difficulty Selection Pills / Tabs */}
+        <div className="grid grid-cols-5 gap-1.5 mt-3.5">
+          {DIFFICULTY_LIST.map((diff, idx) => {
+            const isSelected = selectedDiff === diff.level;
+            return (
+              <button
+                key={diff.level}
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiClick(480 + idx * 40);
+                  setSelectedDiff(diff.level);
+                }}
+                className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-center transition-all active:scale-95 ${
+                  isSelected
+                    ? 'ring-2 ring-white/40 shadow-lg scale-[1.02]'
+                    : 'border-[#2D253B] bg-[#1B1724]/70 hover:bg-[#221D2E] text-[#A39BB5]'
+                }`}
+                style={
+                  isSelected
+                    ? {
+                        backgroundColor: `${diff.color}20`,
+                        borderColor: diff.color,
+                        boxShadow: `0 0 16px ${diff.color}40`,
+                      }
+                    : undefined
+                }
+              >
+                <span className="text-base sm:text-lg mb-0.5">{diff.badge.split(' ')[0]}</span>
+                <span
+                  className="text-xs sm:text-sm font-bold tracking-tight truncate max-w-full"
+                  style={{ color: isSelected ? diff.color : '#E2DCED' }}
+                >
+                  {diff.label}
+                </span>
+                <span
+                  className="text-[10px] font-mono-num font-semibold px-1 py-0.5 mt-0.5 rounded"
+                  style={{
+                    backgroundColor: isSelected ? `${diff.color}33` : '#131019',
+                    color: isSelected ? diff.color : '#7DD3FC',
+                  }}
+                >
+                  {diff.shardMultiplier}x
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Selected Difficulty Card */}
+        <div
+          className="mt-3.5 p-3.5 rounded-xl border flex flex-col gap-2.5 transition-all"
+          style={{
+            backgroundColor: `${cfg.color}10`,
+            borderColor: `${cfg.color}40`,
+          }}
+        >
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">{cfg.badge.split(' ')[0]}</span>
+              <div>
+                <span className="text-sm sm:text-base font-bold" style={{ color: cfg.color }}>
+                  {cfg.label} Difficulty
+                </span>
+                <span className="text-[11px] text-[#A39BB5] ml-2">
+                  {cfg.tagline}
+                </span>
+              </div>
+            </div>
+            <div
+              className="px-2 py-0.5 rounded-md font-mono-num text-xs font-bold"
+              style={{
+                backgroundColor: `${cfg.color}25`,
+                color: cfg.color,
+                border: `1px solid ${cfg.color}60`,
+              }}
+            >
+              {cfg.shardMultiplier}x Soul Shards
+            </div>
+          </div>
+
+          <p className="text-xs text-[#D8D2E4] leading-relaxed">
+            {cfg.description}
+          </p>
+
+          {/* Stat Specs Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs">
+            <div className="bg-[#14101D]/80 border border-[#2B2338] rounded-lg p-2">
+              <div className="text-[10px] text-[#8E86A0] uppercase font-semibold">Dungeon Length</div>
+              <div className="font-mono-num font-bold text-[#F3EFE6] mt-0.5">
+                {cfg.stages} {cfg.stages === 1 ? 'Stage' : 'Stages'} ({cfg.maxFloors} fl)
+              </div>
+            </div>
+            <div className="bg-[#14101D]/80 border border-[#2B2338] rounded-lg p-2">
+              <div className="text-[10px] text-[#8E86A0] uppercase font-semibold">Enemy Multiplier</div>
+              <div className="font-mono-num font-bold text-[#F87171] mt-0.5">
+                +{Math.round((cfg.enemyHpMult - 1) * 100)}% HP / +{Math.round((cfg.enemyDmgMult - 1) * 100)}% DMG
+              </div>
+            </div>
+            <div className="bg-[#14101D]/80 border border-[#2B2338] rounded-lg p-2">
+              <div className="text-[10px] text-[#8E86A0] uppercase font-semibold">Combat Waves</div>
+              <div className="font-mono-num font-bold text-[#FCD34D] mt-0.5">
+                {cfg.wavesPerCombatRoom} Waves / Room
+              </div>
+            </div>
+            <div className="bg-[#14101D]/80 border border-[#2B2338] rounded-lg p-2">
+              <div className="text-[10px] text-[#8E86A0] uppercase font-semibold">Victory Bonus</div>
+              <div className="font-mono-num font-bold text-[#38BDF8] mt-0.5 flex items-center gap-1">
+                <SoulShardIcon className="w-3.5 h-3.5" />
+                +{cfg.victoryShards} Shards
+              </div>
+            </div>
+          </div>
+
+          {cfg.warningNote && (
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-[#450A0A]/60 border border-[#EF4444]/60 text-[#FCA5A5] text-[11px] font-medium">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-[#EF4444]" />
+              <span>{cfg.warningNote}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Action CTAs */}
+        <div className="flex items-center gap-2.5 mt-4 pt-2 border-t border-[#262033]">
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playUiClick(440);
+              onCancel();
+            }}
+            className="flex-1 min-h-[44px] px-3 rounded-xl bg-[#221D2E] hover:bg-[#2B243B] text-[#D8D2E4] text-xs font-semibold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+          >
+            <Shield className="w-4 h-4 text-[#A39BB5]" />
+            <span>Stay in Hearth</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playUiClick(650);
+              onConfirmDifficulty(selectedDiff);
+            }}
+            className="flex-1 min-h-[44px] px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow-lg"
+            style={{
+              backgroundColor: cfg.color,
+              color: cfg.level === DifficultyLevel.Easy ? '#0F1A12' : '#FFFFFF',
+              boxShadow: `0 0 14px ${cfg.color}60`,
+            }}
+          >
+            <Swords className="w-4 h-4" />
+            <span>Enter Dungeon ({cfg.label})</span>
+          </button>
+        </div>
+      </ScrollablePane>
+    </div>
+  );
+};
+

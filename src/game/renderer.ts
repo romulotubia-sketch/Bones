@@ -3843,78 +3843,166 @@ function drawZombiePoisonBurst(ctx: CanvasRenderingContext2D, slash: SlashEffect
   ctx.restore();
 }
 
-// Reference to Zombie's Death's Embrace 60-frame top-view skill effects sheet
-export const DEATHS_EMBRACE_SHEET_URL = '/assets/aistudio/deaths_embrace_fx_sheet.png?v=topview60';
-
-let cachedDeathsEmbraceSheetImg: HTMLImageElement | null = null;
-
-function getDeathsEmbraceSheetImage(): HTMLImageElement | null {
-  if (typeof window === 'undefined') return null;
-  if (!cachedDeathsEmbraceSheetImg) {
-    cachedDeathsEmbraceSheetImg = new Image();
-    cachedDeathsEmbraceSheetImg.src = DEATHS_EMBRACE_SHEET_URL;
-  }
-  return cachedDeathsEmbraceSheetImg;
-}
-
-// Preload immediately in browser so the very first cast renders from Frame 1
-if (typeof window !== 'undefined') {
-  getDeathsEmbraceSheetImage();
-}
-
 export function drawDeathsEmbraceVFX(
   ctx: CanvasRenderingContext2D,
   fx: DeathsEmbraceEffect,
-  _time: number
+  time: number
 ): void {
   const progress = Math.max(0, Math.min(1, 1 - fx.life / fx.maxLife));
-  // 60 sequential frames (0 to 59) matching the 10x6 sheet
-  const frameIndex = Math.min(59, Math.floor(progress * 60));
-
-  // 10 columns by 6 rows in the 1400x840 master sheet (each frame 140x140)
-  const col = frameIndex % 10;
-  const row = Math.floor(frameIndex / 10);
-  const sw = 140;
-  const sh = 140;
-  const sx = col * sw;
-  const sy = row * sh;
-
-  // Sized to match the skill's AoE reach cleanly in top-down perspective
-  const drawDiameter = fx.radius * 2.15;
-  const half = drawDiameter / 2;
-
-  // Frames 50-60 already contain the hand-drawn dissipation fade; apply gentle tail fade at the very end
-  const alpha = progress > 0.94 ? Math.max(0, (1 - progress) / 0.06) : 1;
-
-  const sheet = getDeathsEmbraceSheetImage();
-  const sheetReady = sheet && sheet.complete && sheet.naturalWidth > 0;
+  const ease = 1 - Math.pow(1 - progress, 3);
+  const alpha = Math.max(0, 1 - Math.pow(progress, 1.8));
+  const radius = fx.radius;
 
   ctx.save();
   ctx.translate(fx.x, fx.y);
 
-  if (sheetReady) {
-    // 1. Crisp full-color base pass preserving dark debris, outlines, and top-view cross artstyle
-    ctx.save();
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = alpha;
-    ctx.drawImage(sheet, sx, sy, sw, sh, -half, -half, drawDiameter, drawDiameter);
-    ctx.restore();
+  // 1. Expanding Necrotic Ground Fissure & Siphon Circle
+  const groundR = Math.max(16, radius * (0.35 + ease * 0.65));
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
 
-    // 2. Subtle additive bloom pass for vibrant toxic-lime energy glow
+  // Dark necrotic crypt crater base
+  ctx.fillStyle = `rgba(10, 24, 16, ${alpha * 0.75})`;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, groundR, groundR * 0.72, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Fractured jagged fissure cracks radiating outward
+  const crackProgress = Math.min(1, progress * 2.2);
+  ctx.strokeStyle = `rgba(163, 230, 53, ${alpha * 0.9})`;
+  ctx.lineWidth = Math.max(1.2, 3.2 * (1 - progress * 0.7));
+  for (let i = 0; i < 8; i++) {
+    const baseAng = (i * Math.PI) / 4 + 0.15;
+    const len = groundR * 0.92 * crackProgress;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    const midX = Math.cos(baseAng + 0.1) * len * 0.55;
+    const midY = Math.sin(baseAng - 0.08) * len * 0.55 * 0.72;
+    const endX = Math.cos(baseAng) * len;
+    const endY = Math.sin(baseAng) * len * 0.72;
+    ctx.lineTo(midX, midY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 2. High-Impact Plague Nova Shockwaves (Dual Wave)
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+
+  // Primary expanding bio-shockwave
+  const wave1R = radius * (0.2 + ease * 0.85);
+  const grad1 = ctx.createRadialGradient(0, 0, Math.max(4, wave1R * 0.75), 0, 0, wave1R);
+  grad1.addColorStop(0, 'rgba(45, 212, 191, 0)');
+  grad1.addColorStop(0.7, `rgba(45, 212, 191, ${alpha * 0.45})`);
+  grad1.addColorStop(0.92, `rgba(163, 230, 53, ${alpha * 0.9})`);
+  grad1.addColorStop(1, 'rgba(163, 230, 53, 0)');
+  ctx.fillStyle = grad1;
+  ctx.beginPath();
+  ctx.arc(0, 0, wave1R, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Outer sharp luminous shockwave ring
+  ctx.strokeStyle = `rgba(236, 252, 203, ${alpha * 0.95})`;
+  ctx.lineWidth = Math.max(1.8, 7.5 * (1 - progress * 0.8));
+  ctx.beginPath();
+  ctx.arc(0, 0, wave1R, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Secondary lagging toxic wave
+  if (progress > 0.12) {
+    const p2 = (progress - 0.12) / 0.88;
+    const ease2 = 1 - Math.pow(1 - p2, 2.5);
+    const wave2R = radius * (0.15 + ease2 * 0.72);
+    ctx.strokeStyle = `rgba(34, 197, 94, ${alpha * 0.7})`;
+    ctx.lineWidth = Math.max(1.5, 4.8 * (1 - p2));
+    ctx.beginPath();
+    ctx.arc(0, 0, wave2R, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // 12 orbiting expanding plague spore bursts along perimeter
+  const sporePop = Math.sin(Math.min(1, progress * 1.5) * Math.PI);
+  for (let i = 0; i < 12; i++) {
+    const a = (i * Math.PI) / 6 + ease * 0.4 + (i % 2 === 0 ? 0.1 : -0.1);
+    const dist = wave1R * 0.94;
+    const sx = Math.cos(a) * dist;
+    const sy = Math.sin(a) * dist * 0.88;
+    const sporeSize = Math.max(2, (14 + (i % 3) * 4) * sporePop * (1 - progress * 0.3));
+
+    ctx.fillStyle = i % 2 === 0 ? `rgba(163, 230, 53, ${alpha * 0.55})` : `rgba(45, 212, 191, ${alpha * 0.5})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, sporeSize, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // 3. Inward-Spiraling Life-Drain Ribbons (siphoning souls into the zombie)
+  if (progress >= 0.18 && progress <= 0.88) {
+    const drainP = (progress - 0.18) / 0.7;
+    const drainAlpha = Math.sin(drainP * Math.PI) * alpha;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = alpha * 0.28;
-    ctx.drawImage(sheet, sx, sy, sw, sh, -half, -half, drawDiameter, drawDiameter);
+
+    const numRibbons = 6;
+    for (let i = 0; i < numRibbons; i++) {
+      const baseAngle = (i * Math.PI * 2) / numRibbons + time * 3.8;
+      const rOuter = radius * (1 - drainP * 0.82);
+      const rInner = Math.max(8, rOuter * 0.28);
+      ctx.strokeStyle =
+        i % 2 === 0 ? `rgba(74, 222, 128, ${drainAlpha * 0.85})` : `rgba(45, 212, 191, ${drainAlpha * 0.85})`;
+      ctx.lineWidth = Math.max(1.5, 3.8 * (1 - drainP * 0.5));
+      ctx.beginPath();
+      for (let s = 0; s <= 10; s++) {
+        const t = s / 10;
+        const curR = rOuter - (rOuter - rInner) * t;
+        const curA = baseAngle + t * 1.35;
+        const px = Math.cos(curA) * curR;
+        const py = Math.sin(curA) * curR * 0.78;
+        if (s === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
     ctx.restore();
-  } else {
-    // Stylized lime-green fallback while sheet initializes
+  }
+
+  // 4. Luminous Necrotic Restoration Heal Cross (Erupts at peak absorption)
+  if (progress >= 0.32) {
+    const healP = (progress - 0.32) / 0.68;
+    const healAlpha = Math.sin(healP * Math.PI) * alpha;
+    const crossScale = 1 + Math.sin(healP * Math.PI) * 0.45;
+    const armLen = Math.max(10, 36 * crossScale);
+    const armThick = armLen * 0.34;
+
     ctx.save();
-    ctx.globalAlpha = alpha * 0.85;
-    ctx.strokeStyle = '#84CC16';
-    ctx.lineWidth = 6 * (1 - progress);
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Radiant emerald-gold bloom behind the cross
+    const bloomGrad = ctx.createRadialGradient(0, -10, 4, 0, -10, armLen * 1.8);
+    bloomGrad.addColorStop(0, `rgba(236, 252, 203, ${healAlpha * 0.9})`);
+    bloomGrad.addColorStop(0.45, `rgba(74, 222, 128, ${healAlpha * 0.65})`);
+    bloomGrad.addColorStop(0.85, `rgba(45, 212, 191, ${healAlpha * 0.3})`);
+    bloomGrad.addColorStop(1, 'rgba(45, 212, 191, 0)');
+    ctx.fillStyle = bloomGrad;
     ctx.beginPath();
-    ctx.arc(0, 0, fx.radius * Math.min(1, progress * 1.5), 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.arc(0, -10, armLen * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Emerald base cross
+    ctx.fillStyle = `rgba(74, 222, 128, ${healAlpha * 0.9})`;
+    ctx.beginPath();
+    ctx.rect(-armThick * 0.5, -armLen - 10, armThick, armLen * 2);
+    ctx.rect(-armLen, -armThick * 0.5 - 10, armLen * 2, armThick);
+    ctx.fill();
+
+    // Pale radiant inner core
+    ctx.fillStyle = `rgba(240, 253, 244, ${healAlpha * 0.98})`;
+    ctx.beginPath();
+    ctx.rect(-armThick * 0.28, -armLen * 0.85 - 10, armThick * 0.56, armLen * 1.7);
+    ctx.rect(-armLen * 0.85, -armThick * 0.28 - 10, armLen * 1.7, armThick * 0.56);
+    ctx.fill();
+
     ctx.restore();
   }
 
