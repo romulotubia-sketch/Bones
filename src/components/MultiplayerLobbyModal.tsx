@@ -84,8 +84,22 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
   const [joinCode, setJoinCode] = useState('');
   const [maxPlayers, setMaxPlayers] = useState<number>(4);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [lanAddress, setLanAddress] = useState<string | null>(null);
+  const [copiedLan, setCopiedLan] = useState(false);
+  const [customLanHost, setCustomLanHost] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+
+  React.useEffect(() => {
+    fetch('/api/lan-ip')
+      .then((res) => res.json())
+      .then((data: { lanIp: string; port: number }) => {
+        if (data?.lanIp) {
+          setLanAddress(`${data.lanIp}:${data.port}`);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const localId = networkManager.getLocalPlayerId();
   const isHost = room && localId ? room.hostId === localId : false;
@@ -106,7 +120,8 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
         playerName.trim() || 'Hero',
         characterId,
         selectedMode,
-        maxPlayers
+        maxPlayers,
+        customLanHost.trim() || undefined
       );
     } catch {
       setErrorMessage('Failed to connect to multiplayer server.');
@@ -127,7 +142,8 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
       await networkManager.joinRoom(
         joinCode.trim().toUpperCase(),
         playerName.trim() || 'Hero',
-        characterId
+        characterId,
+        customLanHost.trim() || undefined
       );
     } catch {
       setErrorMessage('Could not connect to multiplayer server.');
@@ -472,6 +488,56 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                     </div>
                   )}
                 </div>
+
+                {/* Optional LAN Host for Local Wi-Fi Co-op in Join tab */}
+                {activeTab === 'JOIN' && (
+                  <div className="p-3 rounded-xl bg-[#1B1627] border border-[#312744]">
+                    <label className="block text-[11px] font-semibold text-[#A69FB4] mb-1">
+                      Host Wi-Fi IP / Server Address (For Local Wi-Fi Co-op)
+                    </label>
+                    <input
+                      type="text"
+                      value={customLanHost}
+                      onChange={(e) => setCustomLanHost(e.target.value)}
+                      placeholder={lanAddress ? `${lanAddress} (optional)` : 'e.g. 192.168.1.100:3000'}
+                      className="w-full h-10 px-3 rounded-xl bg-[#130F1C] border border-[#382D4F] text-xs font-mono text-[#F3EFE6] focus:border-[#38BDF8] focus:outline-none"
+                    />
+                    <p className="text-[10px] text-[#A69FB4] mt-1.5 leading-tight">
+                      Leave empty to connect to the online server, or enter the host device&apos;s IP for local Wi-Fi.
+                    </p>
+                  </div>
+                )}
+
+                {/* LAN Host Address Banner for Creator in Local Wi-Fi mode */}
+                {activeTab === 'CREATE' && (selectedMode === 'LAN_COOP' || selectedMode === 'LAN_PVP') && lanAddress && (
+                  <div className="p-3 rounded-xl bg-[#151D2A] border border-[#38BDF8]/40 flex items-center justify-between">
+                    <div className="min-w-0">
+                      <div className="text-[11px] text-[#7DD3FC] font-semibold flex items-center gap-1.5">
+                        <Wifi className="w-3.5 h-3.5" />
+                        <span>Host Local Wi-Fi Address</span>
+                      </div>
+                      <div className="text-xs font-mono-num font-bold text-[#F3EFE6] truncate mt-0.5">
+                        {lanAddress}
+                      </div>
+                      <div className="text-[10px] text-[#94A3B8] mt-0.5">
+                        Share this IP with devices on the same Wi-Fi.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(lanAddress);
+                        setCopiedLan(true);
+                        soundEngine.playUiClick(720);
+                        setTimeout(() => setCopiedLan(false), 2000);
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#2C3B53] text-[11px] font-semibold text-[#38BDF8] border border-[#38BDF8]/30 flex items-center gap-1 shrink-0 ml-2 active:scale-95 transition-all"
+                    >
+                      {copiedLan ? <Check className="w-3.5 h-3.5 text-[#4ADE80]" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedLan ? 'Copied' : 'Copy IP'}</span>
+                    </button>
+                  </div>
+                )}
 
                 {/* Hero Selection */}
                 <div>

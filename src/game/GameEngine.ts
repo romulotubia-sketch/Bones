@@ -58,7 +58,7 @@ import {
   STAGE_THEMES,
 } from './dungeonGenerator';
 import { NetworkManager } from '../multiplayer/NetworkManager';
-import { PlayerTransformSync } from '../multiplayer/networkTypes';
+import { EnemySyncState, PlayerTransformSync } from '../multiplayer/networkTypes';
 import { RemoteRenderPlayer, renderGameWorld } from './renderer';
 
 export interface EngineCallbacks {
@@ -557,36 +557,30 @@ export class GameEngine {
         }
       },
       onEnemyDamaged: (enemyId, damage, isCrit, hitX, hitY, attackerId) => {
-        if (manager.isHost()) {
-          const target = this.world.enemies.find((e) => e.id === enemyId);
-          if (target && target.hp > 0) {
-            this.damageEnemy(target, damage, true, hitX ?? target.x, hitY ?? target.y, false, isCrit);
-          }
-        } else {
-          const target = this.world.enemies.find((e) => e.id === enemyId);
-          if (target) {
-            target.hp = Math.max(0, target.hp - damage);
-            target.hitFlashTimer = 0.08;
-            soundEngine.playHit(isCrit);
-            this.spawnPopup(
-              hitX ?? target.x,
-              (hitY ?? target.y) - 18,
-              `-${damage}`,
-              isCrit ? '#FEF08A' : '#F87171',
-              isCrit ? 1.25 : 1.0
-            );
+        const localId = manager.getLocalPlayerId();
+        if (attackerId === localId) return;
+
+        const target = this.world.enemies.find((e) => e.id === enemyId);
+        if (target && target.hp > 0) {
+          target.hp = Math.max(0, target.hp - damage);
+          target.hitFlashTimer = 0.08;
+          soundEngine.playHit(isCrit);
+          this.spawnPopup(
+            hitX ?? target.x,
+            (hitY ?? target.y) - 18,
+            `-${damage}`,
+            isCrit ? '#FEF08A' : '#F87171',
+            isCrit ? 1.25 : 1.0
+          );
+          if (target.hp <= 0) {
+            this.handleEnemyDefeated(target);
           }
         }
       },
-      onEnemyDefeated: (enemyId, killerId, dropX, dropY) => {
-        const idx = this.world.enemies.findIndex((e) => e.id === enemyId);
-        if (idx !== -1) {
-          const deadEnemy = this.world.enemies[idx];
-          this.spawnBurst(deadEnemy.x, deadEnemy.y, '#94A3B8', 12, 110);
-          this.world.enemies.splice(idx, 1);
-          this.runKills++;
-          soundEngine.playEnemyDeath();
-          this.spawnOrb('SOUL_SHARD', dropX, dropY, 2);
+      onEnemyDefeated: (enemyId, _killerId, _dropX, _dropY) => {
+        const target = this.world.enemies.find((e) => e.id === enemyId);
+        if (target) {
+          this.handleEnemyDefeated(target);
         }
       },
       onRemoteSkill: (playerId, skillId, x, y, angle, slot) => {
@@ -656,7 +650,7 @@ export class GameEngine {
           life: 0.22,
           maxLife: 0.22,
           flip: Math.random() < 0.5,
-          kind: 'SKELETON_SWORD_SLASH',
+          kind: 'SKELETON_BASIC_ATTACK',
         });
       } else if (charId === CharacterId.Goblin) {
         soundEngine.playSlash(1);
@@ -693,7 +687,7 @@ export class GameEngine {
           life: 0.2,
           maxLife: 0.2,
           flip: Math.random() < 0.5,
-          kind: 'GHOST_CLAW_SLASH',
+          kind: 'GHOST_BASIC_ARC',
         });
       } else {
         soundEngine.playSlash(1);
@@ -789,7 +783,7 @@ export class GameEngine {
         life: 0.35,
         maxLife: 0.35,
       });
-    } else if (skillId === NormalSkillId.FanOfKnives) {
+    } else if (skillId === NormalSkillId.DaggerFlurry) {
       soundEngine.playSlash(1);
       for (let i = 0; i < 5; i++) {
         const fa = angle + (i - 2) * 0.18;
@@ -804,12 +798,12 @@ export class GameEngine {
           damage: 18,
           life: 0.9,
           color: '#F59E0B',
-          kind: 'PLAYER_SPECTRAL_DAGGER',
+          kind: 'PLAYER_ENCHANTED_DAGGER',
           angle: fa,
           hitEnemyIds: new Set<number>(),
         });
       }
-    } else if (skillId === NormalSkillId.ShadowStep) {
+    } else if (skillId === NormalSkillId.Shadowstep) {
       soundEngine.playDash();
       this.spawnBurst(x, y, '#F59E0B', 10, 85);
     } else if (skillId === NormalSkillId.Groundbreaker) {
@@ -822,7 +816,7 @@ export class GameEngine {
         life: 0.3,
         maxLife: 0.3,
       });
-    } else if (skillId === NormalSkillId.StoneRampart) {
+    } else if (skillId === NormalSkillId.FortressStance) {
       soundEngine.playBoneBreak();
       this.spawnBurst(x, y, '#FB923C', 12, 90);
     } else if (skillId === NormalSkillId.PhantomDash) {
@@ -848,7 +842,7 @@ export class GameEngine {
         life: 0.45,
         maxLife: 0.45,
         flip: false,
-        kind: 'GHOST_SOUL_DRAIN_RING',
+        kind: 'GHOST_SOUL_DRAIN_PULSE',
       });
     } else {
       soundEngine.playBossSlam();
@@ -1015,7 +1009,11 @@ export class GameEngine {
     this.player.normalCooldowns = [0, 0];
     this.player.ultCooldown = 0;
 
-    this.loadDungeonFloor(1, seed);
+    const runSeed = seed ?? Math.floor(Math.random() * 1000000);
+    if (this.isInCoop() && this.networkManager?.isHost()) {
+      this.networkManager.sendAdvanceFloor(1, runSeed);
+    }
+    this.loadDungeonFloor(1, runSeed);
     soundEngine.playSummon();
   }
 
@@ -1729,6 +1727,10 @@ export class GameEngine {
           leapAirProgress: +this.player.leapAirProgress.toFixed(2),
           isAttacking: this.attackHeld || this.bufferedActions.has('BASIC'),
           comboStep: this.player.zombieComboStep || this.player.skelComboStep || 0,
+          isDowned: this.player.isDowned,
+          bleedoutTimer: +this.player.bleedoutTimer.toFixed(1),
+          reviveProgress: +this.player.reviveProgress.toFixed(2),
+          isRevivingPlayerId: this.player.isRevivingPlayerId,
           activeBuffs: {
             undying: this.player.undyingTimer > 0,
             abomination: this.player.abominationTimer > 0,
@@ -1742,6 +1744,35 @@ export class GameEngine {
             nightmare: this.player.nightmareTimer > 0,
           },
         });
+
+        // Host in Co-op mode syncs authoritative enemy positions and wave count (10-20 Hz)
+        if (this.networkManager.isHost() && this.isInCoop() && this.phase === GamePhase.Dungeon) {
+          const activeRoom = this.world.rooms.find((r) => r.id === this.currentRoomId);
+          const syncEnemies: EnemySyncState[] = this.world.enemies.map((e) => ({
+            id: e.id,
+            kind: e.kind,
+            x: +e.x.toFixed(1),
+            y: +e.y.toFixed(1),
+            vx: +e.vx.toFixed(1),
+            vy: +e.vy.toFixed(1),
+            hp: e.hp,
+            maxHp: e.maxHp,
+            facingX: e.facingX,
+            aiState: e.aiState,
+            telegraphType: e.telegraphType,
+            telegraphAngle: +e.telegraphAngle.toFixed(2),
+            hitFlashTimer: +e.hitFlashTimer.toFixed(2),
+            stunTimer: +e.stunTimer.toFixed(2),
+            plagueTimer: +e.plagueTimer.toFixed(2),
+            infectionStacks: e.infectionStacks,
+            roomId: e.roomId,
+          }));
+          this.networkManager.sendSyncEnemies(
+            this.currentRoomId,
+            activeRoom?.wavesRemaining ?? 0,
+            syncEnemies
+          );
+        }
       }
     }
     this.updateMinions(dt);
@@ -2889,6 +2920,22 @@ export class GameEngine {
         }
         this.hitDestructibleProps(p.x, p.y, 44);
       }
+    } else if (p.isDowned) {
+      p.bleedoutTimer = Math.max(0, p.bleedoutTimer - dt);
+      p.dashTimer = 0;
+      p.leapAirProgress = 0;
+      if (joyMag > 0.01) {
+        const crawlSpeed = 38;
+        const clampedMag = Math.min(1, joyMag);
+        const nx = this.joyX / joyMag;
+        const ny = this.joyY / joyMag;
+        p.vx = nx * crawlSpeed * clampedMag;
+        p.vy = ny * crawlSpeed * clampedMag;
+        p.walkPhase += dt * 4;
+      } else {
+        p.vx *= Math.pow(0.001, dt);
+        p.vy *= Math.pow(0.001, dt);
+      }
     } else if (joyMag > 0.01) {
       p.leapAirProgress = 0;
       const clampedMag = Math.min(1, joyMag);
@@ -2903,10 +2950,53 @@ export class GameEngine {
       p.vy *= Math.pow(0.001, dt);
     }
 
+    // Co-op: Proximity revival channeling (channel resurrect when standing near a downed ally)
+    if (!p.isDowned && this.isInCoop()) {
+      let nearestDowned: { id: string; x: number; y: number; reviveProgress?: number } | null = null;
+      let nearestDist = 80;
+      for (const remote of this.remotePlayers.values()) {
+        if (remote.isDowned) {
+          const dist = Math.hypot(p.x - remote.x, p.y - remote.y);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearestDowned = remote;
+          }
+        }
+      }
+
+      if (nearestDowned) {
+        p.isRevivingPlayerId = nearestDowned.id;
+        nearestDowned.reviveProgress = Math.min(
+          1.0,
+          (nearestDowned.reviveProgress ?? 0) + dt * 0.45
+        );
+        this.networkManager?.sendReviveProgress(nearestDowned.id, nearestDowned.reviveProgress);
+
+        // Spawn revival healing tether & soul motes
+        if (Math.random() < 0.4 && this.particles.length < 240) {
+          this.particles.push({
+            x: nearestDowned.x + (Math.random() - 0.5) * 16,
+            y: nearestDowned.y + (Math.random() - 0.5) * 16,
+            vx: (p.x - nearestDowned.x) * 0.8 + (Math.random() - 0.5) * 20,
+            vy: (p.y - nearestDowned.y) * 0.8 - 20,
+            size: 3.5,
+            color: '#4ADE80',
+            life: 0.32,
+            maxLife: 0.32,
+            gravity: 0,
+            fade: true,
+            kind: 'NECRO_CROSS',
+          });
+        }
+      } else {
+        p.isRevivingPlayerId = null;
+      }
+    }
+
     // Ghost Passive 1: Ethereal Body phases naturally through physical obstacles in the Dungeon!
     const phaseObstacles =
       !this.world.isGuild &&
-      (p.characterId === CharacterId.Ghost || p.dashKind === 'PHANTOM_DASH' && p.dashTimer > 0);
+      (p.characterId === CharacterId.Ghost || (p.dashKind === 'PHANTOM_DASH' && p.dashTimer > 0));
     const nextPos = this.resolveWorldCollision(
       p.x + p.vx * dt,
       p.y + p.vy * dt,
@@ -2916,29 +3006,34 @@ export class GameEngine {
     p.x = nextPos.x;
     p.y = nextPos.y;
 
-    // Consume buffered touch skills & basic attacks
-    if (this.bufferedActions.has('SKILL_0') && p.normalCooldowns[0] <= 0) {
-      this.bufferedActions.delete('SKILL_0');
-      this.castNormalSkill(0);
-    }
-    if (this.bufferedActions.has('SKILL_1') && p.normalCooldowns[1] <= 0) {
-      this.bufferedActions.delete('SKILL_1');
-      this.castNormalSkill(1);
-    }
-    if (this.bufferedActions.has('ULT') && p.ultCooldown <= 0 && p.ultCharge >= 100) {
-      this.bufferedActions.delete('ULT');
-      this.castUltimateSkill();
-    }
+    if (!p.isDowned) {
+      // Consume buffered touch skills & basic attacks
+      if (this.bufferedActions.has('SKILL_0') && p.normalCooldowns[0] <= 0) {
+        this.bufferedActions.delete('SKILL_0');
+        this.castNormalSkill(0);
+      }
+      if (this.bufferedActions.has('SKILL_1') && p.normalCooldowns[1] <= 0) {
+        this.bufferedActions.delete('SKILL_1');
+        this.castNormalSkill(1);
+      }
+      if (this.bufferedActions.has('ULT') && p.ultCooldown <= 0 && p.ultCharge >= 100) {
+        this.bufferedActions.delete('ULT');
+        this.castUltimateSkill();
+      }
 
-    if (
-      (this.attackHeld || this.bufferedActions.has('BASIC')) &&
-      p.basicAttackCooldown <= 0 &&
-      p.dashTimer <= 0 &&
-      p.phantomRemaining <= 0 &&
-      p.kingThievesRemaining <= 0
-    ) {
-      this.bufferedActions.delete('BASIC');
-      this.performBasicAttack();
+      if (
+        (this.attackHeld || this.bufferedActions.has('BASIC')) &&
+        p.basicAttackCooldown <= 0 &&
+        p.dashTimer <= 0 &&
+        p.phantomRemaining <= 0 &&
+        p.kingThievesRemaining <= 0
+      ) {
+        this.bufferedActions.delete('BASIC');
+        this.performBasicAttack();
+      }
+    } else {
+      this.bufferedActions.clear();
+      this.attackHeld = false;
     }
 
     this.checkInteractables();
@@ -3086,6 +3181,9 @@ export class GameEngine {
         ? 1
         : 0
     );
+    if (this.isInCoop()) {
+      this.networkManager?.sendCastSkill('BASIC', p.x, p.y, p.aimAngle, 'BASIC');
+    }
     const originX = p.x + Math.cos(p.aimAngle) * 16;
     const originY = p.y + Math.sin(p.aimAngle) * 16;
     const slashDuration = isGob
@@ -3533,6 +3631,15 @@ export class GameEngine {
     const loadout = this.getActiveLoadout();
     const skillId = loadout.normalSkills[slotIndex];
     this.player.normalCooldowns[slotIndex] = this.player.normalMaxCooldowns[slotIndex];
+    if (this.isInCoop()) {
+      this.networkManager?.sendCastSkill(
+        skillId,
+        this.player.x,
+        this.player.y,
+        this.player.aimAngle,
+        slotIndex === 0 ? 'NORMAL_0' : 'NORMAL_1'
+      );
+    }
 
     switch (skillId) {
       // === ZOMBIE NORMAL SKILLS ===
@@ -5584,6 +5691,9 @@ export class GameEngine {
     const ultId = loadout.ultimateSkill;
     p.ultCharge = 0;
     p.ultCooldown = p.ultMaxCooldown;
+    if (this.isInCoop()) {
+      this.networkManager?.sendCastSkill(ultId, p.x, p.y, p.aimAngle, 'ULTIMATE');
+    }
 
     switch (ultId) {
       // === ZOMBIE ULTIMATE SKILLS ===
@@ -7456,7 +7566,27 @@ export class GameEngine {
     this.emitHudSnapshot();
 
     if (p.hp <= 0) {
-      this.finishRun(false);
+      if (this.isInCoop()) {
+        if (!p.isDowned) {
+          p.hp = 0;
+          p.isDowned = true;
+          p.bleedoutTimer = 35.0;
+          p.reviveProgress = 0;
+          soundEngine.playBoneBreak();
+          this.showBanner('DOWNED! Waiting for a teammate to revive you...');
+          this.spawnBurst(p.x, p.y, '#EF4444', 16, 110);
+          this.emitHudSnapshot();
+        }
+        // Check if all party members are downed or dead
+        const partyDowned =
+          this.remotePlayers.size > 0 &&
+          Array.from(this.remotePlayers.values()).every((r) => r.isDowned || r.hp <= 0);
+        if (partyDowned && this.networkManager?.isHost()) {
+          this.finishRun(false);
+        }
+      } else {
+        this.finishRun(false);
+      }
     }
   }
 
@@ -7464,6 +7594,11 @@ export class GameEngine {
     if (amount <= 0) return;
     const prev = this.player.hp;
     this.player.hp = Math.min(this.player.maxHp, this.player.hp + amount);
+    if (this.player.isDowned && this.player.hp > 0) {
+      this.player.isDowned = false;
+      this.player.bleedoutTimer = 0;
+      this.player.reviveProgress = 0;
+    }
     const gained = this.player.hp - prev;
     if (gained > 0) {
       this.spawnPopup(this.player.x, this.player.y - 22, `+${gained}`, '#4ADE80', 0.95);
@@ -8515,7 +8650,8 @@ export class GameEngine {
     sourceY: number,
     heavyKnockback = false,
     isCrit = false,
-    isSplinterSplash = false
+    isSplinterSplash = false,
+    fromNetwork = false
   ): void {
     if (enemy.hp <= 0) return;
 
@@ -8525,6 +8661,10 @@ export class GameEngine {
     enemy.squashX = isCrit ? 1.28 : 1.2;
     enemy.squashY = isCrit ? 0.76 : 0.82;
     this.runDamageDealt += actual;
+
+    if (!fromNetwork && this.isInCoop()) {
+      this.networkManager?.sendEnemyDamage(enemy.id, actual, isCrit, enemy.x, enemy.y);
+    }
 
     if (isDirectHit) {
       soundEngine.playHit(heavyKnockback || isCrit);
@@ -8767,6 +8907,11 @@ export class GameEngine {
           room.discovered = true;
         }
 
+        // In Co-op mode, only the host/party leader spawns waves and locks rooms
+        if (this.isInCoop() && !this.networkManager?.isHost()) {
+          break;
+        }
+
         if (!room.cleared && !room.locked && room.wavesRemaining > 0) {
           room.locked = true;
           room.wavesRemaining--;
@@ -8788,6 +8933,11 @@ export class GameEngine {
         }
         break;
       }
+    }
+
+    // In Co-op mode, non-host client receives room clearance and next waves from host sync
+    if (this.isInCoop() && !this.networkManager?.isHost()) {
+      return;
     }
 
     const activeRoom = this.world.rooms.find((r) => r.id === this.currentRoomId);
@@ -8878,8 +9028,9 @@ export class GameEngine {
       if (prop.kind === 'GUILD_DOOR' && this.world.isGuild) {
         const steppedOutside = p.y <= prop.y - 22 && Math.abs(p.x - prop.x) <= 68;
         if (dist <= 96 || steppedOutside) {
-          prompt = 'Open Door · Enter Dungeon';
-          if (pressedInteract || steppedOutside) {
+          const isCoopNonHost = this.isInCoop() && !this.networkManager?.isHost();
+          prompt = isCoopNonHost ? 'Waiting for Party Leader to Open Door' : 'Open Door · Enter Dungeon';
+          if ((pressedInteract || steppedOutside) && !isCoopNonHost) {
             this.bufferedActions.delete('INTERACT');
             if (this.callbacks.onRequestDifficultySelect) {
               this.player.y = prop.y + 16;
@@ -8895,7 +9046,10 @@ export class GameEngine {
         const isRunVictory = this.world.floorNumber >= maxFloors;
         const nextFloor = this.world.floorNumber + 1;
         const nextInfo = getStageAndFloor(nextFloor);
-        if (isRunVictory) {
+        const isCoopNonHost = this.isInCoop() && !this.networkManager?.isHost();
+        if (isCoopNonHost) {
+          prompt = 'Waiting for Party Leader to enter portal';
+        } else if (isRunVictory) {
           prompt = 'Claim Victory & Return to Guild';
         } else if (nextInfo.stageFloor === 1) {
           const theme = STAGE_THEMES[nextInfo.stage] ?? STAGE_THEMES[1];
@@ -8906,8 +9060,16 @@ export class GameEngine {
 
         if (pressedInteract || dist <= 32) {
           this.bufferedActions.delete('INTERACT');
+          if (isCoopNonHost) {
+            this.showBanner('Waiting for Party Leader to enter the portal...');
+            return;
+          }
           if (isRunVictory) {
             this.finishRun(true);
+          } else if (this.isInCoop()) {
+            const seed = Math.floor(Math.random() * 1000000);
+            this.networkManager?.sendAdvanceFloor(nextFloor, seed);
+            this.loadDungeonFloor(nextFloor, seed);
           } else if (this.world.floorNumber > 7) {
             this.loadDungeonFloor(nextFloor);
           } else {
@@ -9468,13 +9630,33 @@ export class GameEngine {
       multiplayerInfo: (() => {
         const room = this.networkManager?.getRoom();
         if (!room) return null;
+        const localId = this.networkManager?.getLocalPlayerId();
+        const partyMembers = room.players.map((rp) => {
+          const isSelf = rp.id === localId;
+          const remote = !isSelf ? this.remotePlayers.get(rp.id) : null;
+          return {
+            id: rp.id,
+            name: rp.name,
+            characterId: isSelf ? this.player.characterId : (remote?.characterId ?? rp.characterId),
+            isHost: rp.isHost,
+            isSelf,
+            hp: isSelf ? Math.max(0, Math.ceil(this.player.hp)) : (remote?.hp ?? 100),
+            maxHp: isSelf ? this.player.maxHp : (remote?.maxHp ?? 100),
+            isDowned: isSelf ? Boolean(this.player.isDowned) : Boolean(remote?.isDowned),
+            bleedoutTimer: isSelf ? this.player.bleedoutTimer : remote?.bleedoutTimer,
+            reviveProgress: isSelf ? this.player.reviveProgress : remote?.reviveProgress,
+            color: rp.color || '#38BDF8',
+          };
+        });
+
         return {
           inRoom: true,
           roomCode: room.code,
           mode: room.mode,
-          isHost: room.hostId === this.networkManager?.getLocalPlayerId(),
+          isHost: room.hostId === localId,
           playerCount: room.players.length,
           ping: this.networkManager?.getPing() ?? 0,
+          partyMembers,
         };
       })(),
     });

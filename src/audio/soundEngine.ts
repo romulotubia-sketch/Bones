@@ -272,6 +272,10 @@ class SoundEngine {
       osc.stop(t + 0.46);
     });
   }
+
+  public playEnemyDeath(): void {
+    this.playBoneBreak();
+  }
 }
 
 export const soundEngine = new SoundEngine();

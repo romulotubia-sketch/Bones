@@ -718,9 +718,12 @@ export interface HudSnapshot {
       name: string;
       characterId: CharacterId;
       isHost: boolean;
+      isSelf?: boolean;
       hp: number;
       maxHp: number;
       isDowned: boolean;
+      bleedoutTimer?: number;
+      reviveProgress?: number;
       color: string;
     }[];
   } | null;

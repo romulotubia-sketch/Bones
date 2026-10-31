@@ -1,11 +1,13 @@
 import React, { useRef, useState } from 'react';
 import {
   Crosshair,
+  Crown,
   DoorOpen,
   Hand,
   Maximize2,
   Minimize2,
   Pause,
+  Skull,
   SlidersHorizontal,
   Swords,
   Users,
@@ -181,8 +183,9 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
     <div className="absolute inset-0 z-20 pointer-events-none flex flex-col justify-between safe-hud-insets">
       {/* Compact Top Perimeter Row */}
       <div className="flex items-start justify-between gap-2">
-        {/* Top-Left: Vitality + Shards + Guild Loadout Trigger */}
-        <div className="flex items-start gap-2 pointer-events-auto">
+        {/* Top-Left: Vitality + Shards + Party Indicators */}
+        <div className="flex flex-col items-start gap-1 pointer-events-auto">
+          <div className="flex items-start gap-2">
           {isGuild ? (
             <div className="bg-[#16131E]/90 border border-[#302A40] rounded-xl px-3 py-1.5 shadow-lg min-w-[160px]">
               <div className="flex items-center justify-between gap-2 text-[11px] mb-1">
@@ -345,6 +348,63 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                 <Users className="w-4 h-4 text-[#38BDF8]" />
                 <span>Multiplayer</span>
               </button>
+            </div>
+          )}
+          </div>
+
+          {/* Party Member Health Indicators */}
+          {hud.multiplayerInfo?.partyMembers && hud.multiplayerInfo.partyMembers.length > 1 && (
+            <div className="flex flex-col gap-1 w-[148px]">
+              {hud.multiplayerInfo.partyMembers
+                .filter((m) => !m.isSelf)
+                .map((member) => {
+                  const mChar =
+                    CHARACTER_ROSTER[member.characterId] ?? CHARACTER_ROSTER[CharacterId.Zombie];
+                  const mRatio = Math.max(0, Math.min(1, member.hp / Math.max(1, member.maxHp)));
+                  return (
+                    <div
+                      key={member.id}
+                      className="bg-[#14101E]/90 backdrop-blur-xs border border-[#2D2340] rounded-lg px-2 py-1 shadow-md w-full"
+                    >
+                      <div className="flex items-center justify-between text-[9px] leading-tight mb-0.5">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <img
+                            src={mChar.portraitUrl}
+                            alt={mChar.name}
+                            className="w-3.5 h-3.5 rounded object-cover border"
+                            style={{ borderColor: member.color }}
+                          />
+                          <span className="font-bold text-[#E5DFD4] truncate max-w-[62px]">
+                            {member.name}
+                          </span>
+                          {member.isHost && (
+                            <Crown className="w-2.5 h-2.5 text-[#FBBF24] shrink-0" />
+                          )}
+                        </div>
+                        {member.isDowned ? (
+                          <span className="text-[8px] font-bold text-red-400 bg-red-950/80 px-1 rounded animate-pulse">
+                            DOWNED
+                          </span>
+                        ) : (
+                          <span className="font-mono-num text-[8px] text-[#A69FB4]">
+                            {member.hp}/{member.maxHp}
+                          </span>
+                        )}
+                      </div>
+                      <div className="w-full h-1 bg-[#0A080F] rounded-xs overflow-hidden border border-[#231C30]">
+                        <div
+                          className={`h-full transition-transform duration-150 origin-left ${
+                            member.isDowned ? 'bg-[#EF4444]' : 'bg-[#4ADE80]'
+                          }`}
+                          style={{
+                            transform: `scaleX(${member.isDowned ? 1 : mRatio})`,
+                            backgroundColor: member.isDowned ? '#EF4444' : member.color,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           )}
         </div>
@@ -664,6 +724,36 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                 {profile.attackLabel}
               </span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Downed / Bleedout State Screen Overlay for Local Player */}
+      {hud.multiplayerInfo && hud.hp <= 0 && hud.floorNumber > 0 && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center p-4 pointer-events-none">
+          <div className="max-w-xs w-full px-4 py-3 rounded-2xl bg-black/85 border-2 border-red-500/80 backdrop-blur-md shadow-2xl flex flex-col items-center gap-1.5 text-center">
+            <div className="flex items-center gap-1.5 text-red-400 font-bold text-xs tracking-wider uppercase font-display">
+              <Skull className="w-4 h-4 text-red-500 animate-bounce" />
+              <span>You are Downed!</span>
+            </div>
+            <p className="text-[11px] text-[#E2E8F0] leading-snug">
+              Crawl toward teammates. Stand near each other to channel revive!
+            </p>
+            {hud.multiplayerInfo.partyMembers?.find((m) => m.isSelf)?.bleedoutTimer !== undefined && (
+              <div className="text-[11px] font-mono-num font-bold text-red-300">
+                Bleedout: {Math.max(0, Math.ceil(hud.multiplayerInfo.partyMembers.find((m) => m.isSelf)?.bleedoutTimer || 0))}s
+              </div>
+            )}
+            {(hud.multiplayerInfo.partyMembers?.find((m) => m.isSelf)?.reviveProgress ?? 0) > 0 && (
+              <div className="w-36 h-2 bg-[#201018] rounded-full overflow-hidden border border-[#552030] mt-0.5">
+                <div
+                  className="h-full bg-[#4ADE80] transition-all duration-100"
+                  style={{
+                    width: `${Math.round((hud.multiplayerInfo.partyMembers?.find((m) => m.isSelf)?.reviveProgress ?? 0) * 100)}%`,
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}

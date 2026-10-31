@@ -39,7 +39,8 @@ interface ServerRoom {
   seed: number;
   floorNumber: number;
   syncInterval: NodeJS.Timeout | null;
-  latestEnemies?: EnemySyncState[];
+  enemies: Map<number, EnemySyncState>;
+  recentDamageEvents: Map<string, number>;
   activeRoomId?: number;
   wavesRemaining?: number;
 }
@@ -191,7 +192,8 @@ async function startServer() {
               seed: Math.floor(Math.random() * 1000000),
               floorNumber: 0,
               syncInterval: null,
-              latestEnemies: [],
+              enemies: new Map<number, EnemySyncState>(),
+              recentDamageEvents: new Map<string, number>(),
               activeRoomId: 0,
               wavesRemaining: 0,
             };
@@ -314,7 +316,8 @@ async function startServer() {
             room.inGame = true;
             room.seed = Math.floor(Math.random() * 1000000);
             room.floorNumber = 0; // Sanctuary Guild Hall party start
-            room.latestEnemies = [];
+            room.enemies.clear();
+            room.recentDamageEvents.clear();
 
             // Setup 20Hz transform sync loop for this room
             if (room.syncInterval) clearInterval(room.syncInterval);
@@ -331,7 +334,7 @@ async function startServer() {
               }
 
               // Check if all players in party are downed (Party Defeat condition)
-              if (transforms.length > 0 && transforms.every((t) => t.isDowned)) {
+              if (room.inGame && transforms.length > 0 && transforms.every((t) => t.isDowned)) {
                 broadcastToRoom(room, { type: 'S2C_PARTY_WIPE' });
               }
 
@@ -339,7 +342,7 @@ async function startServer() {
                 broadcastToRoom(room, {
                   type: 'S2C_SYNC_WORLD',
                   players: transforms,
-                  enemies: room.latestEnemies,
+                  enemies: Array.from(room.enemies.values()),
                   activeRoomId: room.activeRoomId,
                   wavesRemaining: room.wavesRemaining,
                 });
@@ -367,11 +370,41 @@ async function startServer() {
             if (!peer.roomCode) return;
             const room = rooms.get(peer.roomCode);
             if (!room) return;
-            // The room host maintains authoritative enemy state
+            // The room host maintains authoritative enemy positions, movement, and wave counts
             if (room.hostId === peer.id) {
-              room.latestEnemies = msg.enemies;
               room.activeRoomId = msg.roomId;
               room.wavesRemaining = msg.wavesRemaining;
+
+              const incomingIds = new Set(msg.enemies.map((e) => e.id));
+              for (const e of msg.enemies) {
+                const existing = room.enemies.get(e.id);
+                if (existing) {
+                  // Keep server-authoritative HP if damaged on server, update position & AI
+                  existing.x = e.x;
+                  existing.y = e.y;
+                  existing.vx = e.vx;
+                  existing.vy = e.vy;
+                  existing.facingX = e.facingX;
+                  existing.aiState = e.aiState;
+                  existing.telegraphType = e.telegraphType;
+                  existing.telegraphAngle = e.telegraphAngle;
+                  existing.hitFlashTimer = Math.max(existing.hitFlashTimer, e.hitFlashTimer);
+                  existing.stunTimer = e.stunTimer;
+                  existing.plagueTimer = e.plagueTimer;
+                  existing.infectionStacks = e.infectionStacks;
+                  existing.roomId = e.roomId;
+                } else {
+                  // Newly spawned wave enemy
+                  room.enemies.set(e.id, { ...e });
+                }
+              }
+
+              // Remove enemies that were despawned or defeated on host
+              for (const id of Array.from(room.enemies.keys())) {
+                if (!incomingIds.has(id)) {
+                  room.enemies.delete(id);
+                }
+              }
             }
             break;
           }
@@ -381,23 +414,73 @@ async function startServer() {
             const room = rooms.get(peer.roomCode);
             if (!room) return;
 
-            // Route damage to the host for server-authoritative resolution
-            if (room.hostId !== peer.id) {
-              const hostPeer = room.players.get(room.hostId);
-              if (hostPeer && hostPeer.ws.readyState === WebSocket.OPEN) {
-                hostPeer.ws.send(JSON.stringify(msg));
+            let enemy = room.enemies.get(msg.enemyId);
+            if (!enemy) {
+              // Check if enemy hasn't been synced yet or was just spawned
+              enemy = {
+                id: msg.enemyId,
+                kind: 'SKELETON_WARRIOR' as any,
+                x: msg.hitX,
+                y: msg.hitY,
+                vx: 0,
+                vy: 0,
+                hp: Math.max(1, msg.damage * 2),
+                maxHp: Math.max(1, msg.damage * 2),
+                facingX: 1,
+                aiState: 'CHASE',
+                telegraphType: 'NONE',
+                telegraphAngle: 0,
+                hitFlashTimer: 0.08,
+                stunTimer: 0,
+                plagueTimer: 0,
+                infectionStacks: 0,
+                roomId: room.activeRoomId || 0,
+              };
+              room.enemies.set(msg.enemyId, enemy);
+            }
+
+            if (enemy.hp <= 0) return;
+
+            // Deduplication window: within 40ms from same attacker on same enemy
+            const now = Date.now();
+            const dedupeKey = `${msg.enemyId}_${peer.id}_${Math.floor(now / 40)}`;
+            if (room.recentDamageEvents.has(dedupeKey)) {
+              return;
+            }
+            room.recentDamageEvents.set(dedupeKey, now);
+
+            // Clean old deduplication events (> 5s old)
+            if (room.recentDamageEvents.size > 200) {
+              for (const [k, t] of room.recentDamageEvents.entries()) {
+                if (now - t > 5000) room.recentDamageEvents.delete(k);
               }
+            }
+
+            // Server-authoritative damage calculation
+            const prevHp = enemy.hp;
+            const newHp = Math.max(0, prevHp - msg.damage);
+            enemy.hp = newHp;
+            enemy.hitFlashTimer = 0.08;
+
+            if (newHp <= 0) {
+              room.enemies.delete(msg.enemyId);
+              broadcastToRoom(room, {
+                type: 'S2C_ENEMY_DEFEATED',
+                enemyId: msg.enemyId,
+                killerId: peer.id,
+                dropX: msg.hitX || enemy.x,
+                dropY: msg.hitY || enemy.y,
+              });
             } else {
-              // Host confirmed damage, broadcast event to all
               broadcastToRoom(room, {
                 type: 'S2C_ENEMY_DAMAGED',
                 enemyId: msg.enemyId,
-                newHp: 0,
+                newHp,
                 damageDealt: msg.damage,
                 isCrit: msg.isCrit,
                 hitX: msg.hitX,
                 hitY: msg.hitY,
-                attackerId: msg.attackerId,
+                attackerId: peer.id,
               });
             }
             break;
@@ -445,7 +528,8 @@ async function startServer() {
             if (room.hostId !== peer.id) return;
             room.floorNumber = msg.floorNumber;
             room.seed = msg.seed;
-            room.latestEnemies = [];
+            room.enemies.clear();
+            room.recentDamageEvents.clear();
             broadcastToRoom(room, {
               type: 'S2C_FLOOR_SYNC',
               floorNumber: msg.floorNumber,
