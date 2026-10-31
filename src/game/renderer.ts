@@ -1,7 +1,9 @@
 import {
   AfterimageEntity,
   CharacterId,
+  CrossbowTurretEntity,
   DaggerRainZone,
+  DragonsBarrageZone,
   DungeonRoom,
   EarthenGraspZone,
   EnemyEntity,
@@ -21,7 +23,9 @@ import {
   RoomKind,
   RoomProp,
   ShockwaveRing,
+  SkillAimTelegraph,
   SlashEffect,
+  SnareTrapEntity,
   SoulTether,
   StoneRampartEntity,
 } from '../types/game';
@@ -63,10 +67,14 @@ export interface RenderPlayerState {
   goblinLungeOffset?: number;
   gnomeLungeOffset?: number;
   ghostLungeOffset?: number;
+  koboldRecoilOffset?: number;
   restlessTimer?: number;
   soulDrainTimer?: number;
   possessionTimer?: number;
   nightmareTimer?: number;
+  tinkerHasteTimer?: number;
+  rapidReloadRemaining?: number;
+  arsenalRemaining?: number;
   isDowned?: boolean;
   bleedoutTimer?: number;
   reviveProgress?: number;
@@ -78,6 +86,7 @@ export interface RemoteRenderPlayer extends RenderPlayerState {
   color: string;
   hp: number;
   maxHp: number;
+  isHost?: boolean;
   isRival?: boolean;
   isDowned?: boolean;
   bleedoutTimer?: number;
@@ -101,6 +110,9 @@ export interface WorldRenderInput {
   props: RoomProp[];
   poisonClouds: PoisonCloudEntity[];
   traps: ExplosiveTrapEntity[];
+  snareTraps?: SnareTrapEntity[];
+  turrets?: CrossbowTurretEntity[];
+  dragonsBarrages?: DragonsBarrageZone[];
   afterimages: AfterimageEntity[];
   daggerRains: DaggerRainZone[];
   earthenGrasps: EarthenGraspZone[];
@@ -126,6 +138,7 @@ export interface WorldRenderInput {
     knobX: number;
     knobY: number;
   } | null;
+  skillAimTelegraph?: SkillAimTelegraph | null;
 }
 
 function drawRoundedRect(
@@ -138,6 +151,321 @@ function drawRoundedRect(
 ): void {
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, r);
+}
+
+function drawTargetLockReticle(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  color: string,
+  time: number
+): void {
+  const pulse = 1 + Math.sin(time * 10) * 0.08;
+  const r = Math.max(20, radius + 10) * pulse;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 4 rotating corner lock brackets
+  const rot = time * 2.2;
+  const bracketLen = 7;
+  for (let i = 0; i < 4; i++) {
+    const a = rot + (i * Math.PI) / 2;
+    const bx = x + Math.cos(a) * (r + 5);
+    const by = y + Math.sin(a) * (r + 5);
+    const perp = a + Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(
+      bx - Math.cos(a) * bracketLen - Math.cos(perp) * 4,
+      by - Math.sin(a) * bracketLen - Math.sin(perp) * 4
+    );
+    ctx.lineTo(bx, by);
+    ctx.lineTo(
+      bx - Math.cos(a) * bracketLen + Math.cos(perp) * 4,
+      by - Math.sin(a) * bracketLen + Math.sin(perp) * 4
+    );
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSkillAimTelegraph(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  enemies: EnemyEntity[],
+  telegraph: SkillAimTelegraph,
+  time: number
+): void {
+  const color = telegraph.isCancelling ? '#EF4444' : telegraph.color;
+  const alphaMult = telegraph.isCancelling ? 0.62 : 1.0;
+  const px = player.x;
+  const py = player.y;
+  const angle = telegraph.angle;
+  const maxR = Math.max(16, telegraph.maxRange);
+
+  ctx.save();
+
+  if (telegraph.kind === 'SELF_AOE') {
+    ctx.globalAlpha = 0.14 * alphaMult;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(px, py, maxR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.72 * alphaMult;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash([8, 6]);
+    ctx.lineDashOffset = -time * 28;
+    ctx.beginPath();
+    ctx.arc(px, py, maxR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    if (telegraph.aoeRadius && telegraph.aoeRadius > maxR) {
+      ctx.globalAlpha = 0.42 * alphaMult;
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([5, 6]);
+      ctx.beginPath();
+      ctx.arc(px, py, telegraph.aoeRadius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  // Subtle outer max-range ring for aimed skills
+  if (
+    telegraph.kind === 'TARGET_ENEMY' ||
+    telegraph.kind === 'TARGET_AOE' ||
+    telegraph.kind === 'CONE' ||
+    telegraph.kind === 'DASH'
+  ) {
+    ctx.save();
+    ctx.globalAlpha = 0.34 * alphaMult;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([7, 7]);
+    ctx.lineDashOffset = -time * 22;
+    ctx.beginPath();
+    ctx.arc(px, py, maxR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  if (telegraph.kind === 'CONE') {
+    const halfArc = (telegraph.arcSpread ?? 1.6) * 0.5;
+    ctx.globalAlpha = 0.18 * alphaMult;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.arc(px, py, maxR, angle - halfArc, angle + halfArc);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.globalAlpha = 0.8 * alphaMult;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.arc(px, py, maxR, angle - halfArc, angle + halfArc);
+    ctx.closePath();
+    ctx.stroke();
+  } else if (telegraph.kind === 'LINE' || telegraph.kind === 'DASH') {
+    const halfW = (telegraph.lineWidth ?? (telegraph.kind === 'DASH' ? 42 : 22)) * 0.5;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(angle);
+
+    // Track body
+    ctx.globalAlpha = 0.17 * alphaMult;
+    ctx.fillStyle = color;
+    ctx.fillRect(0, -halfW, maxR, halfW * 2);
+
+    // Side rails
+    ctx.globalAlpha = 0.82 * alphaMult;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -halfW);
+    ctx.lineTo(maxR, -halfW);
+    ctx.moveTo(0, halfW);
+    ctx.lineTo(maxR, halfW);
+    ctx.stroke();
+
+    // Animated directional chevrons inside track
+    const step = 36;
+    const scroll = (time * 85) % step;
+    ctx.globalAlpha = 0.55 * alphaMult;
+    ctx.lineWidth = 2;
+    for (let x = scroll; x < maxR - 12; x += step) {
+      ctx.beginPath();
+      ctx.moveTo(x - 7, -halfW * 0.52);
+      ctx.lineTo(x + 4, 0);
+      ctx.lineTo(x - 7, halfW * 0.52);
+      ctx.stroke();
+    }
+
+    // Arrowhead / endpoint cap
+    ctx.globalAlpha = 0.88 * alphaMult;
+    ctx.beginPath();
+    ctx.moveTo(maxR - 10, -halfW * 0.9);
+    ctx.lineTo(maxR + 6, 0);
+    ctx.lineTo(maxR - 10, halfW * 0.9);
+    ctx.stroke();
+    ctx.restore();
+
+    // Landing impact circle for leap skills (e.g., Groundbreaker)
+    const endX = px + Math.cos(angle) * maxR;
+    const endY = py + Math.sin(angle) * maxR;
+    if (telegraph.aoeRadius) {
+      ctx.globalAlpha = 0.15 * alphaMult;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(endX, endY, telegraph.aoeRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.globalAlpha = 0.78 * alphaMult;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(endX, endY, telegraph.aoeRadius, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (telegraph.kind === 'DASH') {
+      ctx.globalAlpha = 0.65 * alphaMult;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(endX, endY, 17, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  } else if (telegraph.kind === 'TARGET_AOE') {
+    const tx = telegraph.targetX ?? px;
+    const ty = telegraph.targetY ?? py;
+    const zoneR = telegraph.aoeRadius ?? 80;
+
+    // Guide line from hero to reticle center
+    ctx.save();
+    ctx.globalAlpha = 0.55 * alphaMult;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+    ctx.restore();
+
+    // Ground AoE zone preview
+    ctx.globalAlpha = 0.16 * alphaMult;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(tx, ty, zoneR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.85 * alphaMult;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(tx, ty, zoneR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Center crosshair dot
+    ctx.beginPath();
+    ctx.arc(tx, ty, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (telegraph.lockedEnemyId) {
+      const locked = enemies.find((e) => e.id === telegraph.lockedEnemyId && e.hp > 0);
+      if (locked) {
+        ctx.globalAlpha = 0.92 * alphaMult;
+        drawTargetLockReticle(ctx, locked.x, locked.y, locked.radius, color, time);
+      }
+    }
+  } else if (telegraph.kind === 'TARGET_ENEMY') {
+    const tx = telegraph.targetX ?? px;
+    const ty = telegraph.targetY ?? py;
+    const locked = telegraph.lockedEnemyId
+      ? enemies.find((e) => e.id === telegraph.lockedEnemyId && e.hp > 0)
+      : undefined;
+
+    if (locked) {
+      // Direct tether from hero to locked enemy + target lock reticle
+      ctx.save();
+      ctx.globalAlpha = 0.72 * alphaMult;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.2;
+      ctx.setLineDash([6, 5]);
+      ctx.lineDashOffset = -time * 40;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(locked.x, locked.y);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.globalAlpha = 0.95 * alphaMult;
+      drawTargetLockReticle(ctx, locked.x, locked.y, locked.radius, color, time);
+
+      // Subtle cursor ring so player sees their drag point
+      ctx.globalAlpha = 0.42 * alphaMult;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(tx, ty, 12, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (telegraph.blinkFallbackRange) {
+      // No enemy locked near reticle -> show directional blink destination (e.g., Shadowstep 140px blink)
+      const bx = px + Math.cos(angle) * telegraph.blinkFallbackRange;
+      const by = py + Math.sin(angle) * telegraph.blinkFallbackRange;
+      ctx.save();
+      ctx.globalAlpha = 0.65 * alphaMult;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.globalAlpha = 0.2 * alphaMult;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(bx, by, 18, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.globalAlpha = 0.85 * alphaMult;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(bx, by, 18, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      // Aiming cursor reticle when searching for a valid enemy target
+      ctx.save();
+      ctx.globalAlpha = 0.5 * alphaMult;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.globalAlpha = 0.72 * alphaMult;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(tx, ty, 16, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
 }
 
 export function renderGameWorld(input: WorldRenderInput): void {
@@ -158,6 +486,9 @@ export function renderGameWorld(input: WorldRenderInput): void {
     props,
     poisonClouds,
     traps,
+    snareTraps,
+    turrets,
+    dragonsBarrages,
     afterimages,
     daggerRains,
     earthenGrasps,
@@ -178,6 +509,7 @@ export function renderGameWorld(input: WorldRenderInput): void {
     particles,
     popups,
     panJoystick,
+    skillAimTelegraph,
   } = input;
 
   // 1. Deep void backdrop
@@ -228,6 +560,12 @@ export function renderGameWorld(input: WorldRenderInput): void {
     drawDaggerRainGroundZone(ctx, zone, time);
   }
 
+  if (dragonsBarrages) {
+    for (const barrage of dragonsBarrages) {
+      drawDragonsBarrageGround(ctx, barrage, time);
+    }
+  }
+
   for (const grasp of earthenGrasps) {
     drawEarthenGraspGround(ctx, grasp, time);
   }
@@ -259,6 +597,12 @@ export function renderGameWorld(input: WorldRenderInput): void {
     drawExplosiveTrap(ctx, trap, time);
   }
 
+  if (snareTraps) {
+    for (const snare of snareTraps) {
+      drawSnareTrap(ctx, snare, time);
+    }
+  }
+
   for (const ring of shockwaves) {
     const progress = 1 - ring.life / ring.maxLife;
     const currentR = Math.max(4, ring.maxRadius * progress);
@@ -281,6 +625,10 @@ export function renderGameWorld(input: WorldRenderInput): void {
 
   for (const enemy of enemies) {
     drawEnemyTelegraph(ctx, enemy, time);
+  }
+
+  if (skillAimTelegraph) {
+    drawSkillAimTelegraph(ctx, player, enemies, skillAimTelegraph, time);
   }
 
   // 5. Pickups on ground
@@ -307,6 +655,15 @@ export function renderGameWorld(input: WorldRenderInput): void {
       sortY: wall.y + 8,
       draw: () => drawStoneRampart(ctx, wall, time),
     });
+  }
+
+  if (turrets) {
+    for (const turret of turrets) {
+      drawList.push({
+        sortY: turret.y + 4,
+        draw: () => drawCrossbowTurret(ctx, turret, time),
+      });
+    }
   }
 
   for (const ghost of afterimages) {
@@ -403,12 +760,37 @@ export function renderGameWorld(input: WorldRenderInput): void {
 
       if (player.isDowned) {
         ctx.save();
+        const pulse = 0.7 + Math.sin(time * 6) * 0.3;
+        ctx.strokeStyle = `rgba(239, 68, 68, ${pulse})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, 22, 0, Math.PI * 2);
+        ctx.stroke();
+
+        if (player.reviveProgress && player.reviveProgress > 0) {
+          ctx.strokeStyle = '#4ADE80';
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.arc(
+            player.x,
+            player.y,
+            26,
+            -Math.PI / 2,
+            -Math.PI / 2 + Math.PI * 2 * player.reviveProgress
+          );
+          ctx.stroke();
+        }
+
         const nameY = player.y - 36;
         ctx.font = '700 10px "Plus Jakarta Sans", system-ui, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const bleedSec = Math.max(0, Math.ceil(player.bleedoutTimer ?? 35));
-        const labelText = `DOWNED (${bleedSec}s)`;
+        const revPct =
+          player.reviveProgress && player.reviveProgress > 0
+            ? ` · ${Math.round(player.reviveProgress * 100)}%`
+            : '';
+        const labelText = `DOWNED (${bleedSec}s${revPct})`;
         const textW = ctx.measureText(labelText).width;
         ctx.fillStyle = 'rgba(69, 10, 10, 0.92)';
         ctx.strokeStyle = '#EF4444';
@@ -428,12 +810,7 @@ export function renderGameWorld(input: WorldRenderInput): void {
       drawList.push({
         sortY: remote.y,
         draw: () => {
-          // Draw colored indicator ring under feet
-          ctx.save();
-          ctx.strokeStyle = remote.color || (remote.isRival ? '#EF4444' : '#38BDF8');
-          ctx.lineWidth = 2;
-          ctx.setLineDash([4, 4]);
-          // Draw colored indicator ring or downed beacon under feet
+          // Draw colored indicator ring or downed revival beacon under feet
           ctx.save();
           if (remote.isDowned) {
             const pulse = 0.7 + Math.sin(time * 6) * 0.3;
@@ -442,6 +819,15 @@ export function renderGameWorld(input: WorldRenderInput): void {
             ctx.beginPath();
             ctx.arc(remote.x, remote.y, 22, 0, Math.PI * 2);
             ctx.stroke();
+
+            // Outer proximity revival radius guide
+            ctx.strokeStyle = 'rgba(74, 222, 128, 0.24)';
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.arc(remote.x, remote.y, 88, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
 
             if (remote.reviveProgress && remote.reviveProgress > 0) {
               ctx.strokeStyle = '#4ADE80';
@@ -469,19 +855,30 @@ export function renderGameWorld(input: WorldRenderInput): void {
           // Draw the hero character model
           drawHeroCharacter(ctx, remote, phase, time, false);
 
-          // Nameplate and Health Bar above remote hero
+          // Nameplate, Party Leader Crown, and Health Bar above remote hero
           ctx.save();
-          const nameY = remote.y - (remote.colossusTimer > 0 || remote.abominationTimer > 0 ? 52 : 36);
+          const nameY = remote.y - (remote.colossusTimer > 0 || remote.abominationTimer > 0 ? 52 : 38);
           ctx.font = '600 10px "Plus Jakarta Sans", system-ui, sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          const labelText = remote.isDowned ? `${remote.name} [REVIVE]` : remote.name;
+          const leaderPrefix = remote.isHost ? '♛ ' : '';
+          const reviveSuffix =
+            remote.isDowned && remote.reviveProgress && remote.reviveProgress > 0
+              ? ` ${Math.round(remote.reviveProgress * 100)}%`
+              : remote.isDowned
+              ? ' [REVIVE]'
+              : '';
+          const labelText = `${leaderPrefix}${remote.name}${reviveSuffix}`;
           const textW = ctx.measureText(labelText).width;
           const padX = 6;
-          const pillW = Math.max(38, textW + padX * 2);
+          const pillW = Math.max(40, textW + padX * 2);
 
           ctx.fillStyle = remote.isDowned ? 'rgba(69, 10, 10, 0.92)' : 'rgba(18, 16, 23, 0.88)';
-          ctx.strokeStyle = remote.isDowned ? '#EF4444' : remote.color || '#38BDF8';
+          ctx.strokeStyle = remote.isDowned
+            ? '#EF4444'
+            : remote.isHost
+            ? '#FBBF24'
+            : remote.color || '#38BDF8';
           ctx.lineWidth = 1;
           drawRoundedRect(ctx, remote.x - pillW / 2, nameY - 8, pillW, 15, 4);
           ctx.fill();
@@ -489,18 +886,20 @@ export function renderGameWorld(input: WorldRenderInput): void {
 
           ctx.fillStyle = remote.isDowned
             ? '#FCA5A5'
+            : remote.isHost
+            ? '#FDE68A'
             : remote.isRival
             ? '#FCA5A5'
             : '#F3EFE6';
           ctx.fillText(labelText, remote.x, nameY);
 
-          // Mini HP bar if damaged and not downed
-          if (!remote.isDowned && remote.hp < remote.maxHp && remote.maxHp > 0) {
-            const barW = 32;
-            const barH = 3;
+          // Live HP bar for party members in dungeon (or whenever injured)
+          if (!remote.isDowned && remote.maxHp > 0 && (!isGuild || remote.hp < remote.maxHp)) {
+            const barW = 36;
+            const barH = 3.5;
             const barY = nameY + 9;
             const hpRatio = Math.max(0, Math.min(1, remote.hp / remote.maxHp));
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.78)';
             ctx.fillRect(remote.x - barW / 2, barY, barW, barH);
             ctx.fillStyle = hpRatio > 0.45 ? '#4ADE80' : hpRatio > 0.2 ? '#FBBF24' : '#EF4444';
             ctx.fillRect(remote.x - barW / 2, barY, barW * hpRatio, barH);
@@ -548,9 +947,15 @@ export function renderGameWorld(input: WorldRenderInput): void {
     drawProjectile(ctx, proj, time);
   }
 
-  // 8b. Sky-falling Thousand Daggers streaks
+  // 8b. Sky-falling Thousand Daggers & Dragon's Barrage streaks
   for (const zone of daggerRains) {
     drawDaggerRainSkyStreaks(ctx, zone, time);
+  }
+
+  if (dragonsBarrages) {
+    for (const barrage of dragonsBarrages) {
+      drawDragonsBarrageSkyBolts(ctx, barrage, time);
+    }
   }
 
   // 9. Particles (ambient orbs, rotating bone splinters, and slash velocity streaks)
@@ -919,6 +1324,9 @@ function getCharacterPromptMeta(charId: CharacterId): {
   if (charId === CharacterId.Ghost) {
     return { pick: 'Tap Ghost · Skills', roam: 'Tap Ghost', color: '#C084FC' };
   }
+  if (charId === CharacterId.Kobold) {
+    return { pick: 'Tap Kobold · Skills', roam: 'Tap Kobold', color: '#FB7185' };
+  }
   return { pick: 'Tap Zombie · Skills', roam: 'Tap Zombie', color: '#4ADE80' };
 }
 
@@ -1054,6 +1462,21 @@ function drawGuildFloor(ctx: CanvasRenderingContext2D, room: DungeonRoom, time: 
   ctx.strokeStyle = 'rgba(103, 232, 249, 0.22)';
   ctx.lineWidth = 1.4;
   drawRoundedRect(ctx, 52, -174, 108, 58, 4);
+  ctx.stroke();
+  ctx.restore();
+
+  // Cozy crimson-rose & brass artificer mat where the Kobold crossbowman tinkers
+  ctx.save();
+  ctx.fillStyle = '#331620';
+  ctx.strokeStyle = '#FB7185';
+  ctx.lineWidth = 2.5;
+  drawRoundedRect(ctx, -166, -184, 116, 78, 8);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(253, 224, 71, 0.22)';
+  ctx.lineWidth = 1.4;
+  drawRoundedRect(ctx, -156, -174, 96, 58, 4);
   ctx.stroke();
   ctx.restore();
 
@@ -1360,6 +1783,363 @@ function drawExplosiveTrap(
     ctx.fill();
   }
 
+  ctx.restore();
+}
+
+function drawSnareTrap(
+  ctx: CanvasRenderingContext2D,
+  snare: SnareTrapEntity,
+  time: number
+): void {
+  const armed = snare.armTimer <= 0;
+  ctx.save();
+  ctx.translate(snare.x, snare.y);
+
+  if (armed) {
+    const pulse = 0.24 + Math.sin(time * 7.5 + snare.id) * 0.1;
+    ctx.strokeStyle = `rgba(251, 113, 133, ${pulse})`;
+    ctx.lineWidth = 1.6;
+    ctx.setLineDash([5, 5]);
+    ctx.lineDashOffset = -time * 22;
+    ctx.beginPath();
+    ctx.arc(0, 0, snare.triggerRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Dark steel spring-frame base
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.beginPath();
+  ctx.ellipse(0, 3, 14, 7.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Open serrated bear-trap jaws (ready to snap inward!)
+  const jawBreath = armed ? Math.sin(time * 6 + snare.id) * 0.6 : 0;
+  ctx.strokeStyle = '#120F17';
+  ctx.lineWidth = 2;
+
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(0, side * (5.5 + jawBreath));
+    ctx.fillStyle = armed ? '#CBD5E1' : '#64748B';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 12.5, 3.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Serrated inward steel teeth
+    ctx.fillStyle = '#F8FAFC';
+    for (let t = -2; t <= 2; t++) {
+      ctx.beginPath();
+      ctx.moveTo(t * 4 - 1.6, -side * 2);
+      ctx.lineTo(t * 4, -side * 5.2);
+      ctx.lineTo(t * 4 + 1.6, -side * 2);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Brass tension spring bars & crimson pressure trigger plate
+  ctx.fillStyle = '#D97706';
+  drawRoundedRect(ctx, -15, -2.5, 5, 5, 1.5);
+  ctx.fill();
+  ctx.stroke();
+  drawRoundedRect(ctx, 10, -2.5, 5, 5, 1.5);
+  ctx.fill();
+  ctx.stroke();
+
+  const triggerGlow = armed && Math.sin(time * 14 + snare.id) > -0.15;
+  ctx.fillStyle = armed ? (triggerGlow ? '#FB7185' : '#E11D48') : '#475569';
+  ctx.beginPath();
+  ctx.arc(0, 0, 4.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawCrossbowTurret(
+  ctx: CanvasRenderingContext2D,
+  turret: CrossbowTurretEntity,
+  time: number
+): void {
+  const fade = Math.min(1, turret.life / 0.35);
+  const deployT = Math.min(1, (turret.maxLife - turret.life) / 0.22);
+  const deployScale = 0.35 + (1 - Math.pow(1 - deployT, 3)) * 0.65;
+  const recoil = turret.recoilOffset ?? 0;
+
+  ctx.save();
+  ctx.translate(turret.x, turret.y);
+  ctx.globalAlpha = fade;
+  ctx.scale(deployScale, deployScale);
+
+  // Overclocked aura ring when empowered
+  if (turret.overclocked) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(253, 224, 71, 0.55)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 5]);
+    ctx.lineDashOffset = -time * 38;
+    ctx.beginPath();
+    ctx.ellipse(0, 8, 22, 11, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Ground shadow
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+  ctx.beginPath();
+  ctx.ellipse(0, 11, 16, 7.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Articulated iron & brass tripod legs
+  ctx.strokeStyle = '#120F17';
+  ctx.lineWidth = 4.6;
+  ctx.lineCap = 'round';
+  const legs = [
+    [-12, 10],
+    [12, 10],
+    [0, 13],
+  ];
+  for (const [lx, ly] of legs) {
+    ctx.beginPath();
+    ctx.moveTo(0, 1);
+    ctx.lineTo(lx, ly);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#64748B';
+  ctx.lineWidth = 2.4;
+  for (const [lx, ly] of legs) {
+    ctx.beginPath();
+    ctx.moveTo(0, 1);
+    ctx.lineTo(lx, ly);
+    ctx.stroke();
+  }
+
+  // Spinning brass clockwork gear collar at turret pivot
+  ctx.save();
+  ctx.translate(0, -1);
+  ctx.rotate(time * (turret.overclocked ? 5.5 : 2.8) + turret.id);
+  ctx.fillStyle = '#D97706';
+  ctx.strokeStyle = '#120F17';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(0, 0, 8.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // Rotating Ballista Crossbow Head tracking target at 60fps
+  ctx.save();
+  ctx.translate(0, -4);
+  ctx.rotate(turret.aimAngle);
+  ctx.translate(recoil, 0);
+
+  // Mahogany & dark steel stock
+  ctx.fillStyle = '#7C2D12';
+  ctx.strokeStyle = '#120F17';
+  ctx.lineWidth = 2;
+  drawRoundedRect(ctx, -10, -4, 22, 8, 3);
+  ctx.fill();
+  ctx.stroke();
+
+  // Curved steel prod (bow limbs)
+  ctx.strokeStyle = '#120F17';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(6, -13);
+  ctx.quadraticCurveTo(13, 0, 6, 13);
+  ctx.stroke();
+
+  ctx.strokeStyle = turret.overclocked ? '#FDE047' : '#CBD5E1';
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(6, -13);
+  ctx.quadraticCurveTo(13, 0, 6, 13);
+  ctx.stroke();
+
+  // Bowstring
+  ctx.strokeStyle = '#E2E8F0';
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.moveTo(6, -12.5);
+  ctx.lineTo(-3, 0);
+  ctx.lineTo(6, 12.5);
+  ctx.stroke();
+
+  // Loaded glowing crimson/gold bolt on rail
+  ctx.fillStyle = turret.overclocked ? '#FDE047' : '#FB7185';
+  ctx.beginPath();
+  ctx.moveTo(-2, -1.5);
+  ctx.lineTo(14, -1.5);
+  ctx.lineTo(18, 0);
+  ctx.lineTo(14, 1.5);
+  ctx.lineTo(-2, 1.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // Brass scope crystal on top
+  ctx.fillStyle = '#FB7185';
+  ctx.beginPath();
+  ctx.arc(-2, -2, 2.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Remaining turret battery arc above pedestal
+  const lifeRatio = Math.max(0, Math.min(1, turret.life / turret.maxLife));
+  ctx.strokeStyle = turret.overclocked ? '#FDE047' : '#FB7185';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, -20, 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lifeRatio);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawDragonsBarrageGround(
+  ctx: CanvasRenderingContext2D,
+  zone: DragonsBarrageZone,
+  time: number
+): void {
+  const alpha = Math.min(1, zone.life / 0.45);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  const grad = ctx.createRadialGradient(
+    zone.x,
+    zone.y,
+    12,
+    zone.x,
+    zone.y,
+    Math.max(20, zone.radius)
+  );
+  if (zone.scorched) {
+    grad.addColorStop(0, 'rgba(249, 115, 22, 0.34)');
+    grad.addColorStop(0.55, 'rgba(225, 29, 72, 0.24)');
+    grad.addColorStop(1, 'rgba(225, 29, 72, 0)');
+  } else {
+    grad.addColorStop(0, 'rgba(251, 113, 133, 0.26)');
+    grad.addColorStop(0.6, 'rgba(245, 158, 11, 0.16)');
+    grad.addColorStop(1, 'rgba(245, 158, 11, 0)');
+  }
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(zone.x, zone.y, zone.radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Outer rotating draconic artillery ring
+  ctx.strokeStyle = 'rgba(251, 113, 133, 0.78)';
+  ctx.lineWidth = 2.4;
+  ctx.setLineDash([14, 7]);
+  ctx.lineDashOffset = -time * 58;
+  ctx.beginPath();
+  ctx.arc(zone.x, zone.y, zone.radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Inner counter-rotating brass crosshair ring + 4 cardinal ticks
+  ctx.strokeStyle = 'rgba(253, 224, 71, 0.56)';
+  ctx.lineWidth = 1.8;
+  ctx.setLineDash([8, 8]);
+  ctx.lineDashOffset = time * 44;
+  ctx.beginPath();
+  ctx.arc(zone.x, zone.y, zone.radius * 0.56, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  for (let i = 0; i < 4; i++) {
+    const a = time * 0.8 + (i * Math.PI) / 2;
+    ctx.strokeStyle = 'rgba(251, 113, 133, 0.65)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(zone.x + Math.cos(a) * (zone.radius - 14), zone.y + Math.sin(a) * (zone.radius - 14));
+    ctx.lineTo(zone.x + Math.cos(a) * (zone.radius + 5), zone.y + Math.sin(a) * (zone.radius + 5));
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawDragonsBarrageSkyBolts(
+  ctx: CanvasRenderingContext2D,
+  zone: DragonsBarrageZone,
+  time: number
+): void {
+  const alpha = Math.min(1, zone.life / 0.35);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const boltCount = 14;
+  for (let i = 0; i < boltCount; i++) {
+    const phase = (time * 4.8 + i * 0.23) % 1;
+    const angle = i * 2.39996 + zone.id * 0.7;
+    const r = zone.radius * (0.12 + ((i * 0.29) % 0.82));
+    const impactX = zone.x + Math.cos(angle) * r;
+    const impactY = zone.y + Math.sin(angle) * r;
+    const isDragonGold = i % 3 === 0;
+
+    if (phase < 0.8) {
+      const fallT = phase / 0.8;
+      const skyOffset = (1 - fallT) * 185;
+      const curX = impactX - skyOffset * 0.22;
+      const curY = impactY - skyOffset;
+      const fallAngle = Math.atan2(1, 0.22);
+
+      // Fiery draconic bolt wake
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = isDragonGold ? '#FDE047' : '#FB7185';
+      ctx.lineWidth = 3.2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(curX - 7.5, curY - 34);
+      ctx.lineTo(curX, curY);
+      ctx.stroke();
+      ctx.restore();
+
+      // Heavy Enchanted Crossbow Bolt silhouette
+      ctx.save();
+      ctx.translate(curX, curY);
+      ctx.rotate(fallAngle);
+      ctx.fillStyle = isDragonGold ? '#FEF08A' : '#FDA4AF';
+      ctx.strokeStyle = '#120F17';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-12, -2);
+      ctx.lineTo(4, -2);
+      ctx.lineTo(2, -5.2);
+      ctx.lineTo(13, 0);
+      ctx.lineTo(2, 5.2);
+      ctx.lineTo(4, 2);
+      ctx.lineTo(-12, 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      const impT = (phase - 0.8) / 0.2;
+      const ringR = Math.max(2, 5 + impT * 22);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = alpha * (1 - impT);
+      ctx.strokeStyle = isDragonGold ? '#FDE047' : '#FB7185';
+      ctx.lineWidth = 2.5 * (1 - impT);
+      ctx.beginPath();
+      ctx.ellipse(impactX, impactY, ringR, ringR * 0.56, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      const s = (1 - impT) * 8.5;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.moveTo(impactX - s, impactY);
+      ctx.lineTo(impactX, impactY - s * 0.36);
+      ctx.lineTo(impactX + s, impactY);
+      ctx.lineTo(impactX, impactY + s * 0.36);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
   ctx.restore();
 }
 
@@ -1731,6 +2511,26 @@ function drawGoblinAfterimage(ctx: CanvasRenderingContext2D, ghost: AfterimageEn
     ctx.arc(-2, -13, 2.4, 0, Math.PI * 2);
     ctx.arc(5.5, -13, 2.4, 0, Math.PI * 2);
     ctx.fill();
+  } else if (ghost.archetype === 'KOBOLD') {
+    // Horned draconic Kobold + repeater crossbow mirage
+    drawRoundedRect(ctx, -11, -4, 22, 16, 5);
+    ctx.fill();
+    drawRoundedRect(ctx, -12, -23, 25, 18, 8);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-8, -22);
+    ctx.lineTo(-16, -31);
+    ctx.lineTo(-2, -22);
+    ctx.moveTo(6, -22);
+    ctx.lineTo(13, -30);
+    ctx.lineTo(10, -21);
+    ctx.fill();
+    ctx.strokeStyle = '#FEF08A';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(8, 0);
+    ctx.lineTo(25, 0);
+    ctx.stroke();
   } else if (ghost.archetype === 'SKELETON') {
     // Indigo duelist cloak + skull + lunging bone katana mirage
     drawRoundedRect(ctx, -11, -3, 22, 17, 5);
@@ -1999,6 +2799,8 @@ function drawProp(
           ? '#FB923C'
           : activeCharId === CharacterId.Ghost
           ? '#C084FC'
+          : activeCharId === CharacterId.Kobold
+          ? '#FB7185'
           : '#4ADE80';
       const shrineAuraColor =
         activeCharId === CharacterId.Skeleton
@@ -2009,6 +2811,8 @@ function drawProp(
           ? 'rgba(251, 146, 60, 0.58)'
           : activeCharId === CharacterId.Ghost
           ? 'rgba(192, 132, 252, 0.6)'
+          : activeCharId === CharacterId.Kobold
+          ? 'rgba(251, 113, 133, 0.58)'
           : 'rgba(74, 222, 128, 0.55)';
       ctx.fillStyle = prop.opened ? '#64748B' : shrineCoreColor;
       ctx.beginPath();
@@ -2203,6 +3007,8 @@ function drawHeroCharacter(
     drawGnomePlayer(ctx, player, phase, time, isControlled);
   } else if (player.characterId === CharacterId.Ghost) {
     drawGhostPlayer(ctx, player, phase, time, isControlled);
+  } else if (player.characterId === CharacterId.Kobold) {
+    drawKoboldPlayer(ctx, player, phase, time, isControlled);
   } else {
     drawZombiePlayer(ctx, player, phase, time, isControlled);
   }
@@ -3403,6 +4209,257 @@ function drawGhostPlayer(
   ctx.restore();
 }
 
+function drawKoboldPlayer(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const speed = Math.hypot(player.vx, player.vy);
+  const bob = speed > 10 ? Math.abs(Math.sin(player.walkPhase)) * 4.4 : Math.sin(time * 3.1) * 1.5;
+  const recoil = player.koboldRecoilOffset ?? 0;
+  const recoilX = Math.abs(recoil) > 0.05 ? Math.cos(player.aimAngle) * recoil * 0.45 : 0;
+  const recoilY = Math.abs(recoil) > 0.05 ? Math.sin(player.aimAngle) * recoil * 0.45 : 0;
+  const isHaste = (player.tinkerHasteTimer ?? 0) > 0;
+  const isRapid = (player.rapidReloadRemaining ?? 0) > 0;
+  const isArsenal = (player.arsenalRemaining ?? 0) > 0;
+
+  ctx.save();
+  ctx.translate(player.x + recoilX, player.y + recoilY);
+
+  // Selection highlight ring in Guild
+  if (phase === GamePhase.GuildPicking || player.hoveredInGuild) {
+    ctx.save();
+    ctx.strokeStyle = isControlled ? '#FB7185' : 'rgba(251, 113, 133, 0.65)';
+    ctx.lineWidth = isControlled ? 2.6 : 2;
+    ctx.setLineDash([6, 5]);
+    ctx.lineDashOffset = -time * 22;
+    ctx.beginPath();
+    ctx.ellipse(0, 14, 28, 15, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Mechanical Expertise / Rapid Reload / Deadly Arsenal 60fps clockwork gear aura
+  if (isHaste || isRapid || isArsenal) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const auraColor = isArsenal
+      ? 'rgba(253, 224, 71, 0.72)'
+      : isRapid
+      ? 'rgba(251, 113, 133, 0.68)'
+      : 'rgba(251, 191, 36, 0.55)';
+    ctx.strokeStyle = auraColor;
+    ctx.lineWidth = isArsenal ? 2.6 : 2.1;
+    ctx.setLineDash([7, 5]);
+    ctx.lineDashOffset = -time * (isArsenal ? 52 : 34);
+    ctx.beginPath();
+    ctx.ellipse(0, 11, isArsenal ? 31 : 26, isArsenal ? 15 : 12.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    if (isArsenal) {
+      // 3 orbiting elemental munition sparks (Fire, Frost, Lightning)
+      const elemColors = ['#FB7185', '#38BDF8', '#FDE047'];
+      for (let i = 0; i < 3; i++) {
+        const a = time * 6.4 + (i * Math.PI * 2) / 3;
+        ctx.fillStyle = elemColors[i];
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * 28, -2 + Math.sin(a) * 14, 3.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  // Ground shadow
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+  ctx.beginPath();
+  ctx.ellipse(0, 14, 15.5, 7.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  ctx.scale(player.facingX * player.squashX, player.squashY);
+  ctx.translate(0, -bob);
+
+  const flash = player.hitFlashTimer > 0;
+  ctx.strokeStyle = '#120F17';
+  ctx.lineWidth = 2.3;
+
+  // Expressive crimson-scaled Kobold tail swaying behind with brass ring
+  const tailWag = Math.sin(time * 7.5 + (speed > 10 ? player.walkPhase : 0)) * 3.2;
+  ctx.fillStyle = flash ? '#FFFFFF' : '#BE123C';
+  ctx.beginPath();
+  ctx.moveTo(-8, 5);
+  ctx.quadraticCurveTo(-21, 9 + tailWag * 0.6, -25, 2 + tailWag);
+  ctx.quadraticCurveTo(-18, 12 + tailWag * 0.7, -7, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Dark leather artificer trench-vest torso
+  ctx.fillStyle = flash ? '#FFFFFF' : '#292028';
+  drawRoundedRect(ctx, -11, -4, 22, 17, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  // Diagonal brass crossbow-bolt bandolier strap across chest
+  if (!flash) {
+    ctx.strokeStyle = '#D97706';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-9, -3);
+    ctx.lineTo(9, 10);
+    ctx.stroke();
+
+    ctx.fillStyle = '#FDE047';
+    ctx.beginPath();
+    ctx.arc(0, 3.5, 2.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.strokeStyle = '#120F17';
+  ctx.lineWidth = 2.2;
+
+  // Brass cog shoulder pauldron
+  ctx.fillStyle = flash ? '#FFFFFF' : '#D97706';
+  ctx.beginPath();
+  ctx.arc(-10, -2, 6.8, Math.PI * 0.7, Math.PI * 2.1);
+  ctx.fill();
+  ctx.stroke();
+
+  // Crimson Artificer Scarf Collar
+  ctx.fillStyle = flash ? '#FFFFFF' : '#E11D48';
+  drawRoundedRect(ctx, -12, -7, 24, 6, 3);
+  ctx.fill();
+  ctx.stroke();
+
+  // Swept-back Draconic Ivory Horns
+  ctx.fillStyle = flash ? '#FFFFFF' : '#FDE68A';
+  ctx.beginPath();
+  ctx.moveTo(-9, -20);
+  ctx.lineTo(-19, -30);
+  ctx.lineTo(-3, -23);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(5, -21);
+  ctx.lineTo(13, -30);
+  ctx.lineTo(10, -20);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Cunning Crimson-Scaled Kobold Head with forward reptilian snout contour
+  ctx.fillStyle = flash ? '#FFFFFF' : '#E11D48';
+  drawRoundedRect(ctx, -12.5, -23.5, 26.5, 18.5, 8);
+  ctx.fill();
+  ctx.stroke();
+
+  // Warm lighter under-jaw / snout ridge accent
+  if (!flash) {
+    ctx.fillStyle = '#FB7185';
+    drawRoundedRect(ctx, -2, -13.5, 15, 6.5, 3);
+    ctx.fill();
+  }
+
+  // Brass Artificer Goggles resting on forehead!
+  ctx.fillStyle = flash ? '#FFFFFF' : '#92400E';
+  ctx.fillRect(-12, -22, 24, 4);
+  for (const gx of [-3.5, 5.5]) {
+    ctx.fillStyle = flash ? '#FFFFFF' : '#F59E0B';
+    ctx.beginPath();
+    ctx.arc(gx, -20.5, 4.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    if (!flash) {
+      ctx.fillStyle = '#38BDF8';
+      ctx.beginPath();
+      ctx.arc(gx + 0.5, -20.5, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Sharp Glowing Amber-Gold Reptilian Eyes
+  ctx.fillStyle = flash ? '#FFFFFF' : '#FDE047';
+  ctx.beginPath();
+  ctx.arc(-2, -13, 2.7, 0, Math.PI * 2);
+  ctx.arc(7, -13, 2.7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Articulated Heavy Repeater Crossbow aimed smoothly toward target!
+  // Compute local aim angle inside flipped character space so the crossbow tracks 360° naturally
+  const localAim =
+    player.facingX >= 0
+      ? player.aimAngle
+      : Math.atan2(Math.sin(player.aimAngle), -Math.cos(player.aimAngle));
+  const clampedAim = Math.max(-1.15, Math.min(1.15, localAim));
+  const weaponKick = Math.min(0, recoil * 0.75);
+
+  ctx.save();
+  ctx.translate(9 + weaponKick, 2);
+  ctx.rotate(clampedAim);
+
+  // Mahogany crossbow stock & brass magazine receiver
+  ctx.fillStyle = flash ? '#FFFFFF' : '#7C2D12';
+  ctx.strokeStyle = '#120F17';
+  ctx.lineWidth = 2;
+  drawRoundedRect(ctx, -5, -3.5, 19, 7, 2.5);
+  ctx.fill();
+  ctx.stroke();
+
+  if (!flash) {
+    ctx.fillStyle = '#F59E0B';
+    ctx.fillRect(0, -4.2, 6, 3);
+  }
+
+  // Tempered steel prod (front bow limbs)
+  ctx.strokeStyle = '#120F17';
+  ctx.lineWidth = 4.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(10, -11);
+  ctx.quadraticCurveTo(16, 0, 10, 11);
+  ctx.stroke();
+
+  ctx.strokeStyle = flash ? '#FFFFFF' : isArsenal ? '#FDE047' : '#E2E8F0';
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(10, -11);
+  ctx.quadraticCurveTo(16, 0, 10, 11);
+  ctx.stroke();
+
+  // Taut bowstring (snaps forward during recoil!)
+  const stringDrawX = weaponKick < -0.5 ? 9 : 2;
+  ctx.strokeStyle = '#F8FAFC';
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.moveTo(10, -10.5);
+  ctx.lineTo(stringDrawX, 0);
+  ctx.lineTo(10, 10.5);
+  ctx.stroke();
+
+  // Loaded glowing bolt tip when ready
+  if (weaponKick >= -1.2 && !flash) {
+    ctx.fillStyle = isArsenal ? '#FDE047' : '#FB7185';
+    ctx.beginPath();
+    ctx.moveTo(3, -1.4);
+    ctx.lineTo(15, -1.4);
+    ctx.lineTo(19.5, 0);
+    ctx.lineTo(15, 1.4);
+    ctx.lineTo(3, 1.4);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  ctx.restore();
+  ctx.restore();
+}
+
 function drawMinion(ctx: CanvasRenderingContext2D, minion: MinionEntity, time: number): void {
   const spawnScale = minion.spawnAnimTimer > 0 ? 1 - minion.spawnAnimTimer / 0.25 : 1;
   const isGhostApp = minion.minionType === 'GHOST_APPARITION';
@@ -3668,7 +4725,9 @@ function drawEnemy(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: numb
       enemy.stunTimer > 0 ||
       enemy.rootTimer > 0 ||
       enemy.fearTimer > 0 ||
-      enemy.possessedTimer > 0)
+      enemy.possessedTimer > 0 ||
+      enemy.vulnerableTimer > 0 ||
+      enemy.hunterMarkStacks > 0)
   ) {
     const barW = 34;
     const barY = isDummy ? -38 : -34;
@@ -3677,6 +4736,8 @@ function drawEnemy(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: numb
     ctx.fillStyle =
       enemy.possessedTimer > 0
         ? '#E879F9'
+        : enemy.vulnerableTimer > 0
+        ? '#FB7185'
         : enemy.fearTimer > 0
         ? '#A78BFA'
         : enemy.stunTimer > 0 || enemy.rootTimer > 0
@@ -3701,6 +4762,60 @@ function drawEnemy(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: numb
       ctx.arc(-14 + s * 8, -64, 3.2, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  // Kobold Passive 2: Hunter's Precision Crosshair Reticle & Stack Pips (1..5)
+  if (enemy.hunterMarkStacks > 0) {
+    const stacks = Math.min(5, enemy.hunterMarkStacks);
+    const isMaxMark = stacks >= 5;
+    const markColor = isMaxMark ? '#FDE047' : '#FB7185';
+    const retR = (isBoss ? 30 : 19) + Math.sin(time * 9) * 1.5;
+
+    ctx.save();
+    ctx.strokeStyle = markColor;
+    ctx.globalAlpha = 0.45 + stacks * 0.1;
+    ctx.lineWidth = isMaxMark ? 2.2 : 1.7;
+    const rot = time * (isMaxMark ? 2.8 : 1.5);
+    ctx.beginPath();
+    ctx.arc(0, -6, retR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    for (let i = 0; i < 4; i++) {
+      const a = rot + (i * Math.PI) / 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * (retR - 4), -6 + Math.sin(a) * (retR - 4));
+      ctx.lineTo(Math.cos(a) * (retR + 4.5), -6 + Math.sin(a) * (retR + 4.5));
+      ctx.stroke();
+    }
+
+    const pipY = isBoss ? -52 : isDummy ? -45 : -41;
+    const startX = -((stacks - 1) * 5.5) / 2;
+    ctx.globalAlpha = 0.95;
+    for (let s = 0; s < stacks; s++) {
+      const px = startX + s * 5.5;
+      ctx.fillStyle = isMaxMark ? '#FDE047' : '#FB7185';
+      ctx.beginPath();
+      ctx.moveTo(px, pipY - 3);
+      ctx.lineTo(px + 2.4, pipY);
+      ctx.lineTo(px, pipY + 3);
+      ctx.lineTo(px - 2.4, pipY);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Snare Trap Vulnerable Exposure Ring
+  if (enemy.vulnerableTimer > 0) {
+    ctx.save();
+    ctx.strokeStyle = '#FB7185';
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash([5, 4]);
+    ctx.lineDashOffset = -time * 28;
+    ctx.beginPath();
+    ctx.ellipse(0, isBoss ? 24 : 14, isBoss ? 30 : 19, 8.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   }
 
   // Stagger / Stun spinning stars above head
@@ -3742,7 +4857,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: numb
 
   // Rooted stone-clasp ring around feet
   if (enemy.rootTimer > 0) {
-    ctx.strokeStyle = '#FB923C';
+    ctx.strokeStyle = enemy.vulnerableTimer > 0 ? '#E11D48' : '#FB923C';
     ctx.lineWidth = 2.4;
     ctx.beginPath();
     ctx.ellipse(0, isBoss ? 22 : 12, isBoss ? 26 : 16, 7, 0, 0, Math.PI * 2);
@@ -6689,7 +7804,270 @@ function drawGhostRestlessSurge(ctx: CanvasRenderingContext2D, slash: SlashEffec
   ctx.restore();
 }
 
+function drawKoboldSlashVfx(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  const progress = Math.min(1, Math.max(0, 1 - slash.life / slash.maxLife));
+  const easeOut = 1 - Math.pow(1 - progress, 3);
+  const alpha = Math.max(0, 1 - Math.pow(progress, 1.85));
+  const scale = slash.scale ?? 1;
+
+  if (slash.kind === 'KOBOLD_MUZZLE_FLASH') {
+    const isFinisher = Boolean(slash.isCrit);
+    const len = slash.radius * (0.55 + easeOut * 0.65) * scale;
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.rotate(slash.angle);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    // Bowstring sonic snap crescent
+    ctx.strokeStyle = isFinisher ? '#FDE047' : '#FB7185';
+    ctx.lineWidth = (isFinisher ? 4.4 : 3.2) * (1 - progress * 0.55);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(-4, 0, slash.radius * (0.45 + easeOut * 0.38), -slash.arcSpread * 0.5, slash.arcSpread * 0.5);
+    ctx.stroke();
+
+    // Directional muzzle flash spearhead + side vents
+    ctx.fillStyle = isFinisher ? '#FEF08A' : '#FDA4AF';
+    ctx.beginPath();
+    ctx.moveTo(-2, -3.5 * scale);
+    ctx.lineTo(len, 0);
+    ctx.lineTo(-2, 3.5 * scale);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(2, 0, (isFinisher ? 5.2 : 3.8) * (1 - progress * 0.5), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'KOBOLD_PIERCING_LANCE') {
+    const beamLen = slash.radius * (0.35 + easeOut * 0.72);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.rotate(slash.angle);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    // Supersonic crimson-gold rail corridor
+    const width = 14 * (1 - progress * 0.65) * scale;
+    const grad = ctx.createLinearGradient(0, 0, beamLen, 0);
+    grad.addColorStop(0, 'rgba(251, 113, 133, 0.85)');
+    grad.addColorStop(0.7, 'rgba(253, 224, 71, 0.92)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, -width * 0.5, beamLen, width);
+
+    // Core white-hot kinetic laser filament
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = Math.max(1.2, 4.2 * (1 - progress * 0.7));
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(beamLen * 0.96, 0);
+    ctx.stroke();
+
+    // Sonic mach rings along the piercing path
+    for (let m = 0; m < 3; m++) {
+      const mx = beamLen * (0.2 + m * 0.28);
+      const mr = (12 - m * 2) * (0.5 + easeOut * 0.7);
+      ctx.strokeStyle = m % 2 === 0 ? '#FDE047' : '#FB7185';
+      ctx.lineWidth = 2.2 * (1 - progress * 0.5);
+      ctx.beginPath();
+      ctx.ellipse(mx, 0, mr * 0.42, mr, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'KOBOLD_EXPLOSIVE_BLAST') {
+    const r = slash.radius * (0.25 + easeOut * 0.82);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+
+    // Scorched alchemical crater shadow
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.45;
+    ctx.fillStyle = '#450A0A';
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.88, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Multi-layered fireball + shockwave ring
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+    const grad = ctx.createRadialGradient(0, 0, r * 0.08, 0, 0, r);
+    grad.addColorStop(0, '#FFFFFF');
+    grad.addColorStop(0.35, 'rgba(253, 224, 71, 0.92)');
+    grad.addColorStop(0.72, 'rgba(249, 115, 22, 0.72)');
+    grad.addColorStop(1, 'rgba(225, 29, 72, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#FDE047';
+    ctx.lineWidth = 5.5 * (1 - progress * 0.65);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.96, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 8 radiating shrapnel blast spikes
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4 + slash.angle;
+      ctx.strokeStyle = i % 2 === 0 ? '#FEF08A' : '#FB7185';
+      ctx.lineWidth = 3 * (1 - progress * 0.55);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r * 0.35, Math.sin(a) * r * 0.35);
+      ctx.lineTo(Math.cos(a) * r * 1.14, Math.sin(a) * r * 1.14);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'KOBOLD_SNARE_SNAP') {
+    const r = slash.radius * (0.4 + easeOut * 0.65);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.globalAlpha = alpha;
+
+    // Snapping steel jaw clamp arcs closing inward!
+    const snapClose = (1 - easeOut) * 14;
+    ctx.strokeStyle = '#F8FAFC';
+    ctx.lineWidth = 3.6;
+    ctx.beginPath();
+    ctx.arc(0, -snapClose, Math.max(10, r * 0.55), 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, snapClose, Math.max(10, r * 0.55), 1.15 * Math.PI, 1.85 * Math.PI);
+    ctx.stroke();
+
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = '#FB7185';
+    ctx.lineWidth = 3.2 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'KOBOLD_MULTISHOT_FAN') {
+    const r = slash.radius * (0.42 + easeOut * 0.65);
+    const half = (slash.arcSpread || 1.2) * 0.5;
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.rotate(slash.angle);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    // Sweeping crossbow volley wind crescent
+    ctx.strokeStyle = '#FB7185';
+    ctx.lineWidth = 6 * (1 - progress * 0.6);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, -half, half);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#FDE047';
+    ctx.lineWidth = 2.6 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.78, -half * 0.92, half * 0.92);
+    ctx.stroke();
+
+    // Radial volley rays
+    const rays = 7;
+    for (let i = 0; i < rays; i++) {
+      const a = -half + (i / (rays - 1)) * (half * 2);
+      ctx.strokeStyle = i % 2 === 0 ? '#FFFFFF' : '#FDA4AF';
+      ctx.lineWidth = 2.2 * (1 - progress * 0.55);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 12, Math.sin(a) * 12);
+      ctx.lineTo(Math.cos(a) * (r + 10), Math.sin(a) * (r + 10));
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'KOBOLD_ARSENAL_BURST' || slash.kind === 'KOBOLD_ARSENAL_RING') {
+    const r = slash.radius * (0.35 + easeOut * 0.72);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.rotate(progress * Math.PI * 0.85);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    // Spinning brass clockwork gear ring
+    ctx.strokeStyle = '#F59E0B';
+    ctx.lineWidth = 4.5 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const teeth = 12;
+    for (let i = 0; i < teeth; i++) {
+      const a = (i / teeth) * Math.PI * 2;
+      ctx.strokeStyle = i % 2 === 0 ? '#FDE047' : '#FB7185';
+      ctx.lineWidth = 4 * (1 - progress * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * (r - 4), Math.sin(a) * (r - 4));
+      ctx.lineTo(Math.cos(a) * (r + 9), Math.sin(a) * (r + 9));
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  // KOBOLD_ELEMENTAL_NOVA / KOBOLD_ELEMENTAL_BURST (Fire / Frost / Lightning bolt impact burst)
+  const r = slash.radius * (0.3 + easeOut * 0.78);
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha;
+
+  ctx.strokeStyle = slash.color || '#38BDF8';
+  ctx.lineWidth = 4.5 * (1 - progress * 0.6);
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  for (let i = 0; i < 6; i++) {
+    const a = (i * Math.PI) / 3 + slash.angle + progress * 0.6;
+    ctx.strokeStyle = i % 2 === 0 ? '#FFFFFF' : slash.color || '#FDE047';
+    ctx.lineWidth = 2.6 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * r * 0.25, Math.sin(a) * r * 0.25);
+    ctx.lineTo(Math.cos(a) * r * 1.12, Math.sin(a) * r * 1.12);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawSlashArc(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  if (
+    slash.kind === 'KOBOLD_MUZZLE_FLASH' ||
+    slash.kind === 'KOBOLD_PIERCING_LANCE' ||
+    slash.kind === 'KOBOLD_EXPLOSIVE_BLAST' ||
+    slash.kind === 'KOBOLD_SNARE_SNAP' ||
+    slash.kind === 'KOBOLD_MULTISHOT_FAN' ||
+    slash.kind === 'KOBOLD_ARSENAL_BURST' ||
+    slash.kind === 'KOBOLD_ARSENAL_RING' ||
+    slash.kind === 'KOBOLD_ELEMENTAL_NOVA' ||
+    slash.kind === 'KOBOLD_ELEMENTAL_BURST'
+  ) {
+    drawKoboldSlashVfx(ctx, slash);
+    return;
+  }
   if (slash.kind === 'GHOST_BASIC_ARC') {
     drawGhostBasicArc(ctx, slash);
     return;
@@ -7076,6 +8454,116 @@ function drawProjectile(ctx: CanvasRenderingContext2D, proj: ProjectileEntity, t
     ctx.arc(3, 0, 5.2, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+  } else if (
+    proj.kind === 'PLAYER_CROSSBOW_BOLT' ||
+    proj.kind === 'PLAYER_TURRET_BOLT' ||
+    proj.kind === 'PLAYER_PIERCING_BOLT' ||
+    proj.kind === 'PLAYER_EXPLOSIVE_BOLT' ||
+    proj.kind === 'PLAYER_ELEMENTAL_BOLT'
+  ) {
+    const isPiercing = proj.kind === 'PLAYER_PIERCING_BOLT';
+    const isExplosive = proj.kind === 'PLAYER_EXPLOSIVE_BOLT';
+    const isElemental = proj.kind === 'PLAYER_ELEMENTAL_BOLT';
+    const isTurret = proj.kind === 'PLAYER_TURRET_BOLT';
+    const isFinisher = Boolean(proj.isFinisherBolt);
+    const scale = isPiercing ? 1.28 : isExplosive ? 1.16 : isTurret ? 0.88 : isFinisher ? 1.12 : 1.0;
+
+    const trailColor = isPiercing
+      ? 'rgba(253, 224, 71, 0.82)'
+      : isExplosive
+      ? 'rgba(249, 115, 22, 0.82)'
+      : isElemental
+      ? proj.elementKind === 'FROST'
+        ? 'rgba(56, 189, 248, 0.82)'
+        : proj.elementKind === 'LIGHTNING'
+        ? 'rgba(253, 224, 71, 0.88)'
+        : 'rgba(251, 113, 133, 0.85)'
+      : isFinisher
+      ? 'rgba(251, 191, 36, 0.78)'
+      : 'rgba(251, 113, 133, 0.72)';
+
+    // 1. 60fps supersonic slipstream wake
+    ctx.save();
+    ctx.scale(scale, scale);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = trailColor;
+    ctx.lineWidth = isPiercing ? 7.5 : 5.2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(isPiercing ? -34 : -24, 0);
+    ctx.lineTo(12, 0);
+    ctx.stroke();
+
+    if (isPiercing || isElemental) {
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let s = 0; s <= 7; s++) {
+        const sx = -26 + s * 5;
+        const sy =
+          proj.elementKind === 'LIGHTNING'
+            ? ((s % 2 === 0 ? 1 : -1) * 4.2 * Math.sin(time * 38 + s))
+            : Math.sin(time * 30 + s * 1.1) * 3.8;
+        if (s === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 2. Hardwood & brass crossbow bolt shaft + crimson/gold fletching + broadhead tip
+    ctx.save();
+    ctx.scale(scale, scale);
+    ctx.fillStyle = '#78350F';
+    ctx.strokeStyle = '#120F17';
+    ctx.lineWidth = 1.6;
+    ctx.fillRect(-13, -1.7, 20, 3.4);
+    ctx.strokeRect(-13, -1.7, 20, 3.4);
+
+    // Swept-back fletching vanes
+    ctx.fillStyle = isFinisher || isPiercing ? '#FDE047' : '#FB7185';
+    ctx.beginPath();
+    ctx.moveTo(-14, 0);
+    ctx.lineTo(-18, -4.5);
+    ctx.lineTo(-10, -1.7);
+    ctx.moveTo(-14, 0);
+    ctx.lineTo(-18, 4.5);
+    ctx.lineTo(-10, 1.7);
+    ctx.closePath();
+    ctx.fill();
+
+    // Barbed broadhead steel/enchanted tip
+    ctx.fillStyle = isElemental
+      ? proj.elementKind === 'FROST'
+        ? '#BAE6FD'
+        : proj.elementKind === 'LIGHTNING'
+        ? '#FEF08A'
+        : '#FDA4AF'
+      : isPiercing
+      ? '#FEF9C3'
+      : '#F8FAFC';
+    ctx.beginPath();
+    ctx.moveTo(16, 0);
+    ctx.lineTo(5, -5.2);
+    ctx.lineTo(7.5, 0);
+    ctx.lineTo(5, 5.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Glowing alchemical volatile canister behind broadhead on Explosive Bolts
+    if (isExplosive) {
+      const pulse = 3.8 + Math.sin(time * 28 + proj.id) * 1.1;
+      ctx.fillStyle = '#F97316';
+      ctx.beginPath();
+      ctx.arc(3, 0, pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#FEF9C3';
+      ctx.beginPath();
+      ctx.arc(3, 0, pulse * 0.48, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   } else if (proj.kind === 'BONE_ARROW') {
     ctx.strokeStyle = '#120F17';
     ctx.lineWidth = 4;
@@ -7125,6 +8613,7 @@ function drawWarmLightPools(
   const isGob = player.characterId === CharacterId.Goblin;
   const isGnome = player.characterId === CharacterId.Gnome;
   const isGhost = player.characterId === CharacterId.Ghost;
+  const isKobold = player.characterId === CharacterId.Kobold;
   const pGrad = ctx.createRadialGradient(player.x, player.y, 4, player.x, player.y, 95);
   pGrad.addColorStop(
     0,
@@ -7136,6 +8625,8 @@ function drawWarmLightPools(
       ? 'rgba(251, 146, 60, 0.09)'
       : isGhost
       ? 'rgba(192, 132, 252, 0.11)'
+      : isKobold
+      ? 'rgba(251, 113, 133, 0.09)'
       : 'rgba(74, 222, 128, 0.07)'
   );
   pGrad.addColorStop(
@@ -7148,6 +8639,8 @@ function drawWarmLightPools(
       ? 'rgba(251, 146, 60, 0)'
       : isGhost
       ? 'rgba(192, 132, 252, 0)'
+      : isKobold
+      ? 'rgba(251, 113, 133, 0)'
       : 'rgba(74, 222, 128, 0)'
   );
   ctx.fillStyle = pGrad;

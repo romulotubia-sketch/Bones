@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Check,
   Copy,
   Crown,
   Globe,
   Radio,
-  Shield,
   Swords,
   Users,
   Wifi,
@@ -29,7 +28,7 @@ interface MultiplayerLobbyModalProps {
 const MODES: {
   id: MultiplayerMode;
   name: string;
-  tag: string;
+  shortLabel: string;
   desc: string;
   icon: React.ComponentType<{ className?: string }>;
   color: string;
@@ -37,36 +36,43 @@ const MODES: {
   {
     id: 'ONLINE_COOP',
     name: 'Online Co-op',
-    tag: '2-4 Players · Party Dungeon',
-    desc: 'Battle through procedurally generated Graveyard chambers and bosses together with online companions.',
+    shortLabel: 'Online Co-op',
+    desc: 'Clear Graveyard chambers and bosses with 2–4 online companions.',
     icon: Globe,
     color: '#4ADE80',
   },
   {
     id: 'LAN_COOP',
     name: 'Local Wi-Fi Co-op',
-    tag: '2-4 Players · Same Wi-Fi',
-    desc: 'Play with friends connected to your local network. Zero internet latency, shared party progression.',
+    shortLabel: 'Wi-Fi Co-op',
+    desc: 'Low-latency dungeon runs with friends on the same Wi-Fi network.',
     icon: Wifi,
     color: '#38BDF8',
   },
   {
     id: 'ONLINE_PVP',
     name: 'Online PvP',
-    tag: '2-4 Players · Sparring Arena',
-    desc: 'Enter the Guild Colosseum to duel other heroes with your custom hero archetype, combos, and skills.',
+    shortLabel: 'Online PvP',
+    desc: 'Sparring arena duels using your custom hero skills and combos.',
     icon: Swords,
     color: '#F43F5E',
   },
   {
     id: 'LAN_PVP',
     name: 'Local Wi-Fi PvP',
-    tag: '2-4 Players · Local Arena',
-    desc: 'Fast, responsive hero vs. hero duels hosted across your local home or office Wi-Fi network.',
+    shortLabel: 'Wi-Fi PvP',
+    desc: 'Fast local arena duels hosted across your Wi-Fi network.',
     icon: Radio,
     color: '#FBBF24',
   },
 ];
+
+const MODE_LABELS: Record<MultiplayerMode, string> = {
+  ONLINE_COOP: 'Online Co-op',
+  LAN_COOP: 'Wi-Fi Co-op',
+  ONLINE_PVP: 'Online PvP',
+  LAN_PVP: 'Wi-Fi PvP',
+};
 
 export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
   networkManager,
@@ -89,8 +95,9 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
   const [customLanHost, setCustomLanHost] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [failedPortraits, setFailedPortraits] = useState<Record<string, boolean>>({});
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetch('/api/lan-ip')
       .then((res) => res.json())
       .then((data: { lanIp: string; port: number }) => {
@@ -101,9 +108,26 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    networkManager.setCallbacks({
+      onError: (msg) => {
+        setErrorMessage(msg);
+        setIsBusy(false);
+      },
+    });
+    return () => {
+      networkManager.setCallbacks({ onError: undefined });
+    };
+  }, [networkManager]);
+
   const localId = networkManager.getLocalPlayerId();
   const isHost = room && localId ? room.hostId === localId : false;
   const localPlayerInRoom = room?.players.find((p) => p.id === localId);
+  const selectedCharDef = CHARACTER_ROSTER[characterId] ?? CHARACTER_ROSTER[CharacterId.Zombie];
+
+  const markPortraitFailed = (key: string) => {
+    setFailedPortraits((prev) => (prev[key] ? prev : { ...prev, [key]: true }));
+  };
 
   const handleNameChange = (val: string) => {
     const clean = val.slice(0, 14);
@@ -160,13 +184,21 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
+  const handleCopyLan = () => {
+    if (!lanAddress) return;
+    void navigator.clipboard?.writeText(lanAddress);
+    setCopiedLan(true);
+    soundEngine.playUiClick(720);
+    setTimeout(() => setCopiedLan(false), 2000);
+  };
+
   const handleToggleReady = () => {
     if (!localPlayerInRoom) return;
     soundEngine.playUiClick(620);
     networkManager.setReady(!localPlayerInRoom.isReady);
   };
 
-  const handleSelectCharInLobby = (char: CharacterId) => {
+  const handleSelectChar = (char: CharacterId) => {
     setCharacterId(char);
     soundEngine.playUiClick(520);
     if (room) {
@@ -186,132 +218,236 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
     networkManager.leaveRoom();
   };
 
+  const renderHeroPortrait = (
+    idKey: string,
+    url: string,
+    name: string,
+    accentColor: string,
+    sizeClass: string
+  ) => {
+    if (failedPortraits[idKey]) {
+      return (
+        <div
+          className={`${sizeClass} rounded-lg flex items-center justify-center font-display font-bold text-xs text-[#F3EFE6] shrink-0`}
+          style={{
+            backgroundColor: `${accentColor}26`,
+            border: `1.5px solid ${accentColor}`,
+          }}
+        >
+          {name.slice(0, 2)}
+        </div>
+      );
+    }
+    return (
+      <img
+        src={url}
+        alt={name}
+        referrerPolicy="no-referrer"
+        onError={() => markPortraitFailed(idKey)}
+        className={`${sizeClass} rounded-lg object-cover shrink-0`}
+        style={{ border: `1.5px solid ${accentColor}` }}
+      />
+    );
+  };
+
+  const renderHeroStrip = () => (
+    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+      {CHARACTER_LIST.map((c) => {
+        const isSel = characterId === c.id;
+        return (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => handleSelectChar(c.id)}
+            className={`min-h-[54px] px-1 py-1.5 rounded-xl border flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform ${
+              isSel
+                ? 'bg-[#261E37] border-[#4ADE80] text-[#F3EFE6]'
+                : 'bg-[#191424] border-[#312844] text-[#B8AFC6] hover:border-[#453960]'
+            }`}
+          >
+            {renderHeroPortrait(
+              `pick-${c.id}`,
+              c.portraitUrl,
+              c.archetypeName,
+              isSel ? '#4ADE80' : c.accentColor,
+              'w-8 h-8'
+            )}
+            <span className="text-[10px] font-semibold leading-none truncate max-w-full">
+              {c.archetypeName}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center p-3 bg-black/85 backdrop-blur-sm pointer-events-auto safe-hud-insets">
-      <div className="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-2xl bg-[#16121E] border border-[#352C46] shadow-2xl overflow-hidden">
-        {/* Header Bar */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#1C1727] border-b border-[#2C243B] shrink-0">
-          <div className="flex items-center gap-2.5">
-            <Users className="w-5 h-5 text-[#4ADE80]" />
-            <h2 className="text-base font-bold text-[#F3EFE6] tracking-wide font-display">
-              {room ? `Party Lobby · Code [${room.code}]` : 'Multiplayer Arena & Co-op'}
+    <div
+      onPointerDown={(e) => e.stopPropagation()}
+      className="absolute inset-0 z-50 flex items-center justify-center p-2 bg-black/80 backdrop-blur-xs pointer-events-auto safe-hud-insets"
+    >
+      <div
+        role="dialog"
+        aria-label="Multiplayer Lobby"
+        className="w-full max-w-3xl max-h-full flex flex-col rounded-2xl bg-[#16121E] border border-[#352C46] shadow-2xl overflow-hidden"
+      >
+        {/* Compact Single-Row Header */}
+        <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-[#1C1727] border-b border-[#2C243B] shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Users className="w-4 h-4 text-[#4ADE80] shrink-0" />
+            <h2 className="text-sm font-bold text-[#F3EFE6] font-display whitespace-nowrap">
+              {room ? 'Party Lobby' : 'Multiplayer'}
             </h2>
             {room && (
-              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#4ADE80]/15 text-[#4ADE80] border border-[#4ADE80]/30">
-                {room.mode.replace('_', ' ')}
-              </span>
+              <div className="flex items-center gap-1.5 text-[11px] text-[#A69FB4] truncate">
+                <span aria-hidden="true">·</span>
+                <span className="text-[#E5DFD4] font-medium whitespace-nowrap">
+                  {MODE_LABELS[room.mode]}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono-num tabular-nums whitespace-nowrap">
+                  {networkManager.getPing()}ms
+                </span>
+              </div>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              soundEngine.playUiClick(440);
-              onClose();
-            }}
-            aria-label="Close multiplayer menu"
-            className="w-8 h-8 rounded-lg bg-[#272036] hover:bg-[#342B48] text-[#C4BCB0] active:scale-95 flex items-center justify-center transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
 
-        {/* Modal Body */}
-        <div className="flex-1 overflow-hidden flex flex-col p-4">
-          {errorMessage && (
-            <div className="mb-3 px-3 py-2 rounded-xl bg-red-950/70 border border-red-500/40 text-red-200 text-xs flex items-center justify-between">
-              <span>{errorMessage}</span>
+          <div className="flex items-center gap-2 shrink-0">
+            {room ? (
               <button
                 type="button"
-                onClick={() => setErrorMessage(null)}
-                className="text-red-300 hover:text-white text-xs underline ml-2"
+                onClick={handleCopyCode}
+                className="min-h-[36px] px-2.5 rounded-lg bg-[#261E36] hover:bg-[#332848] border border-[#463860] text-xs font-semibold text-[#F3EFE6] flex items-center gap-1.5 active:scale-95 transition-transform whitespace-nowrap"
               >
-                Dismiss
+                <span className="text-[11px] text-[#A69FB4] font-normal">Code</span>
+                <span className="font-mono-num font-bold tracking-widest text-[#FBBF24]">
+                  {room.code}
+                </span>
+                {copiedCode ? (
+                  <Check className="w-3.5 h-3.5 text-[#4ADE80]" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5 text-[#C084FC]" />
+                )}
               </button>
-            </div>
-          )}
-
-          {/* ACTIVE IN-LOBBY ROOM VIEW */}
-          {room ? (
-            <div className="flex-1 flex flex-col gap-3 min-h-0">
-              {/* Room Code Lockup */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-[#1D172A] border border-[#3A3050]">
-                <div>
-                  <div className="text-[11px] text-[#A69FB4] uppercase tracking-wider font-semibold">
-                    Room Code (Share with companions)
-                  </div>
-                  <div className="text-2xl font-mono-num font-bold text-[#FBBF24] tracking-widest mt-0.5">
-                    {room.code}
-                  </div>
-                </div>
-
+            ) : (
+              <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-[#110D18] border border-[#2C243B]">
                 <button
                   type="button"
-                  onClick={handleCopyCode}
-                  className="min-h-[44px] px-3.5 rounded-xl bg-[#2C233E] hover:bg-[#382D4F] border border-[#483B63] text-xs font-semibold text-[#F3EFE6] flex items-center gap-1.5 active:scale-95 transition-all"
+                  onClick={() => {
+                    soundEngine.playUiClick(500);
+                    setErrorMessage(null);
+                    setActiveTab('CREATE');
+                  }}
+                  className={`min-h-[34px] px-3 text-xs font-bold rounded-lg transition-colors whitespace-nowrap ${
+                    activeTab === 'CREATE'
+                      ? 'bg-[#4ADE80] text-[#0D1C12]'
+                      : 'text-[#B8AFC6] hover:text-white'
+                  }`}
                 >
-                  {copiedCode ? (
-                    <>
-                      <Check className="w-4 h-4 text-[#4ADE80]" />
-                      <span className="text-[#4ADE80]">Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4 text-[#C084FC]" />
-                      <span>Copy Code</span>
-                    </>
-                  )}
+                  Create Room
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick(500);
+                    setErrorMessage(null);
+                    setActiveTab('JOIN');
+                  }}
+                  className={`min-h-[34px] px-3 text-xs font-bold rounded-lg transition-colors whitespace-nowrap ${
+                    activeTab === 'JOIN'
+                      ? 'bg-[#38BDF8] text-[#091823]'
+                      : 'text-[#B8AFC6] hover:text-white'
+                  }`}
+                >
+                  Join via Code
                 </button>
               </div>
+            )}
 
-              {/* Connected Players List (2-4 Slots) */}
-              <div className="flex-1 min-h-[140px] flex flex-col">
-                <div className="text-xs font-bold text-[#E5DFD4] mb-2 flex items-center justify-between">
-                  <span>Connected Adventurers ({room.players.length}/{room.maxPlayers})</span>
-                  <span className="text-[11px] text-[#A69FB4]">
-                    Ping: {networkManager.getPing()}ms
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playUiClick(440);
+                onClose();
+              }}
+              aria-label="Close multiplayer menu"
+              className="min-w-[40px] min-h-[40px] rounded-xl bg-[#272036] hover:bg-[#342B48] text-[#C4BCB0] active:scale-95 flex items-center justify-center transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Inline Compact Error Strip */}
+        {errorMessage && (
+          <div className="px-3 py-1.5 bg-red-950/80 border-b border-red-500/40 text-red-200 text-[11px] flex items-center justify-between gap-2 shrink-0">
+            <span className="truncate">{errorMessage}</span>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="text-red-300 hover:text-white text-[11px] underline shrink-0 whitespace-nowrap"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Single-Screen Landscape Body with Safe Scroll Fallback */}
+        <ScrollablePane className="flex-1 min-h-0 px-3 py-2.5">
+          {room ? (
+            /* ACTIVE PARTY LOBBY — 2-Column Landscape Split */
+            <div className="grid grid-cols-12 gap-3 items-start">
+              {/* Left: 2x2 Party Slots */}
+              <div className="col-span-7 flex flex-col">
+                <div className="flex items-baseline justify-between mb-1.5">
+                  <span className="text-[11px] font-semibold text-[#E5DFD4]">
+                    Party Adventurers ({room.players.length}/{room.maxPlayers})
+                  </span>
+                  <span className="text-[10px] text-[#A69FB4]">
+                    Share code <span className="font-mono-num text-[#FBBF24] font-semibold">{room.code}</span> to invite
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-2 gap-2">
                   {room.players.map((p) => {
-                    const charDef = CHARACTER_ROSTER[p.characterId] || CHARACTER_ROSTER[CharacterId.Zombie];
+                    const charDef =
+                      CHARACTER_ROSTER[p.characterId] || CHARACTER_ROSTER[CharacterId.Zombie];
                     const isSelf = p.id === localId;
                     return (
                       <div
                         key={p.id}
-                        className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
+                        className={`h-[56px] px-2.5 rounded-xl border flex items-center gap-2.5 ${
                           isSelf
-                            ? 'bg-[#221B32] border-[#4ADE80]/50 shadow-md'
+                            ? 'bg-[#221B32] border-[#4ADE80]/55'
                             : 'bg-[#1A1526] border-[#312844]'
                         }`}
                       >
-                        <img
-                          src={charDef.portraitUrl}
-                          alt={charDef.name}
-                          className="w-12 h-12 rounded-xl object-cover border-2 shrink-0"
-                          style={{ borderColor: p.color || charDef.accentColor }}
-                        />
+                        {renderHeroPortrait(
+                          `slot-${p.id}-${p.characterId}`,
+                          charDef.portraitUrl,
+                          charDef.archetypeName,
+                          p.color || charDef.accentColor,
+                          'w-9 h-9'
+                        )}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1">
                             <span className="text-xs font-bold text-[#F3EFE6] truncate">
-                              {p.name} {isSelf && '(You)'}
+                              {p.name}
+                              {isSelf ? ' (You)' : ''}
                             </span>
                             {p.isHost && (
-                              <Crown className="w-3.5 h-3.5 text-[#FBBF24] shrink-0" />
+                              <Crown className="w-3 h-3 text-[#FBBF24] shrink-0" />
                             )}
                           </div>
-                          <div className="text-[11px] text-[#A69FB4] truncate">
-                            {charDef.archetypeName}
-                          </div>
-                          <div className="mt-1 flex items-center gap-2">
+                          <div className="flex items-center gap-1 text-[10px] text-[#A69FB4] truncate mt-0.5">
+                            <span className="truncate">{charDef.archetypeName}</span>
+                            <span aria-hidden="true">·</span>
                             <span
-                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                p.isReady
-                                  ? 'bg-[#4ADE80]/20 text-[#4ADE80]'
-                                  : 'bg-[#FBBF24]/20 text-[#FBBF24]'
+                              className={`font-semibold whitespace-nowrap ${
+                                p.isReady ? 'text-[#4ADE80]' : 'text-[#FBBF24]'
                               }`}
                             >
-                              {p.isReady ? 'READY' : 'CHOOSING'}
+                              {p.isReady ? 'Ready' : 'Choosing'}
                             </span>
                           </div>
                         </div>
@@ -319,342 +455,355 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                     );
                   })}
 
-                  {/* Empty Party Slots */}
-                  {Array.from({ length: room.maxPlayers - room.players.length }).map((_, i) => (
-                    <div
-                      key={`empty-${i}`}
-                      className="flex items-center justify-center p-4 rounded-xl border border-dashed border-[#352B49] text-xs text-[#7A708D] bg-[#14101E]"
-                    >
-                      Waiting for player to join...
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Character Quick Switcher inside Lobby */}
-              <div className="pt-2 border-t border-[#292238]">
-                <div className="text-[11px] text-[#A69FB4] font-semibold mb-1.5">
-                  Select Your Hero:
-                </div>
-                <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                  {CHARACTER_LIST.map((c) => {
-                    const isSelected = characterId === c.id;
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => handleSelectCharInLobby(c.id)}
-                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border text-xs font-semibold whitespace-nowrap active:scale-95 transition-all ${
-                          isSelected
-                            ? 'bg-[#29203C] border-[#4ADE80] text-white shadow-sm'
-                            : 'bg-[#191424] border-[#312844] text-[#B8AFC6]'
-                        }`}
+                  {Array.from({ length: Math.max(0, room.maxPlayers - room.players.length) }).map(
+                    (_, i) => (
+                      <div
+                        key={`empty-${i}`}
+                        className="h-[56px] px-2.5 rounded-xl border border-dashed border-[#322846] bg-[#130F1C] flex items-center justify-center text-[11px] text-[#7A708D]"
                       >
-                        <img
-                          src={c.portraitUrl}
-                          alt={c.name}
-                          className="w-6 h-6 rounded-md object-cover"
-                        />
-                        <span>{c.archetypeName}</span>
-                      </button>
-                    );
-                  })}
+                        Waiting for player...
+                      </div>
+                    )
+                  )}
                 </div>
               </div>
 
-              {/* Lobby Action Controls */}
-              <div className="flex items-center gap-2 pt-2 border-t border-[#292238] shrink-0">
-                <button
-                  type="button"
-                  onClick={handleLeaveRoom}
-                  className="min-h-[44px] px-4 rounded-xl bg-[#281F37] hover:bg-[#362B4A] text-xs font-bold text-[#E5DFD4] active:scale-95 transition-all"
-                >
-                  Leave Party
-                </button>
+              {/* Right: Quick Hero Switcher + LAN Info */}
+              <div className="col-span-5 flex flex-col gap-2">
+                <div>
+                  <div className="flex items-baseline justify-between mb-1.5">
+                    <span className="text-[11px] font-semibold text-[#E5DFD4]">Your Hero</span>
+                    <span className="text-[10px] text-[#A69FB4] truncate">
+                      {selectedCharDef.role}
+                    </span>
+                  </div>
+                  {renderHeroStrip()}
+                </div>
 
-                {!isHost && (
-                  <button
-                    type="button"
-                    onClick={handleToggleReady}
-                    className={`flex-1 min-h-[44px] px-4 rounded-xl text-xs font-bold transition-all active:scale-95 ${
-                      localPlayerInRoom?.isReady
-                        ? 'bg-[#FBBF24] text-[#1E1729]'
-                        : 'bg-[#4ADE80] text-[#0F1E14]'
-                    }`}
-                  >
-                    {localPlayerInRoom?.isReady ? 'Cancel Ready' : 'Ready Up!'}
-                  </button>
-                )}
-
-                {isHost && (
-                  <button
-                    type="button"
-                    onClick={handleStartGame}
-                    className="flex-1 min-h-[44px] px-4 rounded-xl bg-[#4ADE80] text-[#0F1E14] text-xs font-bold tracking-wide shadow-lg active:scale-95 transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <Crown className="w-4 h-4 text-[#0F1E14]" />
-                    <span>Start Party Game</span>
-                  </button>
-                )}
+                <div className="px-2.5 py-2 rounded-xl bg-[#1A1526] border border-[#2E2540] flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-[#F3EFE6] truncate">
+                      {selectedCharDef.name}
+                    </div>
+                    <div className="text-[10px] text-[#A69FB4] truncate">
+                      {room.mode.startsWith('LAN_') && lanAddress
+                        ? `Wi-Fi Host: ${lanAddress}`
+                        : `${selectedCharDef.characterType} · ${selectedCharDef.attackLabel}`}
+                    </div>
+                  </div>
+                  {room.mode.startsWith('LAN_') && lanAddress && (
+                    <button
+                      type="button"
+                      onClick={handleCopyLan}
+                      className="min-h-[32px] px-2 rounded-lg bg-[#1E293B] text-[10px] font-semibold text-[#38BDF8] border border-[#38BDF8]/30 flex items-center gap-1 shrink-0 whitespace-nowrap active:scale-95"
+                    >
+                      {copiedLan ? (
+                        <Check className="w-3 h-3 text-[#4ADE80]" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                      <span>{copiedLan ? 'Copied' : 'Copy IP'}</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          ) : (
-            /* CREATE OR JOIN LOBBY VIEW */
-            <div className="flex-1 flex flex-col gap-3 min-h-0">
-              {/* Top Tabs */}
-              <div className="flex rounded-xl bg-[#1C1629] p-1 border border-[#2D2340] shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick(500);
-                    setActiveTab('CREATE');
-                  }}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                    activeTab === 'CREATE'
-                      ? 'bg-[#4ADE80] text-[#0D1C12] shadow-md'
-                      : 'text-[#B8AFC6] hover:text-white'
-                  }`}
-                >
-                  Host / Create Room
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick(500);
-                    setActiveTab('JOIN');
-                  }}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                    activeTab === 'JOIN'
-                      ? 'bg-[#4ADE80] text-[#0D1C12] shadow-md'
-                      : 'text-[#B8AFC6] hover:text-white'
-                  }`}
-                >
-                  Join via Code
-                </button>
-              </div>
-
-              <ScrollablePane className="flex-1 flex flex-col gap-3.5 pr-1">
-                {/* Player Profile Inputs */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-[#A69FB4] mb-1">
-                      Your Hero Name
+          ) : activeTab === 'CREATE' ? (
+            /* CREATE ROOM — 2-Column Single-Screen Landscape Layout */
+            <div className="grid grid-cols-12 gap-3 items-start">
+              {/* Left Column: Name + Max Players + Hero Picker (+ LAN IP when Wi-Fi mode chosen) */}
+              <div className="col-span-5 flex flex-col gap-2.5">
+                <div className="grid grid-cols-12 gap-2">
+                  <div className="col-span-7">
+                    <label
+                      htmlFor="mp-create-name"
+                      className="block text-[10px] font-semibold text-[#A69FB4] mb-1"
+                    >
+                      Hero Name
                     </label>
                     <input
+                      id="mp-create-name"
                       type="text"
                       maxLength={14}
                       value={playerName}
                       onChange={(e) => handleNameChange(e.target.value)}
                       placeholder="Adventurer"
-                      className="w-full h-11 px-3 rounded-xl bg-[#1C1727] border border-[#352B48] text-sm text-[#F3EFE6] focus:border-[#4ADE80] focus:outline-none"
+                      className="w-full h-9 px-2.5 rounded-lg bg-[#1C1727] border border-[#352B48] text-xs text-[#F3EFE6] focus:border-[#4ADE80] focus:outline-none"
                     />
                   </div>
 
-                  {activeTab === 'JOIN' ? (
-                    <div>
-                      <label className="block text-[11px] font-semibold text-[#A69FB4] mb-1">
-                        4-Letter Room Code
-                      </label>
-                      <input
-                        type="text"
-                        maxLength={4}
-                        value={joinCode}
-                        onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                        placeholder="e.g. BONE"
-                        className="w-full h-11 px-3 rounded-xl bg-[#1C1727] border border-[#352B48] text-sm font-mono uppercase tracking-widest text-[#FBBF24] focus:border-[#4ADE80] focus:outline-none"
-                      />
+                  <div className="col-span-5">
+                    <span className="block text-[10px] font-semibold text-[#A69FB4] mb-1">
+                      Party Size
+                    </span>
+                    <div className="grid grid-cols-3 gap-1">
+                      {[2, 3, 4].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playUiClick(500);
+                            setMaxPlayers(n);
+                          }}
+                          className={`h-9 rounded-lg text-xs font-bold tabular-nums border active:scale-95 transition-colors whitespace-nowrap ${
+                            maxPlayers === n
+                              ? 'bg-[#4ADE80]/20 border-[#4ADE80] text-[#4ADE80]'
+                              : 'bg-[#1C1727] border-[#352B48] text-[#B8AFC6]'
+                          }`}
+                        >
+                          {n}P
+                        </button>
+                      ))}
                     </div>
-                  ) : (
-                    <div>
-                      <label className="block text-[11px] font-semibold text-[#A69FB4] mb-1">
-                        Max Players (2 - 4)
-                      </label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[2, 3, 4].map((n) => (
-                          <button
-                            key={n}
-                            type="button"
-                            onClick={() => setMaxPlayers(n)}
-                            className={`h-11 rounded-xl text-xs font-bold border active:scale-95 transition-all ${
-                              maxPlayers === n
-                                ? 'bg-[#4ADE80]/20 border-[#4ADE80] text-[#4ADE80]'
-                                : 'bg-[#1C1727] border-[#352B48] text-[#B8AFC6]'
-                            }`}
-                          >
-                            {n} Players
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  </div>
                 </div>
 
-                {/* Optional LAN Host for Local Wi-Fi Co-op in Join tab */}
-                {activeTab === 'JOIN' && (
-                  <div className="p-3 rounded-xl bg-[#1B1627] border border-[#312744]">
-                    <label className="block text-[11px] font-semibold text-[#A69FB4] mb-1">
-                      Host Wi-Fi IP / Server Address (For Local Wi-Fi Co-op)
-                    </label>
-                    <input
-                      type="text"
-                      value={customLanHost}
-                      onChange={(e) => setCustomLanHost(e.target.value)}
-                      placeholder={lanAddress ? `${lanAddress} (optional)` : 'e.g. 192.168.1.100:3000'}
-                      className="w-full h-10 px-3 rounded-xl bg-[#130F1C] border border-[#382D4F] text-xs font-mono text-[#F3EFE6] focus:border-[#38BDF8] focus:outline-none"
-                    />
-                    <p className="text-[10px] text-[#A69FB4] mt-1.5 leading-tight">
-                      Leave empty to connect to the online server, or enter the host device&apos;s IP for local Wi-Fi.
-                    </p>
+                <div>
+                  <div className="flex items-baseline justify-between mb-1">
+                    <span className="text-[10px] font-semibold text-[#A69FB4]">Starting Hero</span>
+                    <span className="text-[10px] text-[#D6D0C4] truncate">
+                      {selectedCharDef.archetypeName} · {selectedCharDef.role}
+                    </span>
                   </div>
-                )}
+                  {renderHeroStrip()}
+                </div>
 
-                {/* LAN Host Address Banner for Creator in Local Wi-Fi mode */}
-                {activeTab === 'CREATE' && (selectedMode === 'LAN_COOP' || selectedMode === 'LAN_PVP') && lanAddress && (
-                  <div className="p-3 rounded-xl bg-[#151D2A] border border-[#38BDF8]/40 flex items-center justify-between">
-                    <div className="min-w-0">
-                      <div className="text-[11px] text-[#7DD3FC] font-semibold flex items-center gap-1.5">
-                        <Wifi className="w-3.5 h-3.5" />
-                        <span>Host Local Wi-Fi Address</span>
-                      </div>
-                      <div className="text-xs font-mono-num font-bold text-[#F3EFE6] truncate mt-0.5">
-                        {lanAddress}
-                      </div>
-                      <div className="text-[10px] text-[#94A3B8] mt-0.5">
-                        Share this IP with devices on the same Wi-Fi.
-                      </div>
+                {(selectedMode === 'LAN_COOP' || selectedMode === 'LAN_PVP') && lanAddress && (
+                  <div className="px-2.5 py-1.5 rounded-lg bg-[#151D2A] border border-[#38BDF8]/35 flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex items-center gap-1.5 text-[11px] text-[#BAE6FD]">
+                      <Wifi className="w-3.5 h-3.5 text-[#38BDF8] shrink-0" />
+                      <span className="font-mono-num truncate">{lanAddress}</span>
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        void navigator.clipboard?.writeText(lanAddress);
-                        setCopiedLan(true);
-                        soundEngine.playUiClick(720);
-                        setTimeout(() => setCopiedLan(false), 2000);
-                      }}
-                      className="px-2.5 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#2C3B53] text-[11px] font-semibold text-[#38BDF8] border border-[#38BDF8]/30 flex items-center gap-1 shrink-0 ml-2 active:scale-95 transition-all"
+                      onClick={handleCopyLan}
+                      className="min-h-[28px] px-2 rounded bg-[#1E293B] text-[10px] font-semibold text-[#38BDF8] flex items-center gap-1 shrink-0 whitespace-nowrap active:scale-95"
                     >
-                      {copiedLan ? <Check className="w-3.5 h-3.5 text-[#4ADE80]" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedLan ? (
+                        <Check className="w-3 h-3 text-[#4ADE80]" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
                       <span>{copiedLan ? 'Copied' : 'Copy IP'}</span>
                     </button>
                   </div>
                 )}
+              </div>
 
-                {/* Hero Selection */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-[#A69FB4] mb-1.5">
-                    Select Your Starting Hero
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                    {CHARACTER_LIST.map((c) => {
-                      const isSel = characterId === c.id;
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => {
-                            soundEngine.playUiClick(520);
-                            setCharacterId(c.id);
-                          }}
-                          className={`p-2 rounded-xl border flex flex-col items-center text-center active:scale-95 transition-all ${
-                            isSel
-                              ? 'bg-[#261E37] border-[#4ADE80] shadow-md ring-1 ring-[#4ADE80]/40'
-                              : 'bg-[#1A1526] border-[#312844] hover:border-[#453960]'
-                          }`}
+              {/* Right Column: Compact 2x2 Mode Selector */}
+              <div className="col-span-7 flex flex-col">
+                <div className="flex items-baseline justify-between mb-1">
+                  <span className="text-[10px] font-semibold text-[#A69FB4]">
+                    Multiplayer Mode
+                  </span>
+                  <span className="text-[10px] text-[#A69FB4]">2–4 Players</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {MODES.map((m) => {
+                    const Icon = m.icon;
+                    const isChosen = selectedMode === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiClick(500);
+                          setSelectedMode(m.id);
+                        }}
+                        className={`p-2.5 rounded-xl border text-left flex items-start gap-2 min-h-[68px] active:scale-[0.98] transition-transform ${
+                          isChosen
+                            ? 'bg-[#241C35] border-[#4ADE80]'
+                            : 'bg-[#181324] border-[#2C243B] hover:border-[#3E3253]'
+                        }`}
+                      >
+                        <div
+                          className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+                          style={{ backgroundColor: `${m.color}20`, color: m.color }}
                         >
-                          <img
-                            src={c.portraitUrl}
-                            alt={c.name}
-                            className="w-12 h-12 rounded-lg object-cover mb-1.5"
-                          />
-                          <span className="text-xs font-bold text-[#F3EFE6] leading-tight">
-                            {c.archetypeName}
-                          </span>
-                          <span className="text-[10px] text-[#A69FB4]">{c.role}</span>
-                        </button>
-                      );
-                    })}
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold text-[#F3EFE6] truncate">
+                            {m.name}
+                          </div>
+                          <p className="text-[10px] text-[#A69FB4] mt-0.5 leading-snug line-clamp-2">
+                            {m.desc}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* JOIN ROOM — 2-Column Single-Screen Landscape Layout */
+            <div className="grid grid-cols-12 gap-3 items-start">
+              <div className="col-span-6 flex flex-col gap-2.5">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label
+                      htmlFor="mp-join-name"
+                      className="block text-[10px] font-semibold text-[#A69FB4] mb-1"
+                    >
+                      Hero Name
+                    </label>
+                    <input
+                      id="mp-join-name"
+                      type="text"
+                      maxLength={14}
+                      value={playerName}
+                      onChange={(e) => handleNameChange(e.target.value)}
+                      placeholder="Adventurer"
+                      className="w-full h-9 px-2.5 rounded-lg bg-[#1C1727] border border-[#352B48] text-xs text-[#F3EFE6] focus:border-[#38BDF8] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="mp-join-code"
+                      className="block text-[10px] font-semibold text-[#A69FB4] mb-1"
+                    >
+                      4-Letter Room Code
+                    </label>
+                    <input
+                      id="mp-join-code"
+                      type="text"
+                      maxLength={4}
+                      value={joinCode}
+                      onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                      placeholder="BONE"
+                      className="w-full h-9 px-2.5 rounded-lg bg-[#1C1727] border border-[#352B48] text-xs font-mono-num font-bold uppercase tracking-widest text-[#FBBF24] focus:border-[#38BDF8] focus:outline-none"
+                    />
                   </div>
                 </div>
 
-                {/* Mode Selector (When creating) */}
-                {activeTab === 'CREATE' && (
-                  <div>
-                    <label className="block text-[11px] font-semibold text-[#A69FB4] mb-1.5">
-                      Choose Multiplayer Mode
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {MODES.map((m) => {
-                        const Icon = m.icon;
-                        const isChosen = selectedMode === m.id;
-                        return (
-                          <button
-                            key={m.id}
-                            type="button"
-                            onClick={() => {
-                              soundEngine.playUiClick(500);
-                              setSelectedMode(m.id);
-                            }}
-                            className={`p-3 rounded-xl border text-left flex items-start gap-3 active:scale-98 transition-all ${
-                              isChosen
-                                ? 'bg-[#241C35] border-[#4ADE80] shadow-md'
-                                : 'bg-[#181324] border-[#2C243B] hover:border-[#3E3253]'
-                            }`}
-                          >
-                            <div
-                              className="p-2 rounded-lg shrink-0 mt-0.5"
-                              style={{ backgroundColor: `${m.color}22` }}
-                            >
-                              <Icon className="w-4 h-4" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-[#F3EFE6]">
-                                  {m.name}
-                                </span>
-                                <span
-                                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                                  style={{ color: m.color, backgroundColor: `${m.color}15` }}
-                                >
-                                  {m.tag.split('·')[0].trim()}
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-[#A69FB4] mt-1 leading-snug">
-                                {m.desc}
-                              </p>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </ScrollablePane>
+                <div>
+                  <label
+                    htmlFor="mp-join-lan"
+                    className="block text-[10px] font-semibold text-[#A69FB4] mb-1"
+                  >
+                    Host Wi-Fi Address (Optional · Local Wi-Fi Only)
+                  </label>
+                  <input
+                    id="mp-join-lan"
+                    type="text"
+                    value={customLanHost}
+                    onChange={(e) => setCustomLanHost(e.target.value)}
+                    placeholder={
+                      lanAddress ? `${lanAddress} (leave blank for online)` : 'e.g. 192.168.1.100:3000'
+                    }
+                    className="w-full h-9 px-2.5 rounded-lg bg-[#1C1727] border border-[#352B48] text-xs font-mono-num text-[#F3EFE6] focus:border-[#38BDF8] focus:outline-none"
+                  />
+                  <p className="text-[10px] text-[#8E869E] mt-1 leading-tight">
+                    Leave empty for Online rooms, or enter the host device IP for Local Wi-Fi.
+                  </p>
+                </div>
+              </div>
 
-              {/* Action Buttons */}
-              <div className="pt-2 border-t border-[#292238] shrink-0">
+              <div className="col-span-6 flex flex-col gap-2.5">
+                <div>
+                  <div className="flex items-baseline justify-between mb-1">
+                    <span className="text-[10px] font-semibold text-[#A69FB4]">Starting Hero</span>
+                    <span className="text-[10px] text-[#D6D0C4] truncate">
+                      {selectedCharDef.archetypeName} · {selectedCharDef.role}
+                    </span>
+                  </div>
+                  {renderHeroStrip()}
+                </div>
+
+                <div className="px-2.5 py-2 rounded-xl bg-[#1A1526] border border-[#2E2540]">
+                  <div className="text-xs font-semibold text-[#F3EFE6]">
+                    {selectedCharDef.name}
+                  </div>
+                  <div className="text-[10px] text-[#A69FB4] mt-0.5 leading-snug">
+                    {selectedCharDef.characterType} · Primary Attack: {selectedCharDef.attackLabel}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </ScrollablePane>
+
+        {/* Pinned Compact Footer Bar */}
+        <div className="px-3 py-2 bg-[#1A1525] border-t border-[#2C243B] flex items-center justify-between gap-2 shrink-0">
+          {room ? (
+            <>
+              <button
+                type="button"
+                onClick={handleLeaveRoom}
+                className="min-h-[40px] px-4 rounded-xl bg-[#281F37] hover:bg-[#362B4A] text-xs font-bold text-[#E5DFD4] active:scale-95 transition-transform whitespace-nowrap shrink-0"
+              >
+                Leave Party
+              </button>
+
+              {isHost ? (
+                <button
+                  type="button"
+                  onClick={handleStartGame}
+                  className="min-h-[40px] px-5 rounded-xl bg-[#4ADE80] hover:bg-[#3FC772] text-[#0F1E14] text-xs font-bold tracking-wide shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                >
+                  <Crown className="w-4 h-4 text-[#0F1E14]" />
+                  <span>Start Party Game</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleToggleReady}
+                  className={`min-h-[40px] px-5 rounded-xl text-xs font-bold active:scale-95 transition-transform whitespace-nowrap shrink-0 ${
+                    localPlayerInRoom?.isReady
+                      ? 'bg-[#FBBF24] text-[#1E1729]'
+                      : 'bg-[#4ADE80] text-[#0F1E14]'
+                  }`}
+                >
+                  {localPlayerInRoom?.isReady ? 'Cancel Ready' : 'Ready Up'}
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <span className="text-[11px] text-[#A69FB4] truncate">
+                {activeTab === 'CREATE'
+                  ? `${MODES.find((m) => m.id === selectedMode)?.shortLabel} · Up to ${maxPlayers} players`
+                  : 'Enter a 4-letter party code to join immediately'}
+              </span>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick(440);
+                    onClose();
+                  }}
+                  className="min-h-[40px] px-3.5 rounded-xl bg-[#261F35] hover:bg-[#332A46] text-xs font-semibold text-[#D6D0C4] active:scale-95 transition-transform whitespace-nowrap"
+                >
+                  Cancel
+                </button>
+
                 {activeTab === 'CREATE' ? (
                   <button
                     type="button"
                     disabled={isBusy}
                     onClick={handleCreateRoom}
-                    className="w-full min-h-[46px] rounded-xl bg-[#4ADE80] hover:bg-[#3FC772] text-[#0F1E14] text-sm font-bold tracking-wide shadow-lg active:scale-98 transition-all flex items-center justify-center gap-2"
+                    className="min-h-[40px] px-5 rounded-xl bg-[#4ADE80] hover:bg-[#3FC772] disabled:opacity-50 text-[#0F1E14] text-xs font-bold tracking-wide shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5 whitespace-nowrap"
                   >
-                    <Crown className="w-4 h-4" />
-                    <span>{isBusy ? 'Creating Room...' : 'Create Multiplayer Room'}</span>
+                    <Crown className="w-3.5 h-3.5" />
+                    <span>{isBusy ? 'Creating...' : 'Create Room'}</span>
                   </button>
                 ) : (
                   <button
                     type="button"
-                    disabled={isBusy || joinCode.length < 4}
+                    disabled={isBusy || joinCode.trim().length < 4}
                     onClick={handleJoinRoom}
-                    className="w-full min-h-[46px] rounded-xl bg-[#38BDF8] hover:bg-[#2563EB] disabled:opacity-50 text-[#091823] text-sm font-bold tracking-wide shadow-lg active:scale-98 transition-all flex items-center justify-center gap-2"
+                    className="min-h-[40px] px-5 rounded-xl bg-[#38BDF8] hover:bg-[#0EA5E9] disabled:opacity-50 text-[#091823] text-xs font-bold tracking-wide shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5 whitespace-nowrap"
                   >
-                    <Users className="w-4 h-4" />
-                    <span>{isBusy ? 'Connecting to Room...' : 'Join Party Game'}</span>
+                    <Users className="w-3.5 h-3.5" />
+                    <span>{isBusy ? 'Joining...' : 'Join Room'}</span>
                   </button>
                 )}
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>

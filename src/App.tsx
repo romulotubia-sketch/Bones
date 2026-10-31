@@ -14,12 +14,14 @@ import {
 import { HudOverlay } from './components/HudOverlay';
 import { LoadoutModal } from './components/LoadoutModal';
 import { MultiplayerLobbyModal } from './components/MultiplayerLobbyModal';
+import { SettingsModal } from './components/SettingsModal';
 import { NetworkManager } from './multiplayer/NetworkManager';
 import { RoomInfo } from './multiplayer/networkTypes';
 import {
   CHARACTER_ROSTER,
   EMPTY_UPGRADE_RANKS,
   loadGuildSave,
+  MAX_RUN_BLESSINGS,
   persistGuildSave,
 } from './data/zombieData';
 import { GameEngine } from './game/GameEngine';
@@ -30,7 +32,9 @@ import {
   GamePhase,
   GuildSaveData,
   HudSnapshot,
+  ManualSkillAimInput,
   RunBlessing,
+  SkillSlotKey,
   UpgradeNodeSlot,
 } from './types/game';
 import {
@@ -63,6 +67,10 @@ const INITIAL_HUD: HudSnapshot = {
   soulDrainTimer: 0,
   possessionTimer: 0,
   nightmareTimer: 0,
+  tinkerHasteTimer: 0,
+  rapidReloadActive: false,
+  arsenalActive: false,
+  activeTurrets: 0,
   ultCharge: 100,
   ultCooldown: 0,
   ultMaxCooldown: 20,
@@ -131,6 +139,7 @@ export default function App() {
   }));
   const [loadoutModalOpen, setLoadoutModalOpen] = useState(false);
   const [difficultyModalOpen, setDifficultyModalOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [blessingChoices, setBlessingChoices] = useState<RunBlessing[]>([]);
   const [blessingSource, setBlessingSource] = useState<'STATUE' | 'STAGE_CLEAR'>('STAGE_CLEAR');
   const [endSummary, setEndSummary] = useState({
@@ -290,6 +299,37 @@ export default function App() {
     });
   }, []);
 
+  const handleUpdateSettings = useCallback(
+    (patch: { muted?: boolean; joystickScale?: number; skillButtonScale?: number }) => {
+      setSaveData((prev) => {
+        const nextMuted = patch.muted !== undefined ? patch.muted : prev.muted;
+        const clamp = (v: number) => Math.max(0.7, Math.min(1.35, Math.round(v * 100) / 100));
+        const nextJoy =
+          patch.joystickScale !== undefined ? clamp(patch.joystickScale) : prev.joystickScale;
+        const nextSkill =
+          patch.skillButtonScale !== undefined
+            ? clamp(patch.skillButtonScale)
+            : prev.skillButtonScale;
+
+        if (nextMuted !== prev.muted) {
+          soundEngine.setMuted(nextMuted);
+          if (!nextMuted) soundEngine.playUiClick(600);
+        }
+
+        const updated: GuildSaveData = {
+          ...prev,
+          muted: nextMuted,
+          joystickScale: nextJoy,
+          skillButtonScale: nextSkill,
+        };
+        persistGuildSave(updated);
+        engineRef.current?.updateSaveData(updated);
+        return updated;
+      });
+    },
+    []
+  );
+
   const handleUpdateLoadout = useCallback((charId: CharacterId, loadout: EquippedLoadout) => {
     setSaveData((prev) => {
       const updated: GuildSaveData = {
@@ -380,9 +420,9 @@ export default function App() {
   }, [hud.phase]);
 
   const handleJoystickMove = useCallback((nx: number, ny: number) => {
-    if (difficultyModalOpen || loadoutModalOpen) return;
+    if (difficultyModalOpen || loadoutModalOpen || multiplayerModalOpen || settingsModalOpen) return;
     engineRef.current?.setJoystickInput(nx, ny);
-  }, [difficultyModalOpen, loadoutModalOpen]);
+  }, [difficultyModalOpen, loadoutModalOpen, multiplayerModalOpen, settingsModalOpen]);
 
   const handleMapPanJoystick = useCallback((nx: number, ny: number) => {
     engineRef.current?.setMinimapPanJoystick(nx, ny);
@@ -407,6 +447,17 @@ export default function App() {
     []
   );
 
+  const handleSkillAimChange = useCallback((aim: ManualSkillAimInput | null) => {
+    engineRef.current?.setSkillAimPreview(aim);
+  }, []);
+
+  const handleReleaseSkill = useCallback(
+    (slot: SkillSlotKey, manualAim?: { angle: number; magnitude: number }) => {
+      engineRef.current?.releaseManualSkill(slot, manualAim);
+    },
+    []
+  );
+
   const activeLoadout =
     saveData.loadouts[saveData.selectedCharacter] ??
     CHARACTER_ROSTER[saveData.selectedCharacter].defaultLoadout;
@@ -427,6 +478,7 @@ export default function App() {
           isFullscreen={isFullscreen}
           onToggleMute={handleToggleMute}
           onToggleFullscreen={handleToggleFullscreen}
+          onOpenSettings={() => setSettingsModalOpen(true)}
           onStartGame={handleStartFromTitle}
           onOpenMultiplayer={() => setMultiplayerModalOpen(true)}
         />
@@ -437,16 +489,21 @@ export default function App() {
         hud.phase === GamePhase.GuildRoam ||
         hud.phase === GamePhase.Dungeon) &&
         !loadoutModalOpen &&
-        !difficultyModalOpen && (
+        !difficultyModalOpen &&
+        !multiplayerModalOpen &&
+        !settingsModalOpen && (
           <HudOverlay
             hud={hud}
             loadout={activeLoadout}
             totalSavedShards={saveData.soulShards}
             selectedDifficulty={saveData.selectedDifficulty}
             muted={saveData.muted}
+            joystickScale={saveData.joystickScale}
+            skillButtonScale={saveData.skillButtonScale}
             isFullscreen={isFullscreen}
             onToggleMute={handleToggleMute}
             onToggleFullscreen={handleToggleFullscreen}
+            onOpenSettings={() => setSettingsModalOpen(true)}
             onPause={handlePause}
             onOpenLoadout={handleOpenLoadout}
             onOpenMultiplayer={() => setMultiplayerModalOpen(true)}
@@ -457,6 +514,8 @@ export default function App() {
             onAttackHeldChange={handleAttackHeldChange}
             onInteract={handleInteract}
             onTriggerSkill={handleTriggerSkill}
+            onSkillAimChange={handleSkillAimChange}
+            onReleaseSkill={handleReleaseSkill}
           />
         )}
 
@@ -486,6 +545,8 @@ export default function App() {
         <BlessingModal
           activeCharacter={hud.activeCharacter}
           choices={blessingChoices}
+          pickedCount={hud.activeBlessings.length}
+          maxBlessings={MAX_RUN_BLESSINGS}
           source={blessingSource}
           currentFloor={hud.floorNumber}
           currentStageFloor={
@@ -506,15 +567,28 @@ export default function App() {
           shardsEarned={endSummary.shardsEarned}
           kills={endSummary.kills}
           damageDealt={endSummary.damageDealt}
+          activeBlessingIds={hud.activeBlessings}
           difficulty={saveData.selectedDifficulty}
           currentStage={hud.currentStage}
           maxStages={hud.maxStages}
           floorLabel={hud.floorLabel}
           onSelectDifficulty={handleSelectDifficulty}
           onToggleFullscreen={handleToggleFullscreen}
+          onOpenSettings={() => setSettingsModalOpen(true)}
           onResume={handleResume}
           onReturnToGuild={handleReturnToGuild}
           onPlayAgain={handlePlayAgain}
+        />
+      )}
+
+      {/* Settings & Controls Modal */}
+      {settingsModalOpen && (
+        <SettingsModal
+          muted={saveData.muted}
+          joystickScale={saveData.joystickScale}
+          skillButtonScale={saveData.skillButtonScale}
+          onUpdateSettings={handleUpdateSettings}
+          onClose={() => setSettingsModalOpen(false)}
         />
       )}
 

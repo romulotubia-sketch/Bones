@@ -2,6 +2,7 @@ import ghostPortraitImg from '../assets/images/ghost_hero_portrait_1793398455645
 import gnomePortraitImg from '../assets/images/gnome_hero_portrait_1793315632139.jpg';
 import goblinPortraitImg from '../assets/images/goblin_hero_portrait_1793313607661.jpg';
 import graveyardBiomeImg from '../assets/images/graveyard_biome_card_1793308236254.jpg';
+import koboldPortraitImg from '../assets/images/kobold_hero_portrait_1793440988933.jpg';
 import skeletonBossImg from '../assets/images/skeleton_boss_portrait_1793308236655.jpg';
 import skeletonPortraitImg from '../assets/images/skeleton_hero_portrait_1793311951924.jpg';
 import zombiePortraitImg from '../assets/images/zombie_hero_portrait_1793308234967.jpg';
@@ -27,6 +28,7 @@ export const SKELETON_PORTRAIT_URL = skeletonPortraitImg;
 export const GOBLIN_PORTRAIT_URL = goblinPortraitImg;
 export const GNOME_PORTRAIT_URL = gnomePortraitImg;
 export const GHOST_PORTRAIT_URL = ghostPortraitImg;
+export const KOBOLD_PORTRAIT_URL = koboldPortraitImg;
 export const GRAVEYARD_BIOME_URL = graveyardBiomeImg;
 export const SKELETON_BOSS_URL = skeletonBossImg;
 
@@ -337,6 +339,63 @@ export const NORMAL_SKILLS: Record<NormalSkillId, NormalSkillDef> = {
     detailLine: '2.6s untargetable takeover · Host cleaves nearby foes + exorcism burst',
     accentColor: '#818CF8',
   },
+
+  // === KOBOLD NORMAL SKILLS (5) ===
+  [NormalSkillId.PiercingBolt]: {
+    id: NormalSkillId.PiercingBolt,
+    characterId: CharacterId.Kobold,
+    name: 'Piercing Bolt',
+    tag: 'Ranged · Line Pierce',
+    cooldown: 3.6,
+    description:
+      'Fires a powerful crossbow bolt that pierces through multiple enemies in a straight line.',
+    detailLine: 'High-velocity steel lance · Pierces all foes in line (+30% Crit)',
+    accentColor: '#FB7185',
+  },
+  [NormalSkillId.RapidReload]: {
+    id: NormalSkillId.RapidReload,
+    characterId: CharacterId.Kobold,
+    name: 'Rapid Reload',
+    tag: 'Burst · 6 Bolts',
+    cooldown: 4.4,
+    description:
+      'Quickly reloads and fires several crossbow bolts in rapid succession at nearby enemies.',
+    detailLine: 'Snap-reloads & fires 6 high-speed bolts · Stacks Hunter’s Precision',
+    accentColor: '#FBBF24',
+  },
+  [NormalSkillId.ExplosiveBolt]: {
+    id: NormalSkillId.ExplosiveBolt,
+    characterId: CharacterId.Kobold,
+    name: 'Explosive Bolt',
+    tag: 'Ranged · Blast AoE',
+    cooldown: 5.4,
+    description:
+      'Fires a specially crafted bolt that explodes upon impact, damaging enemies caught in the blast.',
+    detailLine: 'Blackpowder bolt detonates on impact · Heavy AoE blast & knockback',
+    accentColor: '#F97316',
+  },
+  [NormalSkillId.SnareTrap]: {
+    id: NormalSkillId.SnareTrap,
+    characterId: CharacterId.Kobold,
+    name: 'Snare Trap',
+    tag: 'Trap · Root & Expose',
+    cooldown: 6.2,
+    description:
+      'Places a hidden mechanical trap on the ground. Enemies who step on it become restrained and vulnerable to attacks.',
+    detailLine: 'Hidden jaw-snare · Roots foes 2.8s & exposes them (+28% DMG taken)',
+    accentColor: '#FDE047',
+  },
+  [NormalSkillId.MultiShot]: {
+    id: NormalSkillId.MultiShot,
+    characterId: CharacterId.Kobold,
+    name: 'Multi-Shot',
+    tag: 'Spread · Wide Fan',
+    cooldown: 4.8,
+    description:
+      'Fires multiple bolts in different directions, striking several enemies surrounding the Kobold.',
+    detailLine: 'Launches 7 bolts in a wide fan · Strikes surrounding foes & pushes close threats',
+    accentColor: '#FDA4AF',
+  },
 };
 
 export const ULTIMATE_SKILLS: Record<UltimateSkillId, UltimateSkillDef> = {
@@ -529,6 +588,44 @@ export const ULTIMATE_SKILLS: Record<UltimateSkillId, UltimateSkillDef> = {
     detailLine: 'Massive abyssal vortex pulls foes inward then erupts in a spirit nova',
     accentColor: '#C084FC',
   },
+
+  // === KOBOLD ULTIMATE SKILLS (3) ===
+  [UltimateSkillId.DragonsBarrage]: {
+    id: UltimateSkillId.DragonsBarrage,
+    characterId: CharacterId.Kobold,
+    name: "Dragon's Barrage",
+    tag: 'Sky Rain · Wide Zone',
+    cooldown: 18,
+    energyRequired: 100,
+    description:
+      'Unleashes a massive barrage of enchanted crossbow bolts that rain down across a wide battlefield.',
+    detailLine: '3.2s enchanted draconic bolt storm across a wide target area',
+    accentColor: '#FB7185',
+  },
+  [UltimateSkillId.MasterArtificer]: {
+    id: UltimateSkillId.MasterArtificer,
+    characterId: CharacterId.Kobold,
+    name: 'Master Artificer',
+    tag: 'Deploy · 3 Turrets',
+    cooldown: 21,
+    energyRequired: 100,
+    description:
+      'Deploys several automated crossbow turrets that independently target and attack nearby enemies.',
+    detailLine: 'Deploys 3 clockwork crossbow turrets for 12s · Auto-locks & fires bolts',
+    accentColor: '#FBBF24',
+  },
+  [UltimateSkillId.KoboldsDeadlyArsenal]: {
+    id: UltimateSkillId.KoboldsDeadlyArsenal,
+    characterId: CharacterId.Kobold,
+    name: "Kobold's Deadly Arsenal",
+    tag: 'Sequence · Elemental',
+    cooldown: 19,
+    energyRequired: 100,
+    description:
+      'Unleashes a specially prepared collection of mechanical weapons, firing explosive, piercing, and elemental bolts in a devastating sequence.',
+    detailLine: '9-volley mechanical sequence · Explosive, Piercing, Fire, Frost & Lightning bolts',
+    accentColor: '#38BDF8',
+  },
 };
 
 export const ZOMBIE_PASSIVE_SKILLS: PassiveSkillDef[] = [
@@ -633,6 +730,27 @@ export const GHOST_PASSIVE_SKILLS: PassiveSkillDef[] = [
     description:
       'Whenever the ghost successfully avoids an enemy attack, its spiritual energy intensifies, temporarily increasing its movement speed and magical power.',
     detailLine: 'Evading or phasing attacks grants +28% Move Speed & +32% Magic Power for 4s',
+  },
+];
+
+export const KOBOLD_PASSIVE_SKILLS: PassiveSkillDef[] = [
+  {
+    id: PassiveSkillId.MechanicalExpertise,
+    characterId: CharacterId.Kobold,
+    name: 'Mechanical Expertise',
+    tag: 'Always Active · Artifice',
+    description:
+      "The Kobold's knowledge of machinery allows it to handle crossbows and mechanical weapons with exceptional skill.",
+    detailLine: '+18% Crossbow Fire Rate & Bolt Velocity · Deploying traps/turrets grants +25% Haste',
+  },
+  {
+    id: PassiveSkillId.HuntersPrecision,
+    characterId: CharacterId.Kobold,
+    name: "Hunter's Precision",
+    tag: 'Always Active · Weakspot',
+    description:
+      'Repeatedly attacking the same enemy allows the Kobold to identify its weaknesses and improve the accuracy of subsequent attacks.',
+    detailLine: 'Hits stack Hunter Marks (up to 5x: +6% Crit Chance & +7% Bonus DMG per stack)',
   },
 ];
 
@@ -807,6 +925,40 @@ export const CHARACTER_ROSTER: Record<CharacterId, CharacterProfileDef> = {
       ultimateSkill: UltimateSkillId.EternalNightmare,
     },
   },
+  [CharacterId.Kobold]: {
+    id: CharacterId.Kobold,
+    name: 'Rikkit the Boltmaster',
+    archetypeName: 'Kobold',
+    characterType: 'Ranged · Traps · Critical Strikes',
+    role: 'A cunning ranged fighter who specializes in crossbow mastery, mechanical traps, and tactical positioning. Uses different types of bolts to attack enemies from a distance and control the battlefield.',
+    portraitUrl: KOBOLD_PORTRAIT_URL,
+    accentColor: '#FB7185',
+    attackLabel: 'SHOOT',
+    baseHp: 96,
+    baseSpeed: 234,
+    baseAttackDamage: 16,
+    baseAttackCooldown: 0.25,
+    baseCritChance: 0.26,
+    critMultiplier: 1.9,
+    guildSpot: { x: -95, y: -145, facingX: 1 },
+    normalSkillIds: [
+      NormalSkillId.PiercingBolt,
+      NormalSkillId.RapidReload,
+      NormalSkillId.ExplosiveBolt,
+      NormalSkillId.SnareTrap,
+      NormalSkillId.MultiShot,
+    ],
+    ultimateSkillIds: [
+      UltimateSkillId.DragonsBarrage,
+      UltimateSkillId.MasterArtificer,
+      UltimateSkillId.KoboldsDeadlyArsenal,
+    ],
+    passiveSkills: KOBOLD_PASSIVE_SKILLS,
+    defaultLoadout: {
+      normalSkills: [NormalSkillId.PiercingBolt, NormalSkillId.SnareTrap],
+      ultimateSkill: UltimateSkillId.MasterArtificer,
+    },
+  },
 };
 
 export const CHARACTER_LIST: CharacterProfileDef[] = [
@@ -815,6 +967,7 @@ export const CHARACTER_LIST: CharacterProfileDef[] = [
   CHARACTER_ROSTER[CharacterId.Goblin],
   CHARACTER_ROSTER[CharacterId.Gnome],
   CHARACTER_ROSTER[CharacterId.Ghost],
+  CHARACTER_ROSTER[CharacterId.Kobold],
 ];
 
 export function getNormalSkillsForCharacter(charId: CharacterId): NormalSkillDef[] {
@@ -1106,6 +1259,58 @@ export const CHARACTER_UPGRADE_PATHS: Record<CharacterId, CharacterUpgradePathDe
       },
     ],
   },
+  [CharacterId.Kobold]: {
+    characterId: CharacterId.Kobold,
+    pathTitle: 'Path of Clockwork Precision',
+    pathSubtitle: 'Repeating Crossbows · Mechanical Traps · Weakspot Crits',
+    nodes: [
+      {
+        slot: 'pathA',
+        name: 'Draconic Scale Vest',
+        summary: 'Reinforces brigandine leather and dragon-scale plates for nimble ranged survival.',
+        baseCost: 16,
+        costStep: 12,
+        maxRank: 6,
+        perRankLabel: '+13 Max HP · +2.5% Evasive Reflex',
+      },
+      {
+        slot: 'pathB',
+        name: 'Tempered Steel Limbs',
+        summary: 'Increases crossbow draw tension for deadlier bolts and faster repeating fire.',
+        baseCost: 18,
+        costStep: 14,
+        maxRank: 6,
+        perRankLabel: '+13% Crossbow & Bolt Skill Damage · +4% Fire Rate',
+      },
+      {
+        slot: 'pathC',
+        name: 'Weakspot Optics',
+        summary: 'Calibrates brass sighting lenses to amplify Critical Strikes and Hunter’s Precision.',
+        baseCost: 18,
+        costStep: 15,
+        maxRank: 6,
+        perRankLabel: '+4% Crit Chance · +12% Crit & Hunter Mark Bonus',
+      },
+      {
+        slot: 'pathD',
+        name: "Artificer's Gearwork",
+        summary: 'Upgrades Snare Traps, Explosive Bolts, and Automated Crossbow Turrets.',
+        baseCost: 20,
+        costStep: 15,
+        maxRank: 6,
+        perRankLabel: '+22% Trap, Blast & Turret Power · +1.2s Turret Life',
+      },
+      {
+        slot: 'pathE',
+        name: 'Ratchet Crank Mechanism',
+        summary: 'Oils clockwork cranks for swifter kiting footwork, Ult charge, and faster reloads.',
+        baseCost: 22,
+        costStep: 16,
+        maxRank: 5,
+        perRankLabel: '+5% Move Speed · +14% Ult Gain · -7% Cooldowns',
+      },
+    ],
+  },
 };
 
 export function getUpgradePathForCharacter(charId: CharacterId): CharacterUpgradePathDef {
@@ -1213,6 +1418,99 @@ export const CHARACTER_STATUE_BLESSINGS: Record<CharacterId, RunBlessing[]> = {
       description: "Death's Embrace deals +20% damage, drains +5 HP/foe, & resets Skills.",
       requiredUltimateSkill: UltimateSkillId.DeathsEmbrace,
     },
+    // Strategic Build Expansion — Zombie Core, Normal & Ultimate Specializations
+    {
+      id: 'zombie_putrid_frenzy',
+      characterId: CharacterId.Zombie,
+      name: 'Putrid Frenzy',
+      category: 'Plague · Tempo',
+      description: '+15% Attack & Move Speed while any Infected enemy is nearby.',
+    },
+    {
+      id: 'zombie_corpse_glutton',
+      characterId: CharacterId.Zombie,
+      name: 'Graveyard Glutton',
+      category: 'Execute · Leech',
+      description: '+24% damage vs foes below 35% HP; slaying Infected foes heals 4 HP.',
+    },
+    {
+      id: 'zombie_miasma_shroud',
+      characterId: CharacterId.Zombie,
+      name: 'Miasma Shroud',
+      category: 'Aura · Blight',
+      description: 'Pulses a necrotic ring every 1.8s in combat, dealing plague dmg & 1 Infection.',
+    },
+    {
+      id: 'zombie_stitchwork_hide',
+      characterId: CharacterId.Zombie,
+      name: 'Stitchwork Hide',
+      category: 'Guard · Fury',
+      description: '+12% Damage Reduction; taking damage grants +7% bonus Ultimate charge.',
+    },
+    {
+      id: 'zombie_skill_rotting_claw_alt',
+      characterId: CharacterId.Zombie,
+      name: 'Leeching Talons',
+      category: 'Rotting Claw · Drain',
+      description: 'Rotting Claw heals 2 HP per enemy hit and cuts CD by 0.6s on final rend.',
+      requiredNormalSkill: NormalSkillId.RottingClaw,
+    },
+    {
+      id: 'zombie_skill_plague_burst_alt',
+      characterId: CharacterId.Zombie,
+      name: 'Corpse Detonation',
+      category: 'Plague Burst · Blast',
+      description: 'Plague Burst deals +40% upfront blast damage and stuns Infected foes 0.7s.',
+      requiredNormalSkill: NormalSkillId.PlagueBurst,
+    },
+    {
+      id: 'zombie_skill_flesh_ripper_alt',
+      characterId: CharacterId.Zombie,
+      name: "Predator's Pounce",
+      category: 'Flesh Ripper · Reset',
+      description: 'Flesh Ripper gains +30% Crit Chance, heals 4 HP/hit, & refunds 35% CD on hit.',
+      requiredNormalSkill: NormalSkillId.FleshRipper,
+    },
+    {
+      id: 'zombie_skill_undying_flesh_alt',
+      characterId: CharacterId.Zombie,
+      name: 'Putrid Bloodshield',
+      category: 'Undying Flesh · Surge',
+      description: 'Undying Flesh heals 14% Max HP immediately & grants +20% Attack Damage while active.',
+      requiredNormalSkill: NormalSkillId.UndyingFlesh,
+    },
+    {
+      id: 'zombie_skill_grave_call_alt',
+      characterId: CharacterId.Zombie,
+      name: 'Volatile Shamblers',
+      category: 'Grave Call · Nova',
+      description: 'Shamblers deal +25% bite damage and Grave Call erupts a plague nova on cast.',
+      requiredNormalSkill: NormalSkillId.GraveCall,
+    },
+    {
+      id: 'zombie_ult_abomination_alt',
+      characterId: CharacterId.Zombie,
+      name: 'Mutagenic Rampage',
+      category: 'Abomination · Extend',
+      description: 'Abomination stomps 30% faster; kills while active extend duration by +0.6s.',
+      requiredUltimateSkill: UltimateSkillId.AbominationForm,
+    },
+    {
+      id: 'zombie_ult_kingdom_alt',
+      characterId: CharacterId.Zombie,
+      name: "Plaguebearers' March",
+      category: 'Kingdom of the Dead',
+      description: 'Kingdom of the Dead heals 18% Max HP and blankets the arena in toxic gas.',
+      requiredUltimateSkill: UltimateSkillId.KingdomOfTheDead,
+    },
+    {
+      id: 'zombie_ult_embrace_alt',
+      characterId: CharacterId.Zombie,
+      name: 'Necrotic Singularity',
+      category: "Death's Embrace",
+      description: "Death's Embrace stuns foes 1.2s and refunds 25% Ult charge when hitting 3+.",
+      requiredUltimateSkill: UltimateSkillId.DeathsEmbrace,
+    },
   ],
 
   // === SKELETON STATUE BLESSINGS (4 Core/Passive + 5 Normal-Gated + 3 Ult-Gated) ===
@@ -1307,6 +1605,99 @@ export const CHARACTER_STATUE_BLESSINGS: Record<CharacterId, RunBlessing[]> = {
       name: 'Soul Harvest',
       category: "Reaper's Judgment",
       description: "Reaper's Judgment fires 3 Dark Waves, heals 12 HP, & resets Skills.",
+      requiredUltimateSkill: UltimateSkillId.ReapersJudgment,
+    },
+    // Strategic Build Expansion — Skeleton Core, Normal & Ultimate Specializations
+    {
+      id: 'skel_marrow_piercer',
+      characterId: CharacterId.Skeleton,
+      name: 'Marrow Piercer',
+      category: 'Opener · Crit Haste',
+      description: '+22% damage vs foes above 70% HP or Bosses; Crits cut Skill CDs by 0.3s.',
+    },
+    {
+      id: 'skel_grim_ossuary',
+      characterId: CharacterId.Skeleton,
+      name: 'Grim Ossuary',
+      category: 'Unyielding · Soul',
+      description: 'Unyielding Bones grants +5% extra DR per stack; kills grant +7% Ult charge.',
+    },
+    {
+      id: 'skel_deathrattler_tempo',
+      characterId: CharacterId.Skeleton,
+      name: 'Deathrattler Stride',
+      category: 'Kill Surge · Crit',
+      description: 'Slaying an enemy grants +20% Move Speed and +15% Crit Chance for 3.5s.',
+    },
+    {
+      id: 'skel_serrated_femur',
+      characterId: CharacterId.Skeleton,
+      name: 'Serrated Blade',
+      category: 'Reach · Finisher',
+      description: '+14% basic slash reach and +24% damage on every 3rd combo finisher.',
+    },
+    {
+      id: 'skel_skill_bone_slash_alt',
+      characterId: CharacterId.Skeleton,
+      name: "Executioner's Cleave",
+      category: 'Bone Slash · Execute',
+      description: 'Bone Slash guarantees a Critical Strike vs foes below 50% HP & cuts CD 1s.',
+      requiredNormalSkill: NormalSkillId.BoneSlash,
+    },
+    {
+      id: 'skel_skill_bone_spear_alt',
+      characterId: CharacterId.Skeleton,
+      name: 'Impaling Javelin',
+      category: 'Bone Spear · Stun',
+      description: 'Bone Spear deals +28% damage, flies 20% faster, & stuns pierced foes 0.6s.',
+      requiredNormalSkill: NormalSkillId.BoneSpear,
+    },
+    {
+      id: 'skel_skill_ribcage_shield_alt',
+      characterId: CharacterId.Skeleton,
+      name: 'Calcified Bastion',
+      category: 'Ribcage Shield · Mend',
+      description: 'Ribcage Shield grants 2 Unyielding stacks on cast & heals 4 HP per block.',
+      requiredNormalSkill: NormalSkillId.RibcageShield,
+    },
+    {
+      id: 'skel_skill_skeletal_rush_alt',
+      characterId: CharacterId.Skeleton,
+      name: "Reaper's Wake",
+      category: 'Skeletal Rush · Volley',
+      description: 'Skeletal Rush fires 2 piercing Bone Spears forward & grants +10% Ult charge.',
+      requiredNormalSkill: NormalSkillId.SkeletalRush,
+    },
+    {
+      id: 'skel_skill_bone_storm_alt',
+      characterId: CharacterId.Skeleton,
+      name: 'Siphoning Vortex',
+      category: 'Bone Storm · Leech',
+      description: 'Gain +18% Move Speed during Bone Storm and heal 2 HP when its hits crit.',
+      requiredNormalSkill: NormalSkillId.BoneStorm,
+    },
+    {
+      id: 'skel_ult_colossus_alt',
+      characterId: CharacterId.Skeleton,
+      name: "Sovereign's Wrath",
+      category: 'Bone Colossus · Barrage',
+      description: 'Bone Colossus slam deals +45% damage and fires 8 radial Bone Spears.',
+      requiredUltimateSkill: UltimateSkillId.BoneColossus,
+    },
+    {
+      id: 'skel_ult_army_alt',
+      characterId: CharacterId.Skeleton,
+      name: 'Ossuary Warcry',
+      category: 'Army of Bones · Rally',
+      description: 'Army of Bones grants max Unyielding stacks, heals 16 HP, & empowers warriors.',
+      requiredUltimateSkill: UltimateSkillId.ArmyOfBones,
+    },
+    {
+      id: 'skel_ult_reaper_alt',
+      characterId: CharacterId.Skeleton,
+      name: 'Guillotine Decree',
+      category: "Reaper's Judgment",
+      description: "Reaper's Judgment deals +30% sweep damage and refunds 25% Ultimate charge.",
       requiredUltimateSkill: UltimateSkillId.ReapersJudgment,
     },
   ],
@@ -1405,6 +1796,99 @@ export const CHARACTER_STATUE_BLESSINGS: Record<CharacterId, RunBlessing[]> = {
       description: 'Thousand Daggers lasts +0.8s, widens +12%, and resets Normal Skills.',
       requiredUltimateSkill: UltimateSkillId.ThousandDaggers,
     },
+    // Strategic Build Expansion — Goblin Core, Normal & Ultimate Specializations
+    {
+      id: 'gob_gilded_cutthroat',
+      characterId: CharacterId.Goblin,
+      name: 'Gilded Cutthroat',
+      category: 'Gold · Scaling DMG',
+      description: 'Slain foes drop +3 Gold; gain +1% damage per 10 Gold carried (up to +25%).',
+    },
+    {
+      id: 'gob_executioner_guile',
+      characterId: CharacterId.Goblin,
+      name: "Executioner's Guile",
+      category: 'Execute · Crit',
+      description: 'Guaranteed Critical Strikes vs foes below 30% HP and +15% Ambush damage.',
+    },
+    {
+      id: 'gob_shadow_veil',
+      characterId: CharacterId.Goblin,
+      name: 'Shadow-Silk Veil',
+      category: 'Vitality · Dodge',
+      description: '+16 Max HP, heals 16 HP now, +5% Evasion, & +6% Ult charge on dodge.',
+    },
+    {
+      id: 'gob_festering_toxins',
+      characterId: CharacterId.Goblin,
+      name: 'Festering Toxins',
+      category: 'Venom · Amplify',
+      description: 'Poisoned or Slowed enemies suffer +18% bonus damage from all sources.',
+    },
+    {
+      id: 'gob_skill_dagger_flurry_alt',
+      characterId: CharacterId.Goblin,
+      name: 'Venomous Barrage',
+      category: 'Dagger Flurry · Leech',
+      description: 'Dagger Flurry coats every hit in Venom and heals 4 HP on the final slash.',
+      requiredNormalSkill: NormalSkillId.DaggerFlurry,
+    },
+    {
+      id: 'gob_skill_shadowstep_alt',
+      characterId: CharacterId.Goblin,
+      name: 'Flashpowder Blink',
+      category: 'Shadowstep · Stun',
+      description: 'Shadowstep detonates a blinding smoke bomb on arrival, stunning foes 0.8s.',
+      requiredNormalSkill: NormalSkillId.Shadowstep,
+    },
+    {
+      id: 'gob_skill_explosive_trap_alt',
+      characterId: CharacterId.Goblin,
+      name: 'Cluster Charges',
+      category: 'Explosive Trap · Twin',
+      description: 'Deploys 2 Explosive Traps side-by-side that arm faster and stun 0.5s.',
+      requiredNormalSkill: NormalSkillId.ExplosiveTrap,
+    },
+    {
+      id: 'gob_skill_windrunner_alt',
+      characterId: CharacterId.Goblin,
+      name: 'Cyclone Reflex',
+      category: 'Windrunner · Crit',
+      description: 'Windrunner grants +20% Crit Chance while active and blasts foes on cast.',
+      requiredNormalSkill: NormalSkillId.Windrunner,
+    },
+    {
+      id: 'gob_skill_poisoned_blades_alt',
+      characterId: CharacterId.Goblin,
+      name: 'Neurotoxin Coating',
+      category: 'Poisoned Blades · Slow',
+      description: 'Poisoned Blades slows foes 18% more and adds +15% Crit Chance while active.',
+      requiredNormalSkill: NormalSkillId.PoisonedBlades,
+    },
+    {
+      id: 'gob_ult_phantom_alt',
+      characterId: CharacterId.Goblin,
+      name: 'Gale Assassination',
+      category: 'Phantom Frenzy · Haste',
+      description: 'Phantom Frenzy triggers Windrunner for 4s and coats every strike in Venom.',
+      requiredUltimateSkill: UltimateSkillId.PhantomFrenzy,
+    },
+    {
+      id: 'gob_ult_thieves_alt',
+      characterId: CharacterId.Goblin,
+      name: 'Crown of Greed',
+      category: 'King of Thieves · Buff',
+      description: 'King of Thieves extends Stolen Might +3s and activates Poisoned Blades 5s.',
+      requiredUltimateSkill: UltimateSkillId.KingOfThieves,
+    },
+    {
+      id: 'gob_ult_thousand_alt',
+      characterId: CharacterId.Goblin,
+      name: 'Shrapnel Finale',
+      category: 'Thousand Daggers · Trap',
+      description: 'Thousand Daggers fires +6 radial blades & drops an Explosive Trap in center.',
+      requiredUltimateSkill: UltimateSkillId.ThousandDaggers,
+    },
   ],
 
   // === GNOME STATUE BLESSINGS (4 Core/Passive + 5 Normal-Gated + 3 Ult-Gated) ===
@@ -1499,6 +1983,99 @@ export const CHARACTER_STATUE_BLESSINGS: Record<CharacterId, RunBlessing[]> = {
       name: 'Worldshatter',
       category: 'Cataclysmic Slam',
       description: 'Cataclysmic Slam unleashes a 4th wave, stuns 1s, & resets Skills.',
+      requiredUltimateSkill: UltimateSkillId.CataclysmicSlam,
+    },
+    // Strategic Build Expansion — Gnome Core, Normal & Ultimate Specializations
+    {
+      id: 'gnome_seismic_momentum',
+      characterId: CharacterId.Gnome,
+      name: 'Seismic Momentum',
+      category: 'Stride · Shatter',
+      description: '+12% Move Speed and +22% damage against Stunned or Rooted foes.',
+    },
+    {
+      id: 'gnome_forgeheart_furnace',
+      characterId: CharacterId.Gnome,
+      name: 'Forgeheart Furnace',
+      category: 'Aura · Forge Pulse',
+      description: 'Pulses a fiery forge shockwave every 2.0s in combat, damaging nearby foes.',
+    },
+    {
+      id: 'gnome_shatterstone_grip',
+      characterId: CharacterId.Gnome,
+      name: 'Shatterstone Grip',
+      category: 'Critical · Impact',
+      description: '+12% Crit Chance and +20% Crit Damage; Critical Strikes briefly stagger foes.',
+    },
+    {
+      id: 'gnome_stoneborn_regen',
+      characterId: CharacterId.Gnome,
+      name: 'Stoneborn Vigor',
+      category: 'Regen · Sustain',
+      description: 'Regenerates 3 HP every 2.5s in combat and boosts all healing by +25%.',
+    },
+    {
+      id: 'gnome_skill_iron_fist_alt',
+      characterId: CharacterId.Gnome,
+      name: 'Forgebreaker Haymaker',
+      category: 'Iron Fist · Crit Guard',
+      description: 'Iron Fist guarantees a Critical Strike and grants 1.8s of Fortress Stance.',
+      requiredNormalSkill: NormalSkillId.IronFist,
+    },
+    {
+      id: 'gnome_skill_fortress_stance_alt',
+      characterId: CharacterId.Gnome,
+      name: 'Juggernaut Bastion',
+      category: 'Fortress Stance · Might',
+      description: 'While Fortress Stance is active, gain +24% Attack Damage & faster CD recovery.',
+      requiredNormalSkill: NormalSkillId.FortressStance,
+    },
+    {
+      id: 'gnome_skill_groundbreaker_alt',
+      characterId: CharacterId.Gnome,
+      name: 'Magma Faultline',
+      category: 'Groundbreaker · Reset',
+      description: 'Groundbreaker deals +22% damage and refunds 1.5s CD when hitting 2+ foes.',
+      requiredNormalSkill: NormalSkillId.Groundbreaker,
+    },
+    {
+      id: 'gnome_skill_magnetic_guard_alt',
+      characterId: CharacterId.Gnome,
+      name: 'Lodestone Vortex',
+      category: 'Magnetic Guard · Pull',
+      description: 'Casting Magnetic Guard pulls nearby foes inward, slows 30%, & adds +12% Ult.',
+      requiredNormalSkill: NormalSkillId.MagneticGuard,
+    },
+    {
+      id: 'gnome_skill_earthen_grasp_alt',
+      characterId: CharacterId.Gnome,
+      name: 'Granite Siphon',
+      category: 'Earthen Grasp · Heal',
+      description: 'Earthen Grasp heals 4 HP per enemy rooted and stuns them 0.5s on cast.',
+      requiredNormalSkill: NormalSkillId.EarthenGrasp,
+    },
+    {
+      id: 'gnome_ult_mountain_alt',
+      characterId: CharacterId.Gnome,
+      name: 'Volcanic Core',
+      category: "Mountain's Heart · Coil",
+      description: "Mountain's Heart slam deals +45% damage & activates Magnetic Guard for 5s.",
+      requiredUltimateSkill: UltimateSkillId.MountainsHeart,
+    },
+    {
+      id: 'gnome_ult_rampart_alt',
+      characterId: CharacterId.Gnome,
+      name: 'Sanctuary Citadel',
+      category: "Titan's Rampart · Guard",
+      description: "Titan's Rampart heals 20% Max HP on cast & activates Fortress Stance 4.5s.",
+      requiredUltimateSkill: UltimateSkillId.TitansRampart,
+    },
+    {
+      id: 'gnome_ult_cataclysm_alt',
+      characterId: CharacterId.Gnome,
+      name: 'Tectonic Snare',
+      category: 'Cataclysmic Slam · Root',
+      description: 'Cataclysmic Slam deals +22% wave damage and roots struck foes for 2.0s.',
       requiredUltimateSkill: UltimateSkillId.CataclysmicSlam,
     },
   ],
@@ -1599,16 +2176,364 @@ export const CHARACTER_STATUE_BLESSINGS: Record<CharacterId, RunBlessing[]> = {
       description: "Death's Passage pulls +15% wider, detonates for +20% dmg, & resets Skills.",
       requiredUltimateSkill: UltimateSkillId.DeathsPassage,
     },
+    // Strategic Build Expansion — Ghost Core, Normal & Ultimate Specializations
+    {
+      id: 'ghost_phantom_harvester',
+      characterId: CharacterId.Ghost,
+      name: 'Phantom Harvester',
+      category: 'Reap · Spirit Orb',
+      description: 'Slaying an enemy heals 3 HP, grants +6% Ult charge, & fires a Spirit Orb.',
+    },
+    {
+      id: 'ghost_frostbite_haunt',
+      characterId: CharacterId.Ghost,
+      name: 'Frostbite Haunt',
+      category: 'Chill & Fear · Bonus DMG',
+      description: 'Slowed or Feared enemies take +22% bonus damage from all spectral hits.',
+    },
+    {
+      id: 'ghost_astral_conduit',
+      characterId: CharacterId.Ghost,
+      name: 'Astral Conduit',
+      category: 'Spellcraft · Haste',
+      description: '-14% Normal Skill cooldowns and +15% Skill & Ultimate damage.',
+    },
+    {
+      id: 'ghost_spectral_shroud',
+      characterId: CharacterId.Ghost,
+      name: 'Banshee Veil',
+      category: 'Phase · Counter Nova',
+      description: 'Phasing through an attack unleashes an icy shockwave that chills nearby foes.',
+    },
+    {
+      id: 'ghost_skill_spectral_bolt_alt',
+      characterId: CharacterId.Ghost,
+      name: 'Soulpiercer Lance',
+      category: 'Spectral Bolt · Reset',
+      description: 'Spectral Bolt deals +24% damage, +25% Crit Chance, & cuts CD 0.7s on hit.',
+      requiredNormalSkill: NormalSkillId.SpectralBolt,
+    },
+    {
+      id: 'ghost_skill_phantom_dash_alt',
+      characterId: CharacterId.Ghost,
+      name: 'Astral Nova Step',
+      category: 'Phantom Dash · Burst',
+      description: 'Phantom Dash erupts a spectral burst on cast and heals 4 HP per foe hit.',
+      requiredNormalSkill: NormalSkillId.PhantomDash,
+    },
+    {
+      id: 'ghost_skill_soul_drain_alt',
+      characterId: CharacterId.Ghost,
+      name: 'Spirit Overload',
+      category: 'Soul Drain · Charge',
+      description: 'Soul Drain slows tethered foes 30% and grants +3% Ultimate charge per tick.',
+      requiredNormalSkill: NormalSkillId.SoulDrain,
+    },
+    {
+      id: 'ghost_skill_wailing_scream_alt',
+      characterId: CharacterId.Ghost,
+      name: 'Shattering Wail',
+      category: 'Wailing Scream · Crit',
+      description: 'Wailing Scream deals +28% damage with +30% Crit Chance & stuns 0.6s.',
+      requiredNormalSkill: NormalSkillId.WailingScream,
+    },
+    {
+      id: 'ghost_skill_haunted_possession_alt',
+      characterId: CharacterId.Ghost,
+      name: 'Soul Parasite',
+      category: 'Haunted Possession · Mend',
+      description: 'Exorcism heals 14% Max HP and cuts Normal Skill cooldowns by 1.5s.',
+      requiredNormalSkill: NormalSkillId.HauntedPossession,
+    },
+    {
+      id: 'ghost_ult_nightmare_alt',
+      characterId: CharacterId.Ghost,
+      name: 'Siphoning Dread',
+      category: 'Eternal Nightmare · Drain',
+      description: 'Eternal Nightmare terror pulses deal +35% damage and heal 4 HP on hit.',
+      requiredUltimateSkill: UltimateSkillId.EternalNightmare,
+    },
+    {
+      id: 'ghost_ult_legion_alt',
+      characterId: CharacterId.Ghost,
+      name: 'Soulbound Choir',
+      category: 'Spirit Legion · Tether',
+      description: 'Spirit Legion triggers Soul Drain on cast and refunds 20% Ultimate charge.',
+      requiredUltimateSkill: UltimateSkillId.SpiritLegion,
+    },
+    {
+      id: 'ghost_ult_passage_alt',
+      characterId: CharacterId.Ghost,
+      name: 'Eventide Collapse',
+      category: "Death's Passage · Mend",
+      description: "Death's Passage heals 15% Max HP on cast and chills nearby foes 30%.",
+      requiredUltimateSkill: UltimateSkillId.DeathsPassage,
+    },
+  ],
+
+  // === KOBOLD STATUE BLESSINGS (8 Core/Passive + 10 Normal-Gated + 6 Ult-Gated) ===
+  [CharacterId.Kobold]: [
+    {
+      id: 'kobold_twin_ratchet',
+      characterId: CharacterId.Kobold,
+      name: 'Twin-Notch Ratchet',
+      category: 'Basic Crossbow · Twin Shot',
+      description: 'Every 3rd crossbow shot fires 2 parallel crit-empowered bolts (+18% DMG).',
+    },
+    {
+      id: 'kobold_hunters_quarry',
+      characterId: CharacterId.Kobold,
+      name: "Hunter's Quarry",
+      category: "Hunter's Precision",
+      description: "Hunter's Precision stacks up to 7x and crits on 4+ stack foes refund 0.35s CDs.",
+    },
+    {
+      id: 'kobold_clockwork_overdrive',
+      characterId: CharacterId.Kobold,
+      name: 'Clockwork Overdrive',
+      category: 'Mechanical Expertise',
+      description: '+15% Attack Speed; casting any skill grants +28% Move & Reload Speed for 3s.',
+    },
+    {
+      id: 'kobold_serrated_broadheads',
+      characterId: CharacterId.Kobold,
+      name: 'Serrated Broadheads',
+      category: 'Crit · Ricochet',
+      description: '+24% Critical Damage; Critical crossbow bolts ricochet to a nearby enemy.',
+    },
+    {
+      id: 'kobold_trappers_ambush',
+      characterId: CharacterId.Kobold,
+      name: "Trapper's Ambush",
+      category: 'Control · Expose',
+      description: 'Rooted, Stunned, or Vulnerable enemies take +24% bonus crossbow & skill damage.',
+    },
+    {
+      id: 'kobold_dragonscale_quiver',
+      characterId: CharacterId.Kobold,
+      name: 'Dragonscale Quiver',
+      category: 'Vitality · Sustain',
+      description: '+18 Max HP, heals 18 HP now, and slaying Marked foes restores 3 HP.',
+    },
+    {
+      id: 'kobold_alchemical_fletching',
+      characterId: CharacterId.Kobold,
+      name: 'Alchemical Fletching',
+      category: 'Elemental Bolts',
+      description: 'Every 4th crossbow bolt is imbued with Frost or Lightning, slowing or shocking foes.',
+    },
+    {
+      id: 'kobold_scavenger_springs',
+      characterId: CharacterId.Kobold,
+      name: 'Scavenger Springs',
+      category: 'Kills · Tempo',
+      description: 'Slaying an enemy grants +6% Ultimate charge and cuts Normal Skill CDs by 0.5s.',
+    },
+    // Normal Skill-Specific Blessings (ONLY appear when equipped!)
+    {
+      id: 'kobold_skill_piercing_bolt',
+      characterId: CharacterId.Kobold,
+      name: 'Tungsten Bodkin',
+      category: 'Piercing Bolt',
+      description: 'Piercing Bolt fires a secondary parallel lance and deals +22% Crit Damage.',
+      requiredNormalSkill: NormalSkillId.PiercingBolt,
+    },
+    {
+      id: 'kobold_skill_piercing_bolt_alt',
+      characterId: CharacterId.Kobold,
+      name: 'Armor-Cracking Skewer',
+      category: 'Piercing Bolt · Expose',
+      description: 'Piercing Bolt applies 2 Hunter Marks & Exposes struck foes for 3s.',
+      requiredNormalSkill: NormalSkillId.PiercingBolt,
+    },
+    {
+      id: 'kobold_skill_rapid_reload',
+      characterId: CharacterId.Kobold,
+      name: 'Bottomless Drum',
+      category: 'Rapid Reload',
+      description: 'Rapid Reload fires +2 extra bolts and its final bolt is a guaranteed Crit.',
+      requiredNormalSkill: NormalSkillId.RapidReload,
+    },
+    {
+      id: 'kobold_skill_rapid_reload_alt',
+      characterId: CharacterId.Kobold,
+      name: 'Quick-Crank Evasion',
+      category: 'Rapid Reload · Mobility',
+      description: 'Rapid Reload grants +35% Move Speed for 2.5s and heals 2 HP on crit hits.',
+      requiredNormalSkill: NormalSkillId.RapidReload,
+    },
+    {
+      id: 'kobold_skill_explosive_bolt',
+      characterId: CharacterId.Kobold,
+      name: 'Cluster Munitions',
+      category: 'Explosive Bolt',
+      description: 'Explosive Bolt blast radius +25%, +20% damage, and stuns foes for 0.8s.',
+      requiredNormalSkill: NormalSkillId.ExplosiveBolt,
+    },
+    {
+      id: 'kobold_skill_explosive_bolt_alt',
+      characterId: CharacterId.Kobold,
+      name: 'Thermite Payload',
+      category: 'Explosive Bolt · Expose',
+      description: 'Explosive Bolt sunders armor, making blasted enemies Vulnerable for 3.5s.',
+      requiredNormalSkill: NormalSkillId.ExplosiveBolt,
+    },
+    {
+      id: 'kobold_skill_snare_trap',
+      characterId: CharacterId.Kobold,
+      name: 'Double-Jaw Rig',
+      category: 'Snare Trap',
+      description: 'Snare Trap deploys 2 traps at once, arms instantly, and roots +0.8s longer.',
+      requiredNormalSkill: NormalSkillId.SnareTrap,
+    },
+    {
+      id: 'kobold_skill_snare_trap_alt',
+      characterId: CharacterId.Kobold,
+      name: 'Electrified Jaws',
+      category: 'Snare Trap · Shock',
+      description: 'Triggered Snare Traps unleash a shock burst (+35% DMG) & apply 3 Hunter Marks.',
+      requiredNormalSkill: NormalSkillId.SnareTrap,
+    },
+    {
+      id: 'kobold_skill_multi_shot',
+      characterId: CharacterId.Kobold,
+      name: 'Razor Fan Volley',
+      category: 'Multi-Shot',
+      description: 'Multi-Shot fires 9 piercing bolts in a wider arc with +20% Crit Chance.',
+      requiredNormalSkill: NormalSkillId.MultiShot,
+    },
+    {
+      id: 'kobold_skill_multi_shot_alt',
+      characterId: CharacterId.Kobold,
+      name: 'Concussive Volley',
+      category: 'Multi-Shot · Control',
+      description: 'Multi-Shot slows struck enemies by 35% for 2.5s and refunds 0.6s CD if 3+ hit.',
+      requiredNormalSkill: NormalSkillId.MultiShot,
+    },
+    // Ultimate Skill-Specific Blessings (ONLY appear when equipped!)
+    {
+      id: 'kobold_ult_barrage',
+      characterId: CharacterId.Kobold,
+      name: 'Wyrmfire Skyfall',
+      category: "Dragon's Barrage",
+      description: "Dragon's Barrage lasts +1.0s longer, +22% radius, Exposes foes, & resets Skills.",
+      requiredUltimateSkill: UltimateSkillId.DragonsBarrage,
+    },
+    {
+      id: 'kobold_ult_barrage_alt',
+      characterId: CharacterId.Kobold,
+      name: 'Crimson Hailstorm',
+      category: "Dragon's Barrage · Mend",
+      description: "Dragon's Barrage heals 12 HP on cast and slows enemies inside the storm 40%.",
+      requiredUltimateSkill: UltimateSkillId.DragonsBarrage,
+    },
+    {
+      id: 'kobold_ult_artificer',
+      characterId: CharacterId.Kobold,
+      name: 'Quad-Ballista Network',
+      category: 'Master Artificer',
+      description: 'Deploys +1 extra automated turret (4 total), +25% fire rate, & resets Skills.',
+      requiredUltimateSkill: UltimateSkillId.MasterArtificer,
+    },
+    {
+      id: 'kobold_ult_artificer_alt',
+      characterId: CharacterId.Kobold,
+      name: 'Piercing Auto-Bolts',
+      category: 'Master Artificer · Pierce',
+      description: 'Turret bolts pierce enemies, stack Hunter Marks, and heal 10 HP on deploy.',
+      requiredUltimateSkill: UltimateSkillId.MasterArtificer,
+    },
+    {
+      id: 'kobold_ult_arsenal',
+      characterId: CharacterId.Kobold,
+      name: 'Grandmaster Ordnance',
+      category: "Kobold's Deadly Arsenal",
+      description: 'Deadly Arsenal fires +3 extra elemental volleys, +25% Crit, & resets Skills.',
+      requiredUltimateSkill: UltimateSkillId.KoboldsDeadlyArsenal,
+    },
+    {
+      id: 'kobold_ult_arsenal_alt',
+      characterId: CharacterId.Kobold,
+      name: 'Overclocked Harness',
+      category: "Kobold's Deadly Arsenal · Ward",
+      description: 'Grants +35% Move Speed, heals 14 HP, & refunds 20% Ult charge during Arsenal.',
+      requiredUltimateSkill: UltimateSkillId.KoboldsDeadlyArsenal,
+    },
   ],
 };
+
+/**
+ * Maximum number of blessings a player can acquire in a single run.
+ * Keeps the exact original blessing cap intact while offering a deep strategic pool.
+ */
+export const MAX_RUN_BLESSINGS = 7;
+
+/**
+ * Universal Sanctuary Relic & Pact Blessings available to all heroes.
+ * Creates cross-cutting build archetypes (Glass Cannon, Sustain, Ult Tempo, Cooldown Surge, Boss Hunter, Chain Lightning).
+ */
+export const UNIVERSAL_STATUE_BLESSINGS: RunBlessing[] = [
+  {
+    id: 'relic_glass_scythe',
+    isUniversal: true,
+    name: 'Crimson Scythe Pact',
+    category: 'Relic Pact · High Risk',
+    description: '+28% all damage dealt, but reduces Max HP by 15%.',
+  },
+  {
+    id: 'relic_lantern_vitality',
+    isUniversal: true,
+    name: "Hearthkeeper's Ember",
+    category: 'Relic · Room Sustain',
+    description: '+20 Max HP, heals 20 HP now, & restores 12% Max HP on room clear.',
+  },
+  {
+    id: 'relic_soul_dynamo',
+    isUniversal: true,
+    name: 'Soulforged Dynamo',
+    category: 'Relic · Ultimate Tempo',
+    description: '+30% Ultimate charge gain from all sources and -15% Ultimate cooldown.',
+  },
+  {
+    id: 'relic_chrono_hourglass',
+    isUniversal: true,
+    name: 'Chrono Hourglass',
+    category: 'Relic · Cooldown Surge',
+    description: '-14% Normal Skill cooldowns; casting an Ultimate grants +22% DMG for 5s.',
+  },
+  {
+    id: 'relic_gravebell_toll',
+    isUniversal: true,
+    name: 'Toll of the Gravebell',
+    category: 'Relic · Boss & Execute',
+    description: '+22% damage against Bosses and enemies below 40% HP.',
+  },
+  {
+    id: 'relic_storm_reliquary',
+    isUniversal: true,
+    name: 'Stormbound Reliquary',
+    category: 'Relic · Chain Arc',
+    description: 'Every 4th basic attack arcs spectral lightning to up to 2 nearby enemies.',
+  },
+];
 
 export function getStatueBlessingsForCharacter(charId: CharacterId): RunBlessing[] {
   return CHARACTER_STATUE_BLESSINGS[charId] ?? CHARACTER_STATUE_BLESSINGS[CharacterId.Zombie];
 }
 
+export function getBlessingById(id: string): RunBlessing | undefined {
+  const universal = UNIVERSAL_STATUE_BLESSINGS.find((b) => b.id === id);
+  if (universal) return universal;
+  for (const list of Object.values(CHARACTER_STATUE_BLESSINGS)) {
+    const found = list.find((b) => b.id === id);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 /**
  * Strictly filters a character's Lantern Statue blessings to ONLY those in line with
- * the character's currently equipped 2 Normal Skills and 1 Ultimate Skill (plus core/passive blessings).
+ * the character's currently equipped 2 Normal Skills and 1 Ultimate Skill (plus core/passive & universal relic blessings).
  * Blessings for unequipped skills are guaranteed never to appear.
  */
 export function getEligibleStatueBlessings(
@@ -1616,7 +2541,7 @@ export function getEligibleStatueBlessings(
   loadout: EquippedLoadout
 ): RunBlessing[] {
   const pool = getStatueBlessingsForCharacter(charId);
-  return pool.filter((b) => {
+  const heroPool = pool.filter((b) => {
     if (b.requiredNormalSkill && !loadout.normalSkills.includes(b.requiredNormalSkill)) {
       return false;
     }
@@ -1625,6 +2550,7 @@ export function getEligibleStatueBlessings(
     }
     return true;
   });
+  return [...heroPool, ...UNIVERSAL_STATUE_BLESSINGS];
 }
 
 export const EMPTY_UPGRADE_RANKS: CharacterUpgradeRanks = {
@@ -1641,142 +2567,8 @@ const PREV_V3_STORAGE_KEY = 'hearth_and_bone_save_v3';
 const PREV_STORAGE_KEY = 'hearth_and_bone_save_v2';
 const LEGACY_STORAGE_KEY = 'hearth_and_bone_save_v1';
 
-export const DIFFICULTY_CONFIGS: Record<DifficultyLevel, DifficultyConfig> = {
-  [DifficultyLevel.Easy]: {
-    id: DifficultyLevel.Easy,
-    level: DifficultyLevel.Easy,
-    name: 'Easy',
-    label: 'Easy',
-    tagline: 'Cozy Baseline',
-    badge: '1 Stage · 1-1 to 1-3',
-    color: '#4ADE80',
-    bgGrad: 'from-[#14532D]/40 to-[#052E16]/40',
-    borderClass: 'border-[#4ADE80]/50',
-    accentText: 'text-[#4ADE80]',
-    stages: 1,
-    maxFloors: 3,
-    victoryShards: 25,
-    enemyHpMult: 1.0,
-    enemyDmgMult: 1.0,
-    enemySpeedMult: 1.0,
-    enemyAttackCooldownMult: 1.0,
-    extraEnemiesPerWave: 0,
-    wavesPerCombatRoom: 2,
-    shardMultiplier: 1.0,
-    goldMultiplier: 1.0,
-    xpMultiplier: 1.0,
-    description: 'The gentle baseline dungeon experience. Perfect for exploring characters and core skill synergies.',
-  },
-  [DifficultyLevel.Normal]: {
-    id: DifficultyLevel.Normal,
-    level: DifficultyLevel.Normal,
-    name: 'Normal',
-    label: 'Normal',
-    tagline: 'Crypt Adventurer',
-    badge: '1 Stage · +60% Shards',
-    color: '#38BDF8',
-    bgGrad: 'from-[#0369A1]/40 to-[#082F49]/40',
-    borderClass: 'border-[#38BDF8]/50',
-    accentText: 'text-[#38BDF8]',
-    stages: 1,
-    maxFloors: 3,
-    victoryShards: 40,
-    enemyHpMult: 1.45,
-    enemyDmgMult: 1.35,
-    enemySpeedMult: 1.08,
-    enemyAttackCooldownMult: 0.92,
-    extraEnemiesPerWave: 1,
-    wavesPerCombatRoom: 2,
-    shardMultiplier: 1.6,
-    goldMultiplier: 1.4,
-    xpMultiplier: 1.3,
-    description: 'Enemies hit harder, move faster, and absorb more punishment. Yields +60% Soul Shards.',
-  },
-  [DifficultyLevel.Hard]: {
-    id: DifficultyLevel.Hard,
-    level: DifficultyLevel.Hard,
-    name: 'Hard',
-    label: 'Hard',
-    tagline: '2 Stages · Ascend to 2-1',
-    badge: '2 Stages (1-1 to 2-3) · 2.8x Shards',
-    color: '#F59E0B',
-    bgGrad: 'from-[#B45309]/40 to-[#451A03]/40',
-    borderClass: 'border-[#F59E0B]/50',
-    accentText: 'text-[#F59E0B]',
-    stages: 2,
-    maxFloors: 6,
-    victoryShards: 75,
-    enemyHpMult: 2.2,
-    enemyDmgMult: 1.85,
-    enemySpeedMult: 1.18,
-    enemyAttackCooldownMult: 0.82,
-    extraEnemiesPerWave: 2,
-    wavesPerCombatRoom: 3,
-    shardMultiplier: 2.8,
-    goldMultiplier: 2.0,
-    xpMultiplier: 1.8,
-    description: 'Extends the dungeon into 2 full stages! Clear 1-3 to ascend to the Sunken Catacombs (2-1 to 2-3). 3 enemy waves per room.',
-  },
-  [DifficultyLevel.Torment]: {
-    id: DifficultyLevel.Torment,
-    level: DifficultyLevel.Torment,
-    name: 'Torment',
-    label: 'Torment',
-    tagline: '3 Stages · Ascend to 3-1',
-    badge: '3 Stages (1-1 to 3-3) · 4.5x Shards',
-    color: '#FB7185',
-    bgGrad: 'from-[#9F1239]/40 to-[#4C0519]/40',
-    borderClass: 'border-[#FB7185]/50',
-    accentText: 'text-[#FB7185]',
-    stages: 3,
-    maxFloors: 9,
-    victoryShards: 135,
-    enemyHpMult: 3.6,
-    enemyDmgMult: 2.6,
-    enemySpeedMult: 1.28,
-    enemyAttackCooldownMult: 0.72,
-    extraEnemiesPerWave: 3,
-    wavesPerCombatRoom: 3,
-    shardMultiplier: 4.5,
-    goldMultiplier: 3.0,
-    xpMultiplier: 2.4,
-    description: 'Descend through 3 harrowing stages down to the Abyssal Sepulcher (3-1 to 3-3). Lethal enemy swarms and relentless strikes.',
-  },
-  [DifficultyLevel.Nightmare]: {
-    id: DifficultyLevel.Nightmare,
-    level: DifficultyLevel.Nightmare,
-    name: 'Nightmare',
-    label: 'Nightmare',
-    tagline: '4 Stages · Impossible For New Players',
-    badge: '4 Stages (1-1 to 4-3) · 8.0x Shards · LETHAL',
-    color: '#A855F7',
-    bgGrad: 'from-[#6B21A8]/50 to-[#3B0764]/50',
-    borderClass: 'border-[#A855F7]/70',
-    accentText: 'text-[#C084FC]',
-    stages: 4,
-    maxFloors: 12,
-    victoryShards: 250,
-    enemyHpMult: 6.2,
-    enemyDmgMult: 4.2,
-    enemySpeedMult: 1.42,
-    enemyAttackCooldownMult: 0.6,
-    extraEnemiesPerWave: 5,
-    wavesPerCombatRoom: 3,
-    shardMultiplier: 8.0,
-    goldMultiplier: 5.0,
-    xpMultiplier: 3.5,
-    description: 'Impossible for new players! Enormous monster swarms that 2-shot unfortified heroes, swift projectiles, and 4 grueling stages culminating in the Supreme Sovereign.',
-    warningNote: 'EXTREMELY LETHAL — Requires Max Guild Upgrades & Flawless Mastery',
-  },
-};
-
-export const DIFFICULTY_LIST: DifficultyConfig[] = [
-  DIFFICULTY_CONFIGS[DifficultyLevel.Easy],
-  DIFFICULTY_CONFIGS[DifficultyLevel.Normal],
-  DIFFICULTY_CONFIGS[DifficultyLevel.Hard],
-  DIFFICULTY_CONFIGS[DifficultyLevel.Torment],
-  DIFFICULTY_CONFIGS[DifficultyLevel.Nightmare],
-];
+import { DIFFICULTY_CONFIGS, DIFFICULTY_LIST } from './difficultyData';
+export { DIFFICULTY_CONFIGS, DIFFICULTY_LIST };
 
 export const DEFAULT_SAVE_DATA: GuildSaveData = {
   selectedCharacter: CharacterId.Zombie,
@@ -1791,6 +2583,7 @@ export const DEFAULT_SAVE_DATA: GuildSaveData = {
     [CharacterId.Goblin]: { ...EMPTY_UPGRADE_RANKS },
     [CharacterId.Gnome]: { ...EMPTY_UPGRADE_RANKS },
     [CharacterId.Ghost]: { ...EMPTY_UPGRADE_RANKS },
+    [CharacterId.Kobold]: { ...EMPTY_UPGRADE_RANKS },
   },
   loadouts: {
     [CharacterId.Zombie]: structuredClone(CHARACTER_ROSTER[CharacterId.Zombie].defaultLoadout),
@@ -1798,8 +2591,11 @@ export const DEFAULT_SAVE_DATA: GuildSaveData = {
     [CharacterId.Goblin]: structuredClone(CHARACTER_ROSTER[CharacterId.Goblin].defaultLoadout),
     [CharacterId.Gnome]: structuredClone(CHARACTER_ROSTER[CharacterId.Gnome].defaultLoadout),
     [CharacterId.Ghost]: structuredClone(CHARACTER_ROSTER[CharacterId.Ghost].defaultLoadout),
+    [CharacterId.Kobold]: structuredClone(CHARACTER_ROSTER[CharacterId.Kobold].defaultLoadout),
   },
   muted: false,
+  joystickScale: 1.0,
+  skillButtonScale: 1.0,
 };
 
 function sanitizeCharacterLoadout(
@@ -1869,6 +2665,8 @@ export function loadGuildSave(): GuildSaveData {
         ? CharacterId.Gnome
         : parsed.selectedCharacter === CharacterId.Ghost
         ? CharacterId.Ghost
+        : parsed.selectedCharacter === CharacterId.Kobold
+        ? CharacterId.Kobold
         : CharacterId.Zombie;
 
     const zombieLoadout = sanitizeCharacterLoadout(
@@ -1890,6 +2688,10 @@ export function loadGuildSave(): GuildSaveData {
     const ghostLoadout = sanitizeCharacterLoadout(
       CharacterId.Ghost,
       parsed.loadouts?.[CharacterId.Ghost]
+    );
+    const koboldLoadout = sanitizeCharacterLoadout(
+      CharacterId.Kobold,
+      parsed.loadouts?.[CharacterId.Kobold]
     );
 
     const legacyMapped: CharacterUpgradeRanks | undefined = parsed.upgrades
@@ -1923,6 +2725,10 @@ export function loadGuildSave(): GuildSaveData {
         parsed.characterUpgrades?.[CharacterId.Ghost] ??
           (selectedCharacter === CharacterId.Ghost ? legacyMapped : undefined)
       ),
+      [CharacterId.Kobold]: sanitizeUpgradeRanks(
+        parsed.characterUpgrades?.[CharacterId.Kobold] ??
+          (selectedCharacter === CharacterId.Kobold ? legacyMapped : undefined)
+      ),
     };
 
     const selectedDifficulty =
@@ -1935,6 +2741,11 @@ export function loadGuildSave(): GuildSaveData {
         : parsed.selectedDifficulty === DifficultyLevel.Nightmare
         ? DifficultyLevel.Nightmare
         : DifficultyLevel.Easy;
+
+    const clampUiScale = (val: unknown): number => {
+      if (typeof val !== 'number' || Number.isNaN(val)) return 1.0;
+      return Math.max(0.7, Math.min(1.35, Math.round(val * 100) / 100));
+    };
 
     return {
       selectedCharacter,
@@ -1952,8 +2763,11 @@ export function loadGuildSave(): GuildSaveData {
         [CharacterId.Goblin]: goblinLoadout,
         [CharacterId.Gnome]: gnomeLoadout,
         [CharacterId.Ghost]: ghostLoadout,
+        [CharacterId.Kobold]: koboldLoadout,
       },
       muted: Boolean(parsed.muted),
+      joystickScale: clampUiScale(parsed.joystickScale),
+      skillButtonScale: clampUiScale(parsed.skillButtonScale),
     };
   } catch {
     return structuredClone(DEFAULT_SAVE_DATA);

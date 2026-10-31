@@ -7,6 +7,7 @@ import {
   Maximize2,
   Minimize2,
   RotateCcw,
+  Settings,
   Shield,
   Skull,
   Swords,
@@ -20,7 +21,9 @@ import {
   CHARACTER_ROSTER,
   DIFFICULTY_CONFIGS,
   DIFFICULTY_LIST,
+  getBlessingById,
   GRAVEYARD_BIOME_URL,
+  MAX_RUN_BLESSINGS,
   SKELETON_BOSS_URL,
 } from '../data/zombieData';
 import { CharacterId, DifficultyLevel, GamePhase, RunBlessing } from '../types/game';
@@ -33,6 +36,7 @@ interface TitleScreenOverlayProps {
   isFullscreen: boolean;
   onToggleMute: () => void;
   onToggleFullscreen: () => void;
+  onOpenSettings?: () => void;
   onStartGame: () => void;
   onOpenMultiplayer?: () => void;
 }
@@ -42,6 +46,7 @@ export const TitleScreenOverlay: React.FC<TitleScreenOverlayProps> = ({
   isFullscreen,
   onToggleMute,
   onToggleFullscreen,
+  onOpenSettings,
   onStartGame,
   onOpenMultiplayer,
 }) => {
@@ -90,6 +95,21 @@ export const TitleScreenOverlay: React.FC<TitleScreenOverlayProps> = ({
         >
           {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
         </button>
+
+        {onOpenSettings && (
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playUiClick(520);
+              onOpenSettings();
+            }}
+            aria-label="Open settings"
+            className="min-h-[44px] px-3 rounded-xl bg-[#181421]/95 border border-[#322B43] text-[#F5F0E6] text-xs font-semibold active:scale-95 flex items-center gap-1.5 whitespace-nowrap shrink-0"
+          >
+            <Settings className="w-4 h-4 text-[#38BDF8]" />
+            <span className="hidden sm:inline">Settings</span>
+          </button>
+        )}
       </div>
 
       {/* Center Lockup preserving generous negative space on mobile landscape */}
@@ -97,7 +117,7 @@ export const TitleScreenOverlay: React.FC<TitleScreenOverlayProps> = ({
         <HearthAndBoneTitleSvg className="w-full max-w-[330px] sm:max-w-[410px] h-auto drop-shadow-lg" />
 
         <p className="text-xs sm:text-sm text-[#D6D0C4] mt-2 max-w-md leading-relaxed [text-wrap:balance]">
-          Choose the Zombie, Skeleton, Goblin, Gnome, or Ghost in the Guild House, equip your skills, and step out the North Door into the Whispering Graveyard.
+          Choose the Zombie, Skeleton, Goblin, Gnome, Ghost, or Kobold in the Guild House, equip your skills, and step out the North Door into the Whispering Graveyard.
         </p>
 
         <div className="mt-4 sm:mt-5 flex items-center justify-center gap-3">
@@ -145,6 +165,8 @@ export const TitleScreenOverlay: React.FC<TitleScreenOverlayProps> = ({
 interface BlessingModalProps {
   activeCharacter: CharacterId;
   choices: RunBlessing[];
+  pickedCount?: number;
+  maxBlessings?: number;
   source?: 'STATUE' | 'STAGE_CLEAR';
   currentFloor?: number;
   currentStageFloor?: string;
@@ -154,6 +176,8 @@ interface BlessingModalProps {
 export const BlessingModal: React.FC<BlessingModalProps> = ({
   activeCharacter,
   choices,
+  pickedCount = 0,
+  maxBlessings = MAX_RUN_BLESSINGS,
   source = 'STAGE_CLEAR',
   currentFloor,
   currentStageFloor,
@@ -165,6 +189,7 @@ export const BlessingModal: React.FC<BlessingModalProps> = ({
   const isGoblin = activeCharacter === CharacterId.Goblin;
   const isGnome = activeCharacter === CharacterId.Gnome;
   const isGhost = activeCharacter === CharacterId.Ghost;
+  const isKobold = activeCharacter === CharacterId.Kobold;
   const selectAccentClass = isSkeleton
     ? 'text-[#38BDF8]'
     : isGoblin
@@ -173,6 +198,8 @@ export const BlessingModal: React.FC<BlessingModalProps> = ({
     ? 'text-[#FB923C]'
     : isGhost
     ? 'text-[#D8B4FE]'
+    : isKobold
+    ? 'text-[#FDA4AF]'
     : 'text-[#4ADE80]';
   const activeBorderClass = isSkeleton
     ? 'active:border-[#38BDF8]'
@@ -182,9 +209,12 @@ export const BlessingModal: React.FC<BlessingModalProps> = ({
     ? 'active:border-[#FB923C]'
     : isGhost
     ? 'active:border-[#C084FC]'
+    : isKobold
+    ? 'active:border-[#FB7185]'
     : 'active:border-[#4ADE80]';
 
-  const isFinalStage = currentStageFloor === '3-1' || currentFloor === 7;
+  const isFinalSlot =
+    pickedCount + 1 >= maxBlessings || currentStageFloor === '3-1' || currentFloor === 7;
 
   const handleSelect = (id: string) => {
     if (performance.now() - openedAtRef.current < 280) return;
@@ -207,45 +237,59 @@ export const BlessingModal: React.FC<BlessingModalProps> = ({
       <div
         role="dialog"
         aria-label="Run Blessing Choice"
-        className="w-full max-w-2xl bg-[#17141F] border border-[#352F46] rounded-2xl p-3 sm:p-4 shadow-2xl"
+        className="w-full max-w-2xl max-h-full bg-[#17141F] border border-[#352F46] rounded-2xl p-3 sm:p-4 shadow-2xl overflow-y-auto"
       >
-        <div className="flex items-baseline justify-between gap-3 mb-2.5">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-2.5">
           <h2 className="font-display text-base sm:text-lg font-bold text-[#F5F0E6] whitespace-nowrap">
             {source === 'STATUE' ? 'Lantern Statue' : 'Stage Clear Blessing'} · {profile.archetypeName}
           </h2>
-          <span className="text-[11px] text-[#A39BB5] truncate">
-            {isFinalStage
-              ? 'Stage 3-1 · Final blessing opportunity (Capped after 3-1)'
-              : 'Choose 1 blessing · Blessings end after Stage 3-1'}
+          <span className="text-[11px] font-mono-num text-[#B5ADCA] truncate">
+            Build Slot {Math.min(maxBlessings, pickedCount + 1)}/{maxBlessings} ·{' '}
+            {isFinalSlot ? 'Final Blessing Slot' : 'Choose 1 Specialization'}
           </span>
         </div>
 
         <div className={`grid ${gridColsClass} gap-2 sm:gap-2.5 items-stretch`}>
-          {choices.map((b) => (
-            <button
-              key={b.id}
-              type="button"
-              onClick={() => handleSelect(b.id)}
-              className={`min-h-[118px] p-2.5 sm:p-3 rounded-xl bg-[#1D1928] border border-[#322C42] ${activeBorderClass} active:scale-[0.98] text-left flex flex-col justify-between gap-1.5 transition-transform`}
-            >
-              <div className="min-w-0">
-                <div className="text-[10px] font-medium text-[#9E96B0] truncate">
-                  {b.category}
-                </div>
-                <h3 className="text-xs sm:text-sm font-bold text-[#F5F0E6] mt-0.5 truncate">
-                  {b.name}
-                </h3>
-                <p className="text-[11px] text-[#C7C0D6] mt-1 leading-tight line-clamp-3">
-                  {b.description}
-                </p>
-              </div>
-              <div
-                className={`text-[11px] font-bold ${selectAccentClass} pt-1.5 border-t border-[#2C263B] whitespace-nowrap`}
+          {choices.map((b) => {
+            const isRelic = Boolean(b.isUniversal);
+            const isUltSpec = Boolean(b.requiredUltimateSkill);
+            const catColorClass = isRelic
+              ? 'text-[#FBBF24]'
+              : isUltSpec
+              ? 'text-[#E879F9]'
+              : 'text-[#9E96B0]';
+            const cardBorderClass = isRelic
+              ? 'border-[#4B3B28] hover:border-[#F59E0B]/60'
+              : 'border-[#322C42] hover:border-[#4D4466]';
+
+            return (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => handleSelect(b.id)}
+                className={`min-h-[118px] p-2.5 sm:p-3 rounded-xl bg-[#1D1928] border ${cardBorderClass} ${activeBorderClass} active:scale-[0.98] text-left flex flex-col justify-between gap-1.5 transition-all`}
               >
-                Select
-              </div>
-            </button>
-          ))}
+                <div className="min-w-0">
+                  <div className={`text-[10px] font-semibold ${catColorClass} truncate`}>
+                    {b.category}
+                  </div>
+                  <h3 className="text-xs sm:text-sm font-bold text-[#F5F0E6] mt-0.5 truncate">
+                    {b.name}
+                  </h3>
+                  <p className="text-[11px] text-[#C7C0D6] mt-1 leading-tight line-clamp-3">
+                    {b.description}
+                  </p>
+                </div>
+                <div
+                  className={`text-[11px] font-bold ${
+                    isRelic ? 'text-[#FBBF24]' : selectAccentClass
+                  } pt-1.5 border-t border-[#2C263B] whitespace-nowrap`}
+                >
+                  Select
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -259,12 +303,14 @@ interface EndOrPauseModalProps {
   shardsEarned: number;
   kills: number;
   damageDealt: number;
+  activeBlessingIds?: string[];
   difficulty?: DifficultyLevel;
   currentStage?: number;
   maxStages?: number;
   floorLabel?: string;
   onSelectDifficulty?: (diff: DifficultyLevel) => void;
   onToggleFullscreen: () => void;
+  onOpenSettings?: () => void;
   onResume: () => void;
   onReturnToGuild: () => void;
   onPlayAgain: () => void;
@@ -277,18 +323,23 @@ export const EndOrPauseModal: React.FC<EndOrPauseModalProps> = ({
   shardsEarned,
   kills,
   damageDealt,
+  activeBlessingIds = [],
   difficulty = DifficultyLevel.Easy,
   currentStage = 1,
   maxStages = 1,
   floorLabel,
   onSelectDifficulty,
   onToggleFullscreen,
+  onOpenSettings,
   onResume,
   onReturnToGuild,
   onPlayAgain,
 }) => {
   const [imgError, setImgError] = useState(false);
   const diffConfig = DIFFICULTY_CONFIGS[difficulty] ?? DIFFICULTY_CONFIGS[DifficultyLevel.Easy];
+  const resolvedBlessings = activeBlessingIds
+    .map((id) => getBlessingById(id))
+    .filter((b): b is RunBlessing => Boolean(b));
 
   if (phase === GamePhase.Paused) {
     return (
@@ -296,7 +347,7 @@ export const EndOrPauseModal: React.FC<EndOrPauseModalProps> = ({
         onPointerDown={(e) => e.stopPropagation()}
         className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 p-3 sm:p-4"
       >
-        <ScrollablePane className="w-full max-w-sm max-h-[92%] bg-[#17141F] border border-[#352F46] rounded-2xl p-5 shadow-2xl text-center">
+        <ScrollablePane className="w-full max-w-md max-h-[92%] bg-[#17141F] border border-[#352F46] rounded-2xl p-4 sm:p-5 shadow-2xl text-center">
           <h2 className="font-display text-xl font-bold text-[#F5F0E6]">Game Paused</h2>
           <p className="text-xs text-[#A39BB5] mt-1">
             {isGuild
@@ -317,6 +368,37 @@ export const EndOrPauseModal: React.FC<EndOrPauseModalProps> = ({
             {!isGuild && floorLabel && <span className="opacity-80">· {floorLabel}</span>}
           </div>
 
+          {!isGuild && (
+            <div className="mt-3 text-left bg-[#1D1928] border border-[#2D273E] rounded-xl p-2.5">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-[#BDB6CC]">
+                <span>Active Build Blessings</span>
+                <span className="font-mono-num text-[#9E96B0]">
+                  {resolvedBlessings.length}/{MAX_RUN_BLESSINGS}
+                </span>
+              </div>
+              {resolvedBlessings.length === 0 ? (
+                <p className="text-[11px] text-[#7D7591] mt-1">
+                  No blessings chosen yet — visit Lantern Statues or clear floors.
+                </p>
+              ) : (
+                <div className="mt-1.5 space-y-1 max-h-[112px] overflow-y-auto pr-1">
+                  {resolvedBlessings.map((b) => (
+                    <div key={b.id} className="text-[11px] leading-snug">
+                      <span
+                        className={`font-semibold ${
+                          b.isUniversal ? 'text-[#FBBF24]' : 'text-[#F5F0E6]'
+                        }`}
+                      >
+                        {b.name}
+                      </span>
+                      <span className="text-[#9E96B0]"> · {b.description}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="mt-5 flex flex-col gap-2.5">
             <button
               type="button"
@@ -328,6 +410,20 @@ export const EndOrPauseModal: React.FC<EndOrPauseModalProps> = ({
             >
               Resume
             </button>
+
+            {onOpenSettings && (
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiClick(520);
+                  onOpenSettings();
+                }}
+                className="w-full min-h-[46px] px-4 rounded-xl bg-[#262134] text-[#F5F0E6] text-xs font-semibold flex items-center justify-center gap-2 active:scale-95 transition-transform whitespace-nowrap"
+              >
+                <Settings className="w-4 h-4 text-[#38BDF8]" />
+                <span>Settings &amp; Controls</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -444,6 +540,14 @@ export const EndOrPauseModal: React.FC<EndOrPauseModalProps> = ({
                     <SoulShardIcon className="w-3.5 h-3.5" />+{shardsEarned}
                   </span>
                 </div>
+                {resolvedBlessings.length > 0 && (
+                  <div className="pt-1 border-t border-[#241F31] text-[11px] text-[#BDB6CC] leading-snug">
+                    <span className="text-[#9E96B0]">
+                      Build ({resolvedBlessings.length}/{MAX_RUN_BLESSINGS}):{' '}
+                    </span>
+                    {resolvedBlessings.map((b) => b.name).join(' · ')}
+                  </div>
+                )}
               </div>
             </div>
 

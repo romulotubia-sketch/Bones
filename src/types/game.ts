@@ -50,6 +50,7 @@ export enum CharacterId {
   Goblin = 'GOBLIN',
   Gnome = 'GNOME',
   Ghost = 'GHOST',
+  Kobold = 'KOBOLD',
 }
 
 export enum NormalSkillId {
@@ -87,6 +88,13 @@ export enum NormalSkillId {
   SoulDrain = 'SOUL_DRAIN',
   WailingScream = 'WAILING_SCREAM',
   HauntedPossession = 'HAUNTED_POSSESSION',
+
+  // Kobold Normal Skills (5)
+  PiercingBolt = 'PIERCING_BOLT',
+  RapidReload = 'RAPID_RELOAD',
+  ExplosiveBolt = 'EXPLOSIVE_BOLT',
+  SnareTrap = 'SNARE_TRAP',
+  MultiShot = 'MULTI_SHOT',
 }
 
 export enum UltimateSkillId {
@@ -114,6 +122,11 @@ export enum UltimateSkillId {
   EternalNightmare = 'ETERNAL_NIGHTMARE',
   SpiritLegion = 'SPIRIT_LEGION',
   DeathsPassage = 'DEATHS_PASSAGE',
+
+  // Kobold Ultimate Skills (3)
+  DragonsBarrage = 'DRAGONS_BARRAGE',
+  MasterArtificer = 'MASTER_ARTIFICER',
+  KoboldsDeadlyArsenal = 'KOBOLDS_DEADLY_ARSENAL',
 }
 
 export enum PassiveSkillId {
@@ -136,6 +149,10 @@ export enum PassiveSkillId {
   // Ghost Passives (2)
   EtherealBody = 'ETHEREAL_BODY',
   RestlessSpirit = 'RESTLESS_SPIRIT',
+
+  // Kobold Passives (2)
+  MechanicalExpertise = 'MECHANICAL_EXPERTISE',
+  HuntersPrecision = 'HUNTERS_PRECISION',
 }
 
 export enum EnemyKind {
@@ -203,11 +220,14 @@ export interface GuildSaveData {
   characterUpgrades: Record<CharacterId, CharacterUpgradeRanks>;
   loadouts: Record<CharacterId, EquippedLoadout>;
   muted: boolean;
+  joystickScale: number;
+  skillButtonScale: number;
 }
 
 export interface RunBlessing {
   id: string;
-  characterId: CharacterId;
+  characterId?: CharacterId;
+  isUniversal?: boolean;
   name: string;
   category: string;
   description: string;
@@ -251,6 +271,9 @@ export interface EnemyEntity {
   infectionStacks: number;
   infectionTimer: number;
   plagueTimer: number;
+  vulnerableTimer: number;
+  hunterMarkStacks: number;
+  hunterMarkTimer: number;
 
   aiState: 'IDLE' | 'CHASE' | 'WINDUP' | 'ATTACK' | 'COOLDOWN' | 'SUMMONING' | 'WHIRLWIND';
   stateTimer: number;
@@ -311,7 +334,12 @@ export interface ProjectileEntity {
     | 'PLAYER_DARK_WAVE'
     | 'PLAYER_ENCHANTED_DAGGER'
     | 'PLAYER_SPECTRAL_BOLT'
-    | 'PLAYER_SPIRIT_ORB';
+    | 'PLAYER_SPIRIT_ORB'
+    | 'PLAYER_CROSSBOW_BOLT'
+    | 'PLAYER_PIERCING_BOLT'
+    | 'PLAYER_EXPLOSIVE_BOLT'
+    | 'PLAYER_ELEMENTAL_BOLT'
+    | 'PLAYER_TURRET_BOLT';
   angle: number;
   pierce?: boolean;
   hitEnemyIds?: Set<number>;
@@ -319,6 +347,10 @@ export interface ProjectileEntity {
   orbitAngle?: number;
   orbitRadius?: number;
   homing?: boolean;
+  blastRadius?: number;
+  elementKind?: 'FIRE' | 'FROST' | 'LIGHTNING';
+  isFinisherBolt?: boolean;
+  isVisualOnly?: boolean;
 }
 
 export interface ExplosiveTrapEntity {
@@ -330,6 +362,50 @@ export interface ExplosiveTrapEntity {
   damage: number;
   armTimer: number;
   life: number;
+  isVisualOnly?: boolean;
+}
+
+export interface SnareTrapEntity {
+  id: number;
+  x: number;
+  y: number;
+  triggerRadius: number;
+  captureRadius: number;
+  damage: number;
+  rootDuration: number;
+  vulnerableDuration: number;
+  armTimer: number;
+  life: number;
+  maxLife: number;
+  isVisualOnly?: boolean;
+}
+
+export interface CrossbowTurretEntity {
+  id: number;
+  x: number;
+  y: number;
+  aimAngle: number;
+  fireCooldown: number;
+  damage: number;
+  life: number;
+  maxLife: number;
+  recoilOffset: number;
+  shotsFired: number;
+  overclocked?: boolean;
+  isVisualOnly?: boolean;
+}
+
+export interface DragonsBarrageZone {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  tickTimer: number;
+  damagePerVolley: number;
+  scorched?: boolean;
+  isVisualOnly?: boolean;
 }
 
 export interface AfterimageEntity {
@@ -339,7 +415,7 @@ export interface AfterimageEntity {
   color: string;
   life: number;
   maxLife: number;
-  archetype?: 'GOBLIN' | 'SKELETON' | 'ZOMBIE' | 'GNOME' | 'GHOST';
+  archetype?: 'GOBLIN' | 'SKELETON' | 'ZOMBIE' | 'GNOME' | 'GHOST' | 'KOBOLD';
 }
 
 export interface DeathsPassageRift {
@@ -353,6 +429,7 @@ export interface DeathsPassageRift {
   pullDamage: number;
   explosionDamage: number;
   detonated: boolean;
+  isVisualOnly?: boolean;
 }
 
 export interface GhostMistZone {
@@ -364,6 +441,7 @@ export interface GhostMistZone {
   maxLife: number;
   tickTimer: number;
   damagePerTick: number;
+  isVisualOnly?: boolean;
 }
 
 export interface DaggerRainZone {
@@ -375,6 +453,7 @@ export interface DaggerRainZone {
   maxLife: number;
   tickTimer: number;
   damagePerVolley: number;
+  isVisualOnly?: boolean;
 }
 
 export interface EarthenGraspZone {
@@ -387,6 +466,7 @@ export interface EarthenGraspZone {
   maxLife: number;
   tickTimer: number;
   damagePerTick: number;
+  isVisualOnly?: boolean;
 }
 
 export interface StoneRampartEntity {
@@ -397,6 +477,7 @@ export interface StoneRampartEntity {
   angle: number;
   life: number;
   maxLife: number;
+  isVisualOnly?: boolean;
 }
 
 export interface PoisonCloudEntity {
@@ -408,6 +489,7 @@ export interface PoisonCloudEntity {
   maxLife: number;
   tickTimer: number;
   damagePerTick: number;
+  isVisualOnly?: boolean;
 }
 
 export interface PickupOrb {
@@ -508,7 +590,16 @@ export interface SlashEffect {
     | 'GHOST_NIGHTMARE_NOVA'
     | 'GHOST_SPIRIT_RING'
     | 'GHOST_PASSAGE_DETONATION'
-    | 'GHOST_RESTLESS_SURGE';
+    | 'GHOST_RESTLESS_SURGE'
+    | 'KOBOLD_MUZZLE_FLASH'
+    | 'KOBOLD_PIERCING_LANCE'
+    | 'KOBOLD_EXPLOSIVE_BLAST'
+    | 'KOBOLD_SNARE_SNAP'
+    | 'KOBOLD_MULTISHOT_FAN'
+    | 'KOBOLD_ARSENAL_BURST'
+    | 'KOBOLD_ARSENAL_RING'
+    | 'KOBOLD_ELEMENTAL_NOVA'
+    | 'KOBOLD_ELEMENTAL_BURST';
   scale?: number;
   isCrit?: boolean;
   fromX?: number;
@@ -668,6 +759,10 @@ export interface HudSnapshot {
   soulDrainTimer: number;
   possessionTimer: number;
   nightmareTimer: number;
+  tinkerHasteTimer: number;
+  rapidReloadActive: boolean;
+  arsenalActive: boolean;
+  activeTurrets: number;
   ultCharge: number; // 0 to 100
   ultCooldown: number;
   ultMaxCooldown: number;
@@ -712,7 +807,11 @@ export interface HudSnapshot {
     mode: string;
     isHost: boolean;
     playerCount: number;
+    maxPlayers: number;
     ping: number;
+    currentWave?: number;
+    totalWaves?: number;
+    roomLocked?: boolean;
     partyMembers?: {
       id: string;
       name: string;
@@ -724,8 +823,34 @@ export interface HudSnapshot {
       isDowned: boolean;
       bleedoutTimer?: number;
       reviveProgress?: number;
+      statusText?: string;
       color: string;
     }[];
   } | null;
 }
+
+export type SkillSlotKey = 'NORMAL_0' | 'NORMAL_1' | 'ULTIMATE';
+
+export interface ManualSkillAimInput {
+  slot: SkillSlotKey;
+  angle: number;
+  magnitude: number;
+  isCancelling: boolean;
+}
+
+export interface SkillAimTelegraph {
+  kind: 'CONE' | 'LINE' | 'DASH' | 'TARGET_AOE' | 'TARGET_ENEMY' | 'SELF_AOE';
+  angle: number;
+  maxRange: number;
+  aoeRadius?: number;
+  arcSpread?: number;
+  lineWidth?: number;
+  targetX?: number;
+  targetY?: number;
+  lockedEnemyId?: number | null;
+  blinkFallbackRange?: number;
+  color: string;
+  isCancelling: boolean;
+}
+
 

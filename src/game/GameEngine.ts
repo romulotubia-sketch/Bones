@@ -5,6 +5,7 @@ import {
   CharacterProfileDef,
   EMPTY_UPGRADE_RANKS,
   getEligibleStatueBlessings,
+  MAX_RUN_BLESSINGS,
   NORMAL_SKILLS,
   ULTIMATE_SKILLS,
 } from '../data/zombieData';
@@ -12,8 +13,10 @@ import {
   AfterimageEntity,
   CharacterId,
   CharacterUpgradeRanks,
+  CrossbowTurretEntity,
   DaggerRainZone,
   DeathsPassageRift,
+  DragonsBarrageZone,
   EarthenGraspZone,
   EnemyEntity,
   EnemyKind,
@@ -27,6 +30,7 @@ import {
   GuildCompanionRenderState,
   GuildSaveData,
   HudSnapshot,
+  ManualSkillAimInput,
   MinimapRoomInfo,
   MinionEntity,
   NormalSkillId,
@@ -37,7 +41,10 @@ import {
   RoomKind,
   RunBlessing,
   ShockwaveRing,
+  SkillAimTelegraph,
+  SkillSlotKey,
   SlashEffect,
+  SnareTrapEntity,
   SoulTether,
   StoneRampartEntity,
   UltimateSkillId,
@@ -50,6 +57,7 @@ import {
   buildGraveyardFloor,
   buildGuildWorld,
   createProceduralSkeleton,
+  createSeededRandom,
   GeneratedWorld,
   getBossInfoForFloor,
   getFloorLabel,
@@ -57,8 +65,7 @@ import {
   spawnRoomWave,
   STAGE_THEMES,
 } from './dungeonGenerator';
-import { NetworkManager } from '../multiplayer/NetworkManager';
-import { EnemySyncState, PlayerTransformSync } from '../multiplayer/networkTypes';
+import { NetworkManager, WorldSyncPayload } from '../multiplayer/NetworkManager';
 import { RemoteRenderPlayer, renderGameWorld } from './renderer';
 
 export interface EngineCallbacks {
@@ -91,6 +98,9 @@ export class GameEngine {
   private joyY = 0;
   private attackHeld = false;
   private bufferedActions = new Map<string, number>();
+  private activeSkillAim: ManualSkillAimInput | null = null;
+  private pendingManualAims = new Map<SkillSlotKey, { angle: number; magnitude: number }>();
+  private currentCastManualAim: SkillAimTelegraph | null = null;
 
   // Camera & game feel
   private cameraX = -60;
@@ -232,10 +242,38 @@ export class GameEngine {
     ghostBasicCount: 0,
     ghostMistDropAccum: 0,
 
+    // Kobold active states & passives
+    koboldShotStep: 0,
+    koboldBoltCounter: 0,
+    koboldRecoilOffset: 0,
+    tinkerHasteTimer: 0,
+    rapidReloadRemaining: 0,
+    rapidReloadTotal: 6,
+    rapidReloadTimer: 0,
+    rapidReloadAngle: 0,
+    arsenalRemaining: 0,
+    arsenalTotal: 9,
+    arsenalTimer: 0,
+    arsenalStep: 0,
+    arsenalAngle: 0,
+
+    // Strategic Blessing transient timers & counters
+    ultSurgeTimer: 0,
+    stormReliquaryCount: 0,
+    deathrattlerTimer: 0,
+    miasmaShroudTick: 0,
+    forgeheartTick: 0,
+    stonebornRegenTick: 0,
+    abomBonusExtended: 0,
+
     isDowned: false,
     bleedoutTimer: 0,
     reviveProgress: 0,
     isRevivingPlayerId: null as string | null,
+
+    manualAimHoldTimer: 0,
+    manualAimHoldAngle: 0,
+    manualPriorityTargetId: null as number | null,
 
     hoveredInGuild: false,
   };
@@ -258,6 +296,9 @@ export class GameEngine {
   private projectiles: ProjectileEntity[] = [];
   private poisonClouds: PoisonCloudEntity[] = [];
   private traps: ExplosiveTrapEntity[] = [];
+  private snareTraps: SnareTrapEntity[] = [];
+  private turrets: CrossbowTurretEntity[] = [];
+  private dragonsBarrages: DragonsBarrageZone[] = [];
   private afterimages: AfterimageEntity[] = [];
   private daggerRains: DaggerRainZone[] = [];
   private earthenGrasps: EarthenGraspZone[] = [];
@@ -274,8 +315,11 @@ export class GameEngine {
 
   // Multiplayer Networking
   private networkManager: NetworkManager | null = null;
+  private networkUnsubscribe: (() => void) | null = null;
   private remotePlayers = new Map<string, RemoteRenderPlayer & { targetX: number; targetY: number }>();
   private networkSyncAccum = 0;
+  private coopCurrentWave = 0;
+  private coopTotalWaves = 0;
 
   private currentRoomId = 0;
   private roomBannerText: string | null = null;
@@ -369,6 +413,10 @@ export class GameEngine {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
     }
+    if (this.networkUnsubscribe) {
+      this.networkUnsubscribe();
+      this.networkUnsubscribe = null;
+    }
     window.removeEventListener('blur', this.onBlurBound);
     window.removeEventListener('resize', this.onResizeBound);
     this.canvas.removeEventListener('pointerdown', this.onPointerDownBound);
@@ -387,37 +435,70 @@ export class GameEngine {
   }
 
   public setNetworkManager(manager: NetworkManager | null): void {
+    if (this.networkUnsubscribe) {
+      this.networkUnsubscribe();
+      this.networkUnsubscribe = null;
+    }
     this.networkManager = manager;
     if (!manager) {
       this.remotePlayers.clear();
+      this.coopCurrentWave = 0;
+      this.coopTotalWaves = 0;
       this.emitHudSnapshot();
       return;
     }
 
-    manager.setCallbacks({
-      onRoomUpdate: () => {
+    this.networkUnsubscribe = manager.subscribe({
+      onRoomUpdate: (room) => {
+        if (!room) {
+          this.remotePlayers.clear();
+          this.coopCurrentWave = 0;
+          this.coopTotalWaves = 0;
+        } else if (room.difficulty && this.world.isGuild) {
+          this.currentDifficulty = room.difficulty;
+        }
         this.emitHudSnapshot();
       },
-      onGameStart: (seed: number, floorNumber: number) => {
-        this.startGraveyardRun(undefined, seed);
+      onGameStart: (seed: number, floorNumber: number, difficulty: DifficultyLevel) => {
+        this.setDifficulty(difficulty);
+        if (floorNumber === 0) {
+          this.enterGuildRoam();
+        } else {
+          this.startGraveyardRun(difficulty, seed, true);
+        }
       },
-      onWorldSync: (players: PlayerTransformSync[], enemies?: EnemySyncState[], activeRoomId?: number, wavesRemaining?: number) => {
+      onWorldSync: (payload: WorldSyncPayload) => {
         const localId = manager.getLocalPlayerId();
         const activeIds = new Set<string>();
         const room = manager.getRoom();
         const isPvp = room?.mode === 'ONLINE_PVP' || room?.mode === 'LAN_PVP';
 
-        for (const p of players) {
-          if (p.id === localId) continue;
-          activeIds.add(p.id);
+        for (const p of payload.players) {
+          if (p.id === localId) {
+            if (this.isInCoop() && !this.world.isGuild) {
+              this.player.isDowned = Boolean(p.isDowned);
+              this.player.bleedoutTimer = p.bleedoutTimer ?? this.player.bleedoutTimer;
+              this.player.reviveProgress = p.reviveProgress ?? 0;
+              this.player.isRevivingPlayerId = p.isRevivingPlayerId ?? null;
+              if (!p.isDowned && p.hp > 0 && Math.abs(this.player.hp - p.hp) >= 2) {
+                this.player.hp = Math.min(this.player.maxHp, p.hp);
+              }
+            }
+            continue;
+          }
 
+          activeIds.add(p.id);
           const roomPlayer = room?.players.find((rp) => rp.id === p.id);
           const name = roomPlayer?.name || 'Ally';
           const color = roomPlayer?.color || '#38BDF8';
           const charId = roomPlayer?.characterId || CharacterId.Zombie;
+          const isMemberHost = Boolean(roomPlayer?.isHost);
 
           const existing = this.remotePlayers.get(p.id);
           if (existing) {
+            existing.name = name;
+            existing.color = color;
+            existing.isHost = isMemberHost;
             existing.targetX = p.x;
             existing.targetY = p.y;
             existing.vx = p.vx;
@@ -427,11 +508,12 @@ export class GameEngine {
             existing.walkPhase = p.walkPhase;
             existing.hp = p.hp;
             existing.maxHp = p.maxHp;
-            existing.hitFlashTimer = p.hitFlashTimer;
+            existing.hitFlashTimer = Math.max(existing.hitFlashTimer, p.hitFlashTimer);
             existing.squashX = p.squashX;
             existing.squashY = p.squashY;
             existing.dashTimer = p.dashTimer;
             existing.leapAirProgress = p.leapAirProgress;
+            existing.comboFlip = p.comboFlip;
             existing.characterId = charId;
             existing.isDowned = Boolean(p.isDowned);
             existing.bleedoutTimer = p.bleedoutTimer ?? 0;
@@ -442,15 +524,23 @@ export class GameEngine {
             existing.boneStormTimer = p.activeBuffs.boneStorm ? 6 : 0;
             existing.colossusTimer = p.activeBuffs.colossus ? 8 : 0;
             existing.windrunnerTimer = p.activeBuffs.windrunner ? 5 : 0;
+            existing.poisonBladesTimer = p.activeBuffs.poisonBlades ? 5 : 0;
+            existing.stolenMightTimer = p.activeBuffs.stolenMight ? 5 : 0;
             existing.fortressTimer = p.activeBuffs.fortress ? 5 : 0;
+            existing.magneticTimer = p.activeBuffs.magnetic ? 5 : 0;
             existing.mountainHeartTimer = p.activeBuffs.mountainHeart ? 8 : 0;
             existing.restlessTimer = p.activeBuffs.restless ? 4 : 0;
+            existing.soulDrainTimer = p.activeBuffs.soulDrain ? 4 : 0;
             existing.nightmareTimer = p.activeBuffs.nightmare ? 8 : 0;
+            existing.tinkerHasteTimer = p.activeBuffs.tinkerHaste ? 4 : 0;
+            existing.rapidReloadRemaining = p.activeBuffs.rapidReload ? 3 : 0;
+            existing.arsenalRemaining = p.activeBuffs.arsenal ? 5 : 0;
           } else {
             this.remotePlayers.set(p.id, {
               id: p.id,
               name,
               color,
+              isHost: isMemberHost,
               characterId: charId,
               x: p.x,
               y: p.y,
@@ -465,6 +555,7 @@ export class GameEngine {
               hitFlashTimer: p.hitFlashTimer,
               squashX: p.squashX,
               squashY: p.squashY,
+              comboFlip: p.comboFlip,
               hp: p.hp,
               maxHp: p.maxHp,
               isRival: isPvp,
@@ -479,30 +570,86 @@ export class GameEngine {
               colossusTimer: p.activeBuffs.colossus ? 8 : 0,
               unyieldingStacks: 0,
               windrunnerTimer: p.activeBuffs.windrunner ? 5 : 0,
-              poisonBladesTimer: 0,
-              stolenMightTimer: 0,
+              poisonBladesTimer: p.activeBuffs.poisonBlades ? 5 : 0,
+              stolenMightTimer: p.activeBuffs.stolenMight ? 5 : 0,
               fortressTimer: p.activeBuffs.fortress ? 5 : 0,
-              magneticTimer: 0,
+              magneticTimer: p.activeBuffs.magnetic ? 5 : 0,
               mountainHeartTimer: p.activeBuffs.mountainHeart ? 8 : 0,
               leapAirProgress: p.leapAirProgress,
               resolveRatio: 0,
               dashTimer: p.dashTimer,
+              restlessTimer: p.activeBuffs.restless ? 4 : 0,
+              soulDrainTimer: p.activeBuffs.soulDrain ? 4 : 0,
+              nightmareTimer: p.activeBuffs.nightmare ? 8 : 0,
+              tinkerHasteTimer: p.activeBuffs.tinkerHaste ? 4 : 0,
+              rapidReloadRemaining: p.activeBuffs.rapidReload ? 3 : 0,
+              arsenalRemaining: p.activeBuffs.arsenal ? 5 : 0,
               hoveredInGuild: false,
             });
           }
         }
 
-        for (const id of this.remotePlayers.keys()) {
+        for (const id of Array.from(this.remotePlayers.keys())) {
           if (!activeIds.has(id)) {
             this.remotePlayers.delete(id);
           }
         }
 
-        // In Co-op mode, if non-host client, synchronize enemies authoritative state from host
-        if (!manager.isHost() && this.isInCoop() && enemies) {
-          const syncEnemyIds = new Set(enemies.map((e) => e.id));
-          // Update or add enemies
-          for (const se of enemies) {
+        if (!this.isInCoop()) return;
+
+        this.coopCurrentWave = payload.currentWave ?? 0;
+        this.coopTotalWaves = payload.totalWaves ?? 0;
+
+        // Reconcile shared room lock / clear / wave state across all party members
+        if (payload.roomsState && !this.world.isGuild) {
+          for (const rs of payload.roomsState) {
+            const roomObj = this.world.rooms.find((r) => r.id === rs.id);
+            if (roomObj) {
+              roomObj.discovered = roomObj.discovered || rs.discovered;
+              roomObj.locked = rs.locked;
+              roomObj.cleared = rs.cleared;
+              roomObj.wavesRemaining = rs.wavesRemaining;
+            }
+          }
+        }
+
+        // Reconcile server-spawned chests & descent portals
+        if (payload.spawnedProps && !this.world.isGuild) {
+          for (const sp of payload.spawnedProps) {
+            const existingProp = this.world.props.find((pr) => pr.id === sp.id);
+            if (existingProp) {
+              if (sp.opened) existingProp.opened = true;
+            } else {
+              this.world.props.push({
+                id: sp.id,
+                kind: sp.kind,
+                x: sp.x,
+                y: sp.y,
+                w: sp.w,
+                h: sp.h,
+                solid: false,
+                destructible: false,
+                hp: 999,
+                opened: sp.opened ?? false,
+              });
+              this.spawnBurst(
+                sp.x,
+                sp.y,
+                sp.kind === 'PORTAL_ARCH' ? '#38BDF8' : '#FBBF24',
+                14,
+                95
+              );
+            }
+          }
+        }
+
+        // Reconcile server-authoritative enemies for ALL party members (zero duplicate enemies)
+        if (payload.enemies) {
+          const syncEnemyIds = new Set(payload.enemies.map((e) => e.id));
+          const { stage } = getStageAndFloor(Math.max(1, this.world.floorNumber));
+          const baseSeed = room?.seed ?? 1;
+
+          for (const se of payload.enemies) {
             const existing = this.world.enemies.find((e) => e.id === se.id);
             if (existing) {
               existing.x += (se.x - existing.x) * 0.45;
@@ -515,22 +662,32 @@ export class GameEngine {
               existing.aiState = se.aiState;
               existing.telegraphType = se.telegraphType;
               existing.telegraphAngle = se.telegraphAngle;
-              existing.hitFlashTimer = se.hitFlashTimer;
+              existing.hitFlashTimer = Math.max(existing.hitFlashTimer, se.hitFlashTimer);
               existing.stunTimer = se.stunTimer;
+              existing.slowTimer = se.slowTimer ?? existing.slowTimer;
+              existing.rootTimer = se.rootTimer ?? existing.rootTimer;
+              existing.fearTimer = se.fearTimer ?? existing.fearTimer;
+              existing.vulnerableTimer = se.vulnerableTimer ?? existing.vulnerableTimer;
               existing.plagueTimer = se.plagueTimer;
               existing.infectionStacks = se.infectionStacks;
+              if (se.bossPhase) existing.bossPhase = se.bossPhase;
             } else {
+              const traitRng = createSeededRandom(se.id * 7919 + baseSeed);
               const newEnemy = createProceduralSkeleton(
                 se.kind,
                 se.x,
                 se.y,
                 se.roomId,
                 1.0,
-                this.getDifficultyConfig()
+                this.getDifficultyConfig(),
+                stage,
+                traitRng,
+                se.id
               );
-              newEnemy.id = se.id;
               newEnemy.hp = se.hp;
               newEnemy.maxHp = se.maxHp;
+              newEnemy.vx = se.vx;
+              newEnemy.vy = se.vy;
               newEnemy.facingX = se.facingX;
               newEnemy.aiState = se.aiState;
               newEnemy.telegraphType = se.telegraphType;
@@ -539,70 +696,307 @@ export class GameEngine {
               newEnemy.stunTimer = se.stunTimer;
               newEnemy.plagueTimer = se.plagueTimer;
               newEnemy.infectionStacks = se.infectionStacks;
+              if (se.bossPhase) newEnemy.bossPhase = se.bossPhase;
               this.world.enemies.push(newEnemy);
+              if (!this.world.isGuild) {
+                this.spawnBurst(se.x, se.y, '#94A3B8', 8, 80);
+              }
             }
           }
-          // Remove dead enemies
+
           for (let i = this.world.enemies.length - 1; i >= 0; i--) {
             if (!syncEnemyIds.has(this.world.enemies[i].id)) {
               this.world.enemies.splice(i, 1);
             }
           }
-          if (activeRoomId !== undefined && wavesRemaining !== undefined) {
-            const activeRoom = this.world.rooms.find((r) => r.id === activeRoomId);
-            if (activeRoom) {
-              activeRoom.wavesRemaining = wavesRemaining;
+        }
+
+        // Reconcile server-authoritative enemy projectiles
+        if (payload.enemyProjectiles && !this.world.isGuild) {
+          const syncProjIds = new Set(payload.enemyProjectiles.map((ep) => ep.id));
+          for (const ep of payload.enemyProjectiles) {
+            const existingProj = this.projectiles.find((pr) => !pr.fromPlayer && pr.id === ep.id);
+            if (existingProj) {
+              existingProj.x += (ep.x - existingProj.x) * 0.55;
+              existingProj.y += (ep.y - existingProj.y) * 0.55;
+              existingProj.vx = ep.vx;
+              existingProj.vy = ep.vy;
+              existingProj.angle = ep.angle;
+              existingProj.life = Math.max(existingProj.life, 0.3);
+            } else {
+              this.projectiles.push({
+                id: ep.id,
+                fromPlayer: false,
+                x: ep.x,
+                y: ep.y,
+                vx: ep.vx,
+                vy: ep.vy,
+                radius: ep.radius,
+                damage: ep.damage,
+                life: 2.0,
+                color: ep.color,
+                kind: ep.kind,
+                angle: ep.angle,
+              });
+            }
+          }
+
+          for (let i = this.projectiles.length - 1; i >= 0; i--) {
+            const pr = this.projectiles[i];
+            if (!pr.fromPlayer && !syncProjIds.has(pr.id)) {
+              this.projectiles.splice(i, 1);
             }
           }
         }
       },
-      onEnemyDamaged: (enemyId, damage, isCrit, hitX, hitY, attackerId) => {
-        const localId = manager.getLocalPlayerId();
-        if (attackerId === localId) return;
-
-        const target = this.world.enemies.find((e) => e.id === enemyId);
-        if (target && target.hp > 0) {
-          target.hp = Math.max(0, target.hp - damage);
-          target.hitFlashTimer = 0.08;
-          soundEngine.playHit(isCrit);
-          this.spawnPopup(
-            hitX ?? target.x,
-            (hitY ?? target.y) - 18,
-            `-${damage}`,
-            isCrit ? '#FEF08A' : '#F87171',
-            isCrit ? 1.25 : 1.0
-          );
-          if (target.hp <= 0) {
-            this.handleEnemyDefeated(target);
+      onWaveEvent: (evt) => {
+        this.coopCurrentWave = evt.currentWave;
+        this.coopTotalWaves = evt.totalWaves;
+        this.showBanner(evt.bannerText);
+        if (evt.isBoss) {
+          soundEngine.playBossSlam();
+        } else if (evt.isCleared) {
+          soundEngine.playHeal();
+          if (this.activeBlessingIds.has('relic_lantern_vitality')) {
+            this.healPlayer(Math.round(this.player.maxHp * 0.12));
+          }
+        }
+        this.emitHudSnapshot();
+      },
+      onPartyRoomPull: (roomId, x, y) => {
+        const roomObj = this.world.rooms.find((r) => r.id === roomId);
+        if (roomObj) {
+          const inside =
+            this.player.x >= roomObj.x + 24 &&
+            this.player.x <= roomObj.x + roomObj.w - 24 &&
+            this.player.y >= roomObj.y + 24 &&
+            this.player.y <= roomObj.y + roomObj.h - 24;
+          if (!inside) {
+            this.player.x = x;
+            this.player.y = y;
+            this.cameraX = x;
+            this.cameraY = y;
+            this.spawnBurst(x, y, '#38BDF8', 14, 95);
+            this.spawnPopup(x, y - 28, 'RALLIED TO PARTY!', '#38BDF8', 0.95);
           }
         }
       },
-      onEnemyDefeated: (enemyId, _killerId, _dropX, _dropY) => {
+      onEnemyAttackFx: (kind, x, y, angle) => {
+        if (kind === 'WARRIOR_SLASH') {
+          soundEngine.playSlash(0);
+          this.slashes.push({
+            x: x + Math.cos(angle) * 14,
+            y: y + Math.sin(angle) * 14,
+            angle,
+            radius: 56,
+            arcSpread: 1.4,
+            color: '#FBBF24',
+            life: 0.14,
+            maxLife: 0.14,
+            flip: false,
+          });
+        } else if (kind === 'ARCHER_SHOT') {
+          soundEngine.playArrow();
+        } else if (kind === 'BOSS_CLEAVE') {
+          soundEngine.playBossSlam();
+          this.shakeMag = Math.max(this.shakeMag, 8);
+          this.slashes.push({
+            x: x + Math.cos(angle) * 20,
+            y: y + Math.sin(angle) * 20,
+            angle,
+            radius: 130,
+            arcSpread: 2.0,
+            color: '#FB7185',
+            life: 0.22,
+            maxLife: 0.22,
+            flip: false,
+          });
+        } else if (kind === 'BOSS_VOLLEY') {
+          soundEngine.playArrow();
+        } else if (kind === 'BOSS_SUMMON') {
+          soundEngine.playSummon();
+          this.shockwaves.push({
+            x,
+            y,
+            maxRadius: 95,
+            color: '#38BDF8',
+            life: 0.3,
+            maxLife: 0.3,
+          });
+        } else if (kind === 'BOSS_DASH') {
+          soundEngine.playDash();
+        }
+      },
+      onEnemyDamaged: (enemyId, newHp, maxHp, damage, isCrit, hitX, hitY, attackerId) => {
+        const localId = manager.getLocalPlayerId();
+        const target = this.world.enemies.find((e) => e.id === enemyId);
+        if (target) {
+          target.hp = newHp;
+          target.maxHp = maxHp;
+          target.hitFlashTimer = 0.08;
+        }
+        if (attackerId === localId) return;
+
+        soundEngine.playHit(Boolean(isCrit));
+        this.spawnPopup(
+          hitX ?? target?.x ?? this.player.x,
+          (hitY ?? target?.y ?? this.player.y) - 18,
+          `-${damage}`,
+          isCrit ? '#FEF08A' : '#F87171',
+          isCrit ? 1.18 : 0.95
+        );
+      },
+      onEnemyDefeated: (enemyId, _killerId, dropX, dropY, kind) => {
         const target = this.world.enemies.find((e) => e.id === enemyId);
         if (target) {
           this.handleEnemyDefeated(target);
+        } else if (kind && !this.world.isGuild) {
+          const fallbackEnemy = createProceduralSkeleton(
+            kind,
+            dropX,
+            dropY,
+            this.currentRoomId,
+            1.0,
+            this.getDifficultyConfig()
+          );
+          fallbackEnemy.id = enemyId;
+          this.handleEnemyDefeated(fallbackEnemy);
         }
       },
-      onRemoteSkill: (playerId, skillId, x, y, angle, slot) => {
-        this.handleRemoteSkillCast(playerId, skillId, x, y, angle, slot);
+      onPlayerDamaged: (evt) => {
+        const localId = manager.getLocalPlayerId();
+        if (evt.targetPlayerId !== localId) {
+          const remote = this.remotePlayers.get(evt.targetPlayerId);
+          if (remote) {
+            remote.hp = evt.newHp;
+            remote.maxHp = evt.maxHp;
+            if (!evt.evaded) {
+              remote.hitFlashTimer = 0.12;
+              this.spawnBurst(remote.x, remote.y, '#EF4444', 6, 75);
+            }
+          }
+          return;
+        }
+
+        const p = this.player;
+        if (evt.evaded) {
+          soundEngine.playDash();
+          p.invulnTimer = 0.28;
+          const evadeLabel =
+            p.characterId === CharacterId.Ghost
+              ? 'PHASE!'
+              : p.characterId === CharacterId.Kobold
+              ? 'SIDESTEP!'
+              : 'EVADE!';
+          const evadeColor =
+            p.characterId === CharacterId.Ghost
+              ? '#67E8F9'
+              : p.characterId === CharacterId.Kobold
+              ? '#FB7185'
+              : '#FDE047';
+          this.afterimages.push({
+            x: p.x,
+            y: p.y,
+            facingX: p.facingX,
+            color: evadeColor,
+            life: 0.34,
+            maxLife: 0.34,
+          });
+          if (p.characterId === CharacterId.Ghost) this.triggerRestlessSpirit();
+          if (p.characterId === CharacterId.Kobold) p.tinkerHasteTimer = Math.max(p.tinkerHasteTimer, 2.0);
+          this.spawnPopup(p.x, p.y - 28, evadeLabel, evadeColor, 1.0);
+          this.emitHudSnapshot();
+          return;
+        }
+
+        p.hp = evt.newHp;
+        p.maxHp = evt.maxHp;
+        p.hitFlashTimer = 0.12;
+        p.invulnTimer = 0.42;
+        p.squashX = 1.18;
+        p.squashY = 0.84;
+        if (evt.ribBlocked && p.ribcageCharges > 0) {
+          p.ribcageCharges = Math.max(0, p.ribcageCharges - 1);
+          if (p.ribcageCharges <= 0) p.ribcageTimer = 0;
+        }
+        p.ultCharge = Math.min(100, p.ultCharge + 8);
+        this.shakeMag = Math.max(this.shakeMag, evt.ribBlocked ? 3.5 : 7);
+        soundEngine.playHit(true);
+
+        if (evt.ribBlocked) {
+          this.spawnPopup(p.x, p.y - 34, `RIB BLOCK -${evt.damage}`, '#E2E8F0', 0.96);
+          this.spawnBurst(p.x, p.y, '#E2E8F0', 8, 85);
+        } else {
+          this.spawnPopup(p.x, p.y - 24, `-${evt.damage}`, '#F87171', 1.05);
+          this.spawnBurst(p.x, p.y, '#EF4444', 8, 95);
+        }
+        this.emitHudSnapshot();
       },
-      onPlayerRevived: (revivedPlayerId, reviverPlayerId, reviveHp) => {
+      onPlayerDowned: (playerId, playerName) => {
+        const localId = manager.getLocalPlayerId();
+        soundEngine.playBoneBreak();
+        if (playerId === localId) {
+          this.player.hp = 0;
+          this.player.isDowned = true;
+          this.player.bleedoutTimer = 35;
+          this.player.reviveProgress = 0;
+          this.spawnBurst(this.player.x, this.player.y, '#EF4444', 16, 110);
+          this.showBanner('DOWNED! Crawl toward teammates to be revived!');
+        } else {
+          const remote = this.remotePlayers.get(playerId);
+          if (remote) {
+            remote.hp = 0;
+            remote.isDowned = true;
+            remote.bleedoutTimer = 35;
+            remote.reviveProgress = 0;
+            this.spawnBurst(remote.x, remote.y, '#EF4444', 14, 100);
+          }
+          this.showBanner(`${playerName} is Downed! Stand nearby to revive!`);
+        }
+        this.emitHudSnapshot();
+      },
+      onRemoteSkill: (playerId, skillId, x, y, angle, slot, targetX, targetY) => {
+        this.handleRemoteSkillCast(playerId, skillId, x, y, angle, slot, targetX, targetY);
+      },
+      onPropOpened: (propId, kind, x, y, openerId) => {
+        const prop = this.world.props.find((pr) => pr.id === propId);
+        if (prop) {
+          prop.opened = true;
+        }
+        const localId = manager.getLocalPlayerId();
+        if (kind === 'CHEST' && openerId !== localId) {
+          soundEngine.playPickup();
+          this.spawnBurst(x, y, '#FBBF24', 14, 110);
+          const shardMult = this.getDifficultyConfig().shardMultiplier;
+          this.spawnOrb(
+            'SOUL_SHARD',
+            x,
+            y,
+            Math.max(1, Math.round((5 + this.world.floorNumber * 2) * shardMult))
+          );
+          this.spawnOrb('ESSENCE_HEAL', x, y, 18);
+          this.spawnOrb('GOLD_COIN', x, y, 12);
+        }
+      },
+      onPlayerRevived: (revivedPlayerId, _reviverPlayerId, reviveHp, maxHp) => {
         const localId = manager.getLocalPlayerId();
         if (revivedPlayerId === localId) {
           this.player.isDowned = false;
           this.player.bleedoutTimer = 0;
           this.player.reviveProgress = 0;
+          if (maxHp && maxHp > 0) this.player.maxHp = maxHp;
           this.player.hp = reviveHp;
           this.player.invulnTimer = 2.5;
           soundEngine.playHeal();
           this.spawnBurst(this.player.x, this.player.y, '#4ADE80', 20, 120);
           this.spawnPopup(this.player.x, this.player.y - 32, 'REVIVED!', '#4ADE80', 1.4);
-          this.showBanner('Revived by teammate!');
+          this.showBanner('Revived! Back in the fight!');
         } else {
           const remote = this.remotePlayers.get(revivedPlayerId);
           if (remote) {
             remote.isDowned = false;
             remote.hp = reviveHp;
+            if (maxHp && maxHp > 0) remote.maxHp = maxHp;
             remote.reviveProgress = 0;
             soundEngine.playHeal();
             this.spawnBurst(remote.x, remote.y, '#4ADE80', 16, 110);
@@ -611,15 +1005,51 @@ export class GameEngine {
         }
         this.emitHudSnapshot();
       },
-      onFloorSync: (floorNumber, seed) => {
+      onFloorSync: (floorNumber, seed, difficulty) => {
+        this.setDifficulty(difficulty);
+        if (floorNumber === 1 && this.world.isGuild) {
+          this.startGraveyardRun(difficulty, seed, true);
+          return;
+        }
         this.loadDungeonFloor(floorNumber, seed);
+        if (
+          floorNumber > 1 &&
+          floorNumber <= 8 &&
+          this.activeBlessingIds.size < MAX_RUN_BLESSINGS
+        ) {
+          this.offerBlessingsAndAdvanceFloor(null, 'STAGE_CLEAR');
+        }
+      },
+      onPartyVictory: () => {
+        if (this.phase === GamePhase.Victory) return;
+        this.showBanner('Graveyard Conquered Together!');
+        this.finishRun(true);
       },
       onPartyWipe: () => {
+        if (this.phase === GamePhase.GameOver) return;
         this.showBanner('Party Defeated!');
         this.finishRun(false);
       },
-      onPlayerLeft: (playerId: string) => {
+      onReturnToGuild: () => {
+        this.enterGuildRoam();
+      },
+      onHostChanged: (newHostId, newHostName) => {
+        const localId = manager.getLocalPlayerId();
+        for (const [id, rp] of this.remotePlayers.entries()) {
+          rp.isHost = id === newHostId;
+        }
+        if (newHostId === localId) {
+          this.showBanner('You are now the Party Leader!');
+        } else if (newHostName) {
+          this.showBanner(`${newHostName} is now the Party Leader`);
+        }
+        this.emitHudSnapshot();
+      },
+      onPlayerLeft: (playerId: string, playerName?: string) => {
         this.remotePlayers.delete(playerId);
+        if (playerName) {
+          this.showBanner(`${playerName} disconnected from the party`);
+        }
         this.emitHudSnapshot();
       },
     });
@@ -632,10 +1062,14 @@ export class GameEngine {
     x: number,
     y: number,
     angle: number,
-    _slot: 'BASIC' | 'NORMAL_0' | 'NORMAL_1' | 'ULTIMATE'
+    _slot: 'BASIC' | 'NORMAL_0' | 'NORMAL_1' | 'ULTIMATE',
+    targetX?: number,
+    targetY?: number
   ): void {
     const remote = this.remotePlayers.get(playerId);
     const charId = remote?.characterId ?? CharacterId.Zombie;
+    const aimDestX = targetX ?? x + Math.cos(angle) * 180;
+    const aimDestY = targetY ?? y + Math.sin(angle) * 180;
 
     if (skillId === 'BASIC') {
       if (charId === CharacterId.Skeleton) {
@@ -689,6 +1123,38 @@ export class GameEngine {
           flip: Math.random() < 0.5,
           kind: 'GHOST_BASIC_ARC',
         });
+      } else if (charId === CharacterId.Kobold) {
+        soundEngine.playArrow();
+        const mx = x + Math.cos(angle) * 20;
+        const my = y + Math.sin(angle) * 20;
+        this.slashes.push({
+          x: mx,
+          y: my,
+          angle,
+          radius: 26,
+          arcSpread: 0.9,
+          color: '#FB7185',
+          life: 0.14,
+          maxLife: 0.14,
+          flip: false,
+          kind: 'KOBOLD_MUZZLE_FLASH',
+        });
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          isVisualOnly: true,
+          x: mx,
+          y: my,
+          vx: Math.cos(angle) * 760,
+          vy: Math.sin(angle) * 760,
+          radius: 6,
+          damage: 0,
+          life: 0.62,
+          color: '#FB7185',
+          kind: 'PLAYER_CROSSBOW_BOLT',
+          angle,
+          hitEnemyIds: new Set<number>(),
+        });
       } else {
         soundEngine.playSlash(1);
         this.slashes.push({
@@ -711,13 +1177,14 @@ export class GameEngine {
       soundEngine.playPlague();
       this.poisonClouds.push({
         id: allocEntityId(),
+        isVisualOnly: true,
         x,
         y,
         radius: 120,
         life: 4.5,
         maxLife: 4.5,
         tickTimer: 0.1,
-        damagePerTick: 10,
+        damagePerTick: 0,
       });
       this.shockwaves.push({
         x,
@@ -727,17 +1194,17 @@ export class GameEngine {
         life: 0.28,
         maxLife: 0.28,
       });
-    } else if (skillId === NormalSkillId.FleshRipper) {
+    } else if (skillId === NormalSkillId.RottingClaw || skillId === NormalSkillId.FleshRipper) {
       soundEngine.playDash();
       this.slashes.push({
         x,
         y,
         angle,
-        radius: 80,
-        arcSpread: 1.6,
+        radius: 82,
+        arcSpread: 1.65,
         color: '#4ADE80',
-        life: 0.24,
-        maxLife: 0.24,
+        life: 0.26,
+        maxLife: 0.26,
         flip: false,
         kind: 'ZOMBIE_SAVAGE_REND',
       });
@@ -746,12 +1213,13 @@ export class GameEngine {
       this.projectiles.push({
         id: allocEntityId(),
         fromPlayer: true,
+        isVisualOnly: true,
         x,
         y,
         vx: Math.cos(angle) * 600,
         vy: Math.sin(angle) * 600,
         radius: 8,
-        damage: 25,
+        damage: 0,
         life: 1.2,
         color: '#38BDF8',
         kind: 'PLAYER_BONE_SPEAR',
@@ -773,7 +1241,7 @@ export class GameEngine {
         flip: false,
         kind: 'SKELETON_RIBCAGE_BURST',
       });
-    } else if (skillId === NormalSkillId.BoneStorm) {
+    } else if (skillId === NormalSkillId.BoneStorm || skillId === NormalSkillId.SkeletalRush) {
       soundEngine.playSlash(3);
       this.shockwaves.push({
         x,
@@ -790,12 +1258,13 @@ export class GameEngine {
         this.projectiles.push({
           id: allocEntityId(),
           fromPlayer: true,
+          isVisualOnly: true,
           x,
           y,
           vx: Math.cos(fa) * 560,
           vy: Math.sin(fa) * 560,
           radius: 6,
-          damage: 18,
+          damage: 0,
           life: 0.9,
           color: '#F59E0B',
           kind: 'PLAYER_ENCHANTED_DAGGER',
@@ -803,22 +1272,69 @@ export class GameEngine {
           hitEnemyIds: new Set<number>(),
         });
       }
-    } else if (skillId === NormalSkillId.Shadowstep) {
+    } else if (skillId === NormalSkillId.ExplosiveTrap) {
+      soundEngine.playUiClick(680);
+      this.traps.push({
+        id: allocEntityId(),
+        isVisualOnly: true,
+        x: aimDestX,
+        y: aimDestY,
+        triggerRadius: 52,
+        blastRadius: 118,
+        damage: 0,
+        armTimer: 0.25,
+        life: 10,
+        maxLife: 10,
+      });
+    } else if (skillId === NormalSkillId.Shadowstep || skillId === NormalSkillId.Windrunner) {
       soundEngine.playDash();
       this.spawnBurst(x, y, '#F59E0B', 10, 85);
-    } else if (skillId === NormalSkillId.Groundbreaker) {
+    } else if (skillId === NormalSkillId.IronFist || skillId === NormalSkillId.Groundbreaker) {
       soundEngine.playBossSlam();
       this.shockwaves.push({
-        x,
-        y,
-        maxRadius: 95,
+        x: targetX ?? x,
+        y: targetY ?? y,
+        maxRadius: 102,
         color: '#FB923C',
         life: 0.3,
         maxLife: 0.3,
       });
-    } else if (skillId === NormalSkillId.FortressStance) {
+    } else if (skillId === NormalSkillId.EarthenGrasp) {
+      soundEngine.playBossSlam();
+      this.earthenGrasps.push({
+        id: allocEntityId(),
+        isVisualOnly: true,
+        x: aimDestX,
+        y: aimDestY,
+        radius: 105,
+        life: 4.0,
+        maxLife: 4.0,
+        tickTimer: 0.2,
+        damagePerTick: 0,
+        targetEnemyId: null,
+      });
+    } else if (skillId === NormalSkillId.FortressStance || skillId === NormalSkillId.MagneticGuard) {
       soundEngine.playBoneBreak();
       this.spawnBurst(x, y, '#FB923C', 12, 90);
+    } else if (skillId === NormalSkillId.SpectralBolt) {
+      soundEngine.playDash();
+      this.projectiles.push({
+        id: allocEntityId(),
+        fromPlayer: true,
+        isVisualOnly: true,
+        x,
+        y,
+        vx: Math.cos(angle) * 680,
+        vy: Math.sin(angle) * 680,
+        radius: 9,
+        damage: 0,
+        life: 0.9,
+        color: '#67E8F9',
+        kind: 'PLAYER_SPECTRAL_BOLT',
+        angle,
+        pierce: true,
+        hitEnemyIds: new Set<number>(),
+      });
     } else if (skillId === NormalSkillId.PhantomDash) {
       soundEngine.playDash();
       this.afterimages.push({
@@ -830,7 +1346,7 @@ export class GameEngine {
         maxLife: 0.36,
         archetype: 'GHOST',
       });
-    } else if (skillId === NormalSkillId.SoulDrain) {
+    } else if (skillId === NormalSkillId.SoulDrain || skillId === NormalSkillId.SpiritOrbs) {
       soundEngine.playDash();
       this.slashes.push({
         x,
@@ -844,12 +1360,158 @@ export class GameEngine {
         flip: false,
         kind: 'GHOST_SOUL_DRAIN_PULSE',
       });
+    } else if (skillId === NormalSkillId.PiercingBolt) {
+      soundEngine.playArrow();
+      this.slashes.push({
+        x: x + Math.cos(angle) * 20,
+        y: y + Math.sin(angle) * 20,
+        angle,
+        radius: 52,
+        arcSpread: 0.6,
+        color: '#FB7185',
+        life: 0.22,
+        maxLife: 0.22,
+        flip: false,
+        kind: 'KOBOLD_PIERCING_LANCE',
+      });
+      this.projectiles.push({
+        id: allocEntityId(),
+        fromPlayer: true,
+        isVisualOnly: true,
+        x,
+        y,
+        vx: Math.cos(angle) * 900,
+        vy: Math.sin(angle) * 900,
+        radius: 9,
+        damage: 0,
+        life: 0.78,
+        color: '#FB7185',
+        kind: 'PLAYER_PIERCING_BOLT',
+        angle,
+        pierce: true,
+        hitEnemyIds: new Set<number>(),
+      });
+    } else if (skillId === NormalSkillId.ExplosiveBolt) {
+      soundEngine.playArrow();
+      this.projectiles.push({
+        id: allocEntityId(),
+        fromPlayer: true,
+        isVisualOnly: true,
+        x,
+        y,
+        vx: Math.cos(angle) * 720,
+        vy: Math.sin(angle) * 720,
+        radius: 9,
+        damage: 0,
+        life: 0.72,
+        color: '#FB923C',
+        kind: 'PLAYER_EXPLOSIVE_BOLT',
+        angle,
+        blastRadius: 112,
+        hitEnemyIds: new Set<number>(),
+      });
+    } else if (skillId === NormalSkillId.SnareTrap) {
+      soundEngine.playUiClick(740);
+      this.snareTraps.push({
+        id: allocEntityId(),
+        isVisualOnly: true,
+        x: aimDestX,
+        y: aimDestY,
+        triggerRadius: 50,
+        captureRadius: 92,
+        damage: 0,
+        rootDuration: 2.5,
+        vulnerableDuration: 4.0,
+        armTimer: 0.22,
+        life: 12,
+        maxLife: 12,
+      });
+    } else if (skillId === NormalSkillId.MultiShot || skillId === NormalSkillId.RapidReload) {
+      soundEngine.playArrow();
+      for (let i = -3; i <= 3; i++) {
+        const fa = angle + i * 0.2;
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          isVisualOnly: true,
+          x,
+          y,
+          vx: Math.cos(fa) * 740,
+          vy: Math.sin(fa) * 740,
+          radius: 6,
+          damage: 0,
+          life: 0.56,
+          color: '#FB7185',
+          kind: 'PLAYER_CROSSBOW_BOLT',
+          angle: fa,
+          hitEnemyIds: new Set<number>(),
+        });
+      }
+    } else if (skillId === UltimateSkillId.DragonsBarrage) {
+      soundEngine.playBossSlam();
+      this.dragonsBarrages.push({
+        id: allocEntityId(),
+        isVisualOnly: true,
+        x: aimDestX,
+        y: aimDestY,
+        radius: 175,
+        life: 4.2,
+        maxLife: 4.2,
+        tickTimer: 0.12,
+        damagePerVolley: 0,
+      });
+    } else if (skillId === UltimateSkillId.MasterArtificer) {
+      soundEngine.playSummon();
+      for (let i = 0; i < 3; i++) {
+        const ta = angle + ((i - 1) * Math.PI * 2) / 3;
+        this.turrets.push({
+          id: allocEntityId(),
+          isVisualOnly: true,
+          x: x + Math.cos(ta) * 58,
+          y: y + Math.sin(ta) * 58,
+          aimAngle: angle,
+          recoilOffset: 0,
+          fireCooldown: 0.2 + i * 0.12,
+          shotsFired: 0,
+          damage: 0,
+          life: 10,
+          maxLife: 10,
+        });
+      }
+    } else if (skillId === UltimateSkillId.DaggerRain) {
+      soundEngine.playSlash(2);
+      this.daggerRains.push({
+        id: allocEntityId(),
+        isVisualOnly: true,
+        x: aimDestX,
+        y: aimDestY,
+        radius: 155,
+        life: 4.0,
+        maxLife: 4.0,
+        tickTimer: 0.15,
+        damagePerVolley: 0,
+      });
+    } else if (skillId === UltimateSkillId.DeathsPassage) {
+      soundEngine.playBossSlam();
+      this.deathsPassageRifts.push({
+        id: allocEntityId(),
+        isVisualOnly: true,
+        x: aimDestX,
+        y: aimDestY,
+        radius: 155,
+        life: 2.2,
+        maxLife: 2.2,
+        tickTimer: 0.2,
+        pullDamage: 0,
+        explosionDamage: 0,
+        detonated: false,
+      });
     } else {
       soundEngine.playBossSlam();
       this.shockwaves.push({
         x,
         y,
-        maxRadius: 130,
+        maxRadius: 135,
         color: '#FBBF24',
         life: 0.4,
         maxLife: 0.4,
@@ -940,6 +1602,9 @@ export class GameEngine {
     this.minimapJoyY = 0;
     this.attackHeld = false;
     this.bufferedActions.clear();
+    this.activeSkillAim = null;
+    this.pendingManualAims.clear();
+    this.currentCastManualAim = null;
     this.emitHudSnapshot();
   }
 
@@ -982,7 +1647,11 @@ export class GameEngine {
     this.emitHudSnapshot();
   }
 
-  public startGraveyardRun(difficulty?: DifficultyLevel, seed?: number): void {
+  public startGraveyardRun(
+    difficulty?: DifficultyLevel,
+    seed?: number,
+    fromNetworkSync = false
+  ): void {
     if (difficulty) {
       this.currentDifficulty = difficulty;
       this.saveData.selectedDifficulty = difficulty;
@@ -999,6 +1668,8 @@ export class GameEngine {
     this.runDamageDealt = 0;
     this.corpseBloomCounter = 0;
     this.pendingNextFloor = null;
+    this.coopCurrentWave = 0;
+    this.coopTotalWaves = 0;
 
     this.player.isDowned = false;
     this.player.bleedoutTimer = 0;
@@ -1009,28 +1680,43 @@ export class GameEngine {
     this.player.normalCooldowns = [0, 0];
     this.player.ultCooldown = 0;
 
-    const runSeed = seed ?? Math.floor(Math.random() * 1000000);
-    if (this.isInCoop() && this.networkManager?.isHost()) {
-      this.networkManager.sendAdvanceFloor(1, runSeed);
+    if (!fromNetworkSync && this.isInCoop()) {
+      if (this.networkManager?.isHost()) {
+        this.networkManager.startDungeonRun(this.currentDifficulty);
+      }
+      return;
     }
+
+    const runSeed = seed ?? Math.floor(Math.random() * 1000000);
     this.loadDungeonFloor(1, runSeed);
     soundEngine.playSummon();
   }
 
   public applyBlessingChoice(blessingId: string): void {
-    this.activeBlessingIds.add(blessingId);
+    if (this.activeBlessingIds.size < MAX_RUN_BLESSINGS) {
+      this.activeBlessingIds.add(blessingId);
+    }
     if (blessingId === 'zombie_bloated_carcass') {
       this.recomputePlayerStats(false);
       this.healPlayer(22);
     } else if (blessingId === 'skel_fortified_ribs') {
       this.recomputePlayerStats(false);
       this.healPlayer(18);
+    } else if (blessingId === 'gob_shadow_veil') {
+      this.recomputePlayerStats(false);
+      this.healPlayer(16);
     } else if (blessingId === 'gnome_bedrock_plating') {
       this.recomputePlayerStats(false);
       this.healPlayer(24);
     } else if (blessingId === 'ghost_ethereal_veil') {
       this.recomputePlayerStats(false);
       this.healPlayer(14);
+    } else if (blessingId === 'kobold_dragonscale_quiver') {
+      this.recomputePlayerStats(false);
+      this.healPlayer(18);
+    } else if (blessingId === 'relic_lantern_vitality') {
+      this.recomputePlayerStats(false);
+      this.healPlayer(20);
     } else {
       this.recomputePlayerStats(false);
     }
@@ -1052,11 +1738,624 @@ export class GameEngine {
     if (slot === 'BASIC') {
       this.bufferedActions.set('BASIC', 0.14);
     } else if (slot === 'NORMAL_0') {
+      this.pendingManualAims.delete('NORMAL_0');
+      this.bufferedActions.set('SKILL_0', 0.16);
+    } else if (slot === 'NORMAL_1') {
+      this.pendingManualAims.delete('NORMAL_1');
+      this.bufferedActions.set('SKILL_1', 0.16);
+    } else if (slot === 'ULTIMATE') {
+      this.pendingManualAims.delete('ULTIMATE');
+      this.bufferedActions.set('ULT', 0.16);
+    }
+  }
+
+  public setSkillAimPreview(aim: ManualSkillAimInput | null): void {
+    if (
+      !aim ||
+      (this.phase !== GamePhase.Dungeon && this.phase !== GamePhase.GuildRoam) ||
+      this.player.isDowned
+    ) {
+      this.activeSkillAim = null;
+      return;
+    }
+    this.activeSkillAim = aim;
+    if (!aim.isCancelling) {
+      this.player.aimAngle = aim.angle;
+      this.player.facingX = Math.cos(aim.angle) >= 0 ? 1 : -1;
+    }
+  }
+
+  public releaseManualSkill(
+    slot: SkillSlotKey,
+    manualAim?: { angle: number; magnitude: number }
+  ): void {
+    this.activeSkillAim = null;
+    if (this.phase !== GamePhase.Dungeon && this.phase !== GamePhase.GuildRoam) return;
+    if (this.player.isDowned) return;
+
+    if (manualAim) {
+      this.pendingManualAims.set(slot, manualAim);
+      this.player.aimAngle = manualAim.angle;
+      this.player.facingX = Math.cos(manualAim.angle) >= 0 ? 1 : -1;
+    } else {
+      this.pendingManualAims.delete(slot);
+    }
+
+    if (slot === 'NORMAL_0') {
       this.bufferedActions.set('SKILL_0', 0.16);
     } else if (slot === 'NORMAL_1') {
       this.bufferedActions.set('SKILL_1', 0.16);
     } else if (slot === 'ULTIMATE') {
       this.bufferedActions.set('ULT', 0.16);
+    }
+  }
+
+  private findEnemyNearReticle(
+    px: number,
+    py: number,
+    maxRange: number,
+    targetX: number,
+    targetY: number,
+    snapRadius: number,
+    excludeDummy = false
+  ): EnemyEntity | null {
+    let best: EnemyEntity | null = null;
+    let bestDist = snapRadius;
+    for (const enemy of this.world.enemies) {
+      if (!enemy || enemy.hp <= 0) continue;
+      if (excludeDummy && enemy.kind === EnemyKind.TrainingDummy) continue;
+      if (Math.hypot(enemy.x - px, enemy.y - py) > maxRange) continue;
+      const d = Math.hypot(enemy.x - targetX, enemy.y - targetY);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = enemy;
+      }
+    }
+    return best;
+  }
+
+  private clampBeamRangeToWall(
+    px: number,
+    py: number,
+    angle: number,
+    maxRange: number,
+    ignoreProps: boolean
+  ): number {
+    const step = 18;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    for (let d = 24; d <= maxRange; d += step) {
+      const tx = px + cos * d;
+      const ty = py + sin * d;
+      if (!this.isPointInsideWalkableArea(tx, ty)) {
+        return Math.max(24, d - step * 0.5);
+      }
+      if (!ignoreProps) {
+        let hitProp = false;
+        for (const prop of this.world.props) {
+          if (!prop.solid || (prop.destructible && prop.hp <= 0)) continue;
+          if (
+            tx >= prop.x - prop.w / 2 &&
+            tx <= prop.x + prop.w / 2 &&
+            ty >= prop.y - prop.h / 2 &&
+            ty <= prop.y + prop.h / 2
+          ) {
+            hitProp = true;
+            break;
+          }
+        }
+        if (hitProp) {
+          return Math.max(24, d - step * 0.5);
+        }
+      }
+    }
+    return maxRange;
+  }
+
+  private computeSkillTelegraph(
+    slot: SkillSlotKey,
+    angle: number,
+    magnitude: number,
+    isCancelling: boolean
+  ): SkillAimTelegraph | null {
+    const p = this.player;
+    const loadout = this.getActiveLoadout();
+    const ranks = this.getActiveUpgrades();
+    const clampedMag = Math.max(0, Math.min(1, magnitude));
+
+    if (slot === 'NORMAL_0' || slot === 'NORMAL_1') {
+      const idx = slot === 'NORMAL_0' ? 0 : 1;
+      if (p.normalCooldowns[idx] > 0) return null;
+      const skillId = loadout.normalSkills[idx];
+
+      switch (skillId) {
+        case NormalSkillId.RottingClaw: {
+          const reach = Math.round((p.abominationTimer > 0 ? 96 : 78) * 1.12);
+          return {
+            kind: 'CONE',
+            angle,
+            maxRange: reach,
+            arcSpread: 1.75,
+            color: '#4ADE80',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.PlagueBurst: {
+          const miasma = this.activeBlessingIds.has('zombie_skill_plague_burst');
+          const radius = Math.round(128 * (1 + ranks.pathC * 0.08) * (miasma ? 1.18 : 1.0));
+          return {
+            kind: 'SELF_AOE',
+            angle,
+            maxRange: radius,
+            color: '#A3E635',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.FleshRipper:
+          return {
+            kind: 'DASH',
+            angle,
+            maxRange: 145,
+            lineWidth: 44,
+            color: '#34D399',
+            isCancelling,
+          };
+        case NormalSkillId.UndyingFlesh:
+          return {
+            kind: 'SELF_AOE',
+            angle,
+            maxRange: 78,
+            color: '#2DD4BF',
+            isCancelling,
+          };
+        case NormalSkillId.GraveCall: {
+          const volatileAlt = this.activeBlessingIds.has('zombie_skill_grave_call_alt');
+          return {
+            kind: 'CONE',
+            angle,
+            maxRange: volatileAlt ? 115 : 88,
+            arcSpread: 1.8,
+            color: '#86EFAC',
+            isCancelling,
+          };
+        }
+
+        case NormalSkillId.BoneSlash: {
+          const reach = Math.round(
+            (p.colossusTimer > 0 ? 124 : 98) * (1 + ranks.pathB * 0.04)
+          );
+          return {
+            kind: 'CONE',
+            angle,
+            maxRange: reach,
+            arcSpread: 1.95,
+            color: '#38BDF8',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.BoneSpear: {
+          const impalingAlt = this.activeBlessingIds.has('skel_skill_bone_spear_alt');
+          const fullDist = (impalingAlt ? 768 : 640) * 1.45;
+          const beamLen = this.clampBeamRangeToWall(p.x, p.y, angle, fullDist, false);
+          return {
+            kind: 'LINE',
+            angle,
+            maxRange: beamLen,
+            lineWidth: 22,
+            color: '#7DD3FC',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.RibcageShield:
+          return {
+            kind: 'SELF_AOE',
+            angle,
+            maxRange: 74,
+            color: '#E2E8F0',
+            isCancelling,
+          };
+        case NormalSkillId.SkeletalRush:
+          return {
+            kind: 'DASH',
+            angle,
+            maxRange: 150,
+            lineWidth: 42,
+            color: '#38BDF8',
+            isCancelling,
+          };
+        case NormalSkillId.BoneStorm: {
+          const maelstrom = this.activeBlessingIds.has('skel_skill_bone_storm');
+          return {
+            kind: 'SELF_AOE',
+            angle,
+            maxRange: maelstrom ? 92 : 82,
+            color: '#A5B4FC',
+            isCancelling,
+          };
+        }
+
+        case NormalSkillId.DaggerFlurry: {
+          const sevenfold = this.activeBlessingIds.has('gob_skill_dagger_flurry');
+          return {
+            kind: 'CONE',
+            angle,
+            maxRange: sevenfold ? 94 : 82,
+            arcSpread: 1.7,
+            color: '#FBBF24',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.Shadowstep: {
+          const maxR = 325;
+          const dist = clampedMag * maxR;
+          const tx = p.x + Math.cos(angle) * dist;
+          const ty = p.y + Math.sin(angle) * dist;
+          const locked = this.findEnemyNearReticle(p.x, p.y, maxR, tx, ty, 110, false);
+          return {
+            kind: 'TARGET_ENEMY',
+            angle,
+            maxRange: maxR,
+            targetX: tx,
+            targetY: ty,
+            lockedEnemyId: locked?.id ?? null,
+            blinkFallbackRange: 140,
+            color: '#FBBF24',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.ExplosiveTrap: {
+          const blastRadius = Math.round(132 * (1 + ranks.pathD * 0.08));
+          return {
+            kind: 'SELF_AOE',
+            angle,
+            maxRange: 58,
+            aoeRadius: blastRadius,
+            color: '#FB923C',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.Windrunner:
+          return {
+            kind: 'SELF_AOE',
+            angle,
+            maxRange: this.activeBlessingIds.has('gob_skill_windrunner_alt') ? 96 : 78,
+            color: '#FDE047',
+            isCancelling,
+          };
+        case NormalSkillId.PoisonedBlades:
+          return {
+            kind: 'SELF_AOE',
+            angle,
+            maxRange: 56,
+            color: '#A3E635',
+            isCancelling,
+          };
+
+        case NormalSkillId.IronFist: {
+          const reach = Math.round(
+            (p.mountainHeartTimer > 0 ? 168 : 148) * (1 + ranks.pathB * 0.05)
+          );
+          return {
+            kind: 'CONE',
+            angle,
+            maxRange: reach,
+            arcSpread: 1.44,
+            color: '#FB923C',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.FortressStance:
+          return {
+            kind: 'SELF_AOE',
+            angle,
+            maxRange: 86,
+            color: '#FDBA74',
+            isCancelling,
+          };
+        case NormalSkillId.Groundbreaker: {
+          const faultline = this.activeBlessingIds.has('gnome_skill_groundbreaker');
+          const crashRadius = Math.round(
+            138 * (1 + ranks.pathB * 0.04) * (faultline ? 1.18 : 1.0)
+          );
+          return {
+            kind: 'DASH',
+            angle,
+            maxRange: 125,
+            lineWidth: 40,
+            aoeRadius: crashRadius,
+            color: '#FB923C',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.MagneticGuard:
+          return {
+            kind: 'SELF_AOE',
+            angle,
+            maxRange: this.activeBlessingIds.has('gnome_skill_magnetic_guard_alt') ? 185 : 98,
+            color: '#38BDF8',
+            isCancelling,
+          };
+        case NormalSkillId.EarthenGrasp: {
+          const maxR = 220;
+          const dist = Math.max(24, clampedMag * maxR);
+          const tx = p.x + Math.cos(angle) * dist;
+          const ty = p.y + Math.sin(angle) * dist;
+          const locked = this.findEnemyNearReticle(p.x, p.y, maxR, tx, ty, 110, false);
+          return {
+            kind: 'TARGET_AOE',
+            angle,
+            maxRange: maxR,
+            aoeRadius: 68,
+            targetX: tx,
+            targetY: ty,
+            lockedEnemyId: locked?.id ?? null,
+            color: '#D97706',
+            isCancelling,
+          };
+        }
+
+        case NormalSkillId.SpectralBolt: {
+          const fullDist = 610 * 1.45;
+          const beamLen = this.clampBeamRangeToWall(p.x, p.y, angle, fullDist, true);
+          return {
+            kind: 'LINE',
+            angle,
+            maxRange: beamLen,
+            lineWidth: Math.round((13 + ranks.pathB * 0.8) * 2),
+            color: '#C084FC',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.PhantomDash:
+          return {
+            kind: 'DASH',
+            angle,
+            maxRange: 194,
+            lineWidth: 46,
+            color: '#67E8F9',
+            isCancelling,
+          };
+        case NormalSkillId.SoulDrain:
+          return {
+            kind: 'SELF_AOE',
+            angle,
+            maxRange: 180,
+            color: '#34D399',
+            isCancelling,
+          };
+        case NormalSkillId.WailingScream: {
+          const banshee = this.activeBlessingIds.has('ghost_skill_wailing_scream');
+          const screamRadius = Math.round((banshee ? 205 : 178) * (1 + ranks.pathD * 0.04));
+          return {
+            kind: 'SELF_AOE',
+            angle,
+            maxRange: screamRadius,
+            color: '#A78BFA',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.HauntedPossession: {
+          const maxR = 265;
+          const dist = clampedMag * maxR;
+          const tx = p.x + Math.cos(angle) * dist;
+          const ty = p.y + Math.sin(angle) * dist;
+          const locked = this.findEnemyNearReticle(p.x, p.y, maxR, tx, ty, 115, true);
+          return {
+            kind: 'TARGET_ENEMY',
+            angle,
+            maxRange: maxR,
+            targetX: tx,
+            targetY: ty,
+            lockedEnemyId: locked?.id ?? null,
+            color: '#C084FC',
+            isCancelling,
+          };
+        }
+
+        case NormalSkillId.PiercingBolt: {
+          const fullDist = 720;
+          const beamLen = this.clampBeamRangeToWall(p.x, p.y, angle, fullDist, false);
+          return {
+            kind: 'LINE',
+            angle,
+            maxRange: beamLen,
+            lineWidth: 22,
+            color: '#FB7185',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.RapidReload:
+          return {
+            kind: 'CONE',
+            angle,
+            maxRange: 390,
+            arcSpread: 0.9,
+            color: '#FBBF24',
+            isCancelling,
+          };
+        case NormalSkillId.ExplosiveBolt: {
+          const fullDist = 520;
+          const beamLen = this.clampBeamRangeToWall(p.x, p.y, angle, fullDist, false);
+          const thermo = this.activeBlessingIds.has('kobold_skill_explosive_bolt');
+          const blastR = Math.round(118 * (1 + ranks.pathD * 0.08) * (thermo ? 1.24 : 1.0));
+          return {
+            kind: 'LINE',
+            angle,
+            maxRange: beamLen,
+            lineWidth: 20,
+            aoeRadius: blastR,
+            color: '#FB923C',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.SnareTrap: {
+          const maxR = 215;
+          const dist = Math.max(18, clampedMag * maxR);
+          const tx = p.x + Math.cos(angle) * dist;
+          const ty = p.y + Math.sin(angle) * dist;
+          const snap = this.findEnemyNearReticle(p.x, p.y, maxR, tx, ty, 64, false);
+          return {
+            kind: 'TARGET_AOE',
+            angle,
+            maxRange: maxR,
+            aoeRadius: 68,
+            targetX: snap ? snap.x : tx,
+            targetY: snap ? snap.y : ty,
+            lockedEnemyId: snap?.id ?? null,
+            color: '#F59E0B',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.MultiShot: {
+          const wideFan = this.activeBlessingIds.has('kobold_skill_multi_shot');
+          return {
+            kind: 'CONE',
+            angle,
+            maxRange: 390,
+            arcSpread: wideFan ? 1.75 : 1.48,
+            color: '#FB7185',
+            isCancelling,
+          };
+        }
+      }
+    }
+
+    // ULTIMATE SKILL
+    if (p.ultCooldown > 0 || p.ultCharge < 100) return null;
+    const ultId = loadout.ultimateSkill;
+    switch (ultId) {
+      case UltimateSkillId.AbominationForm:
+        return { kind: 'SELF_AOE', angle, maxRange: 150, color: '#4ADE80', isCancelling };
+      case UltimateSkillId.KingdomOfTheDead:
+        return { kind: 'SELF_AOE', angle, maxRange: 165, color: '#A3E635', isCancelling };
+      case UltimateSkillId.DeathsEmbrace:
+        return { kind: 'SELF_AOE', angle, maxRange: 250, color: '#A3E635', isCancelling };
+
+      case UltimateSkillId.BoneColossus:
+        return { kind: 'SELF_AOE', angle, maxRange: 160, color: '#38BDF8', isCancelling };
+      case UltimateSkillId.ArmyOfBones:
+        return { kind: 'SELF_AOE', angle, maxRange: 170, color: '#818CF8', isCancelling };
+      case UltimateSkillId.ReapersJudgment:
+        return {
+          kind: 'CONE',
+          angle,
+          maxRange: 172,
+          arcSpread: 2.6,
+          color: '#C084FC',
+          isCancelling,
+        };
+
+      case UltimateSkillId.PhantomFrenzy:
+      case UltimateSkillId.KingOfThieves: {
+        const maxR = 340;
+        const dist = clampedMag * maxR;
+        const tx = p.x + Math.cos(angle) * dist;
+        const ty = p.y + Math.sin(angle) * dist;
+        const locked = this.findEnemyNearReticle(p.x, p.y, maxR, tx, ty, 125, false);
+        return {
+          kind: 'TARGET_ENEMY',
+          angle,
+          maxRange: maxR,
+          targetX: tx,
+          targetY: ty,
+          lockedEnemyId: locked?.id ?? null,
+          color: ultId === UltimateSkillId.PhantomFrenzy ? '#F59E0B' : '#FBBF24',
+          isCancelling,
+        };
+      }
+      case UltimateSkillId.ThousandDaggers: {
+        const tempest = this.activeBlessingIds.has('gob_ult_thousand');
+        const maxR = 280;
+        const dist = clampedMag * maxR;
+        const rawTx = p.x + Math.cos(angle) * dist;
+        const rawTy = p.y + Math.sin(angle) * dist;
+        const snap = this.findEnemyNearReticle(p.x, p.y, maxR, rawTx, rawTy, 54, false);
+        return {
+          kind: 'TARGET_AOE',
+          angle,
+          maxRange: maxR,
+          aoeRadius: tempest ? 238 : 190,
+          targetX: snap ? snap.x : rawTx,
+          targetY: snap ? snap.y : rawTy,
+          lockedEnemyId: snap?.id ?? null,
+          color: '#34D399',
+          isCancelling,
+        };
+      }
+
+      case UltimateSkillId.MountainsHeart:
+        return { kind: 'SELF_AOE', angle, maxRange: 165, color: '#FB923C', isCancelling };
+      case UltimateSkillId.TitansRampart:
+        return { kind: 'SELF_AOE', angle, maxRange: 165, color: '#FB923C', isCancelling };
+      case UltimateSkillId.CataclysmicSlam: {
+        const waves = this.activeBlessingIds.has('gnome_ult_cataclysm') ? 4 : 3;
+        const outerWaveR = Math.round((125 + (waves - 1) * 78) * (1 + ranks.pathB * 0.04));
+        return { kind: 'SELF_AOE', angle, maxRange: outerWaveR, color: '#FB923C', isCancelling };
+      }
+
+      case UltimateSkillId.EternalNightmare:
+        return { kind: 'SELF_AOE', angle, maxRange: 220, color: '#A855F7', isCancelling };
+      case UltimateSkillId.SpiritLegion:
+        return { kind: 'SELF_AOE', angle, maxRange: 132, color: '#67E8F9', isCancelling };
+      case UltimateSkillId.DeathsPassage: {
+        const horizon = this.activeBlessingIds.has('ghost_ult_passage');
+        const riftRadius = Math.round((horizon ? 212 : 192) * (1 + ranks.pathD * 0.04));
+        const maxR = 290;
+        const dist = clampedMag * maxR;
+        const rawTx = p.x + Math.cos(angle) * dist;
+        const rawTy = p.y + Math.sin(angle) * dist;
+        const snap = this.findEnemyNearReticle(p.x, p.y, maxR, rawTx, rawTy, 54, false);
+        return {
+          kind: 'TARGET_AOE',
+          angle,
+          maxRange: maxR,
+          aoeRadius: riftRadius,
+          targetX: snap ? snap.x : rawTx,
+          targetY: snap ? snap.y : rawTy,
+          lockedEnemyId: snap?.id ?? null,
+          color: '#A855F7',
+          isCancelling,
+        };
+      }
+
+      case UltimateSkillId.DragonsBarrage: {
+        const wyrmfire = this.activeBlessingIds.has('kobold_ult_barrage');
+        const barrageRadius = Math.round((wyrmfire ? 236 : 196) * (1 + ranks.pathD * 0.04));
+        const maxR = 295;
+        const dist = clampedMag * maxR;
+        const rawTx = p.x + Math.cos(angle) * dist;
+        const rawTy = p.y + Math.sin(angle) * dist;
+        const snap = this.findEnemyNearReticle(p.x, p.y, maxR, rawTx, rawTy, 56, false);
+        return {
+          kind: 'TARGET_AOE',
+          angle,
+          maxRange: maxR,
+          aoeRadius: barrageRadius,
+          targetX: snap ? snap.x : rawTx,
+          targetY: snap ? snap.y : rawTy,
+          lockedEnemyId: snap?.id ?? null,
+          color: '#FB7185',
+          isCancelling,
+        };
+      }
+      case UltimateSkillId.MasterArtificer:
+        return {
+          kind: 'SELF_AOE',
+          angle,
+          maxRange: 108,
+          aoeRadius: 340,
+          color: '#F59E0B',
+          isCancelling,
+        };
+      case UltimateSkillId.KoboldsDeadlyArsenal:
+        return {
+          kind: 'CONE',
+          angle,
+          maxRange: 440,
+          arcSpread: 1.35,
+          color: '#FBBF24',
+          isCancelling,
+        };
     }
   }
 
@@ -1083,6 +2382,9 @@ export class GameEngine {
     this.projectiles = [];
     this.poisonClouds = [];
     this.traps = [];
+    this.snareTraps = [];
+    this.turrets = [];
+    this.dragonsBarrages = [];
     this.afterimages = [];
     this.daggerRains = [];
     this.earthenGrasps = [];
@@ -1150,6 +2452,24 @@ export class GameEngine {
     this.player.ghostLungeOffset = 0;
     this.player.ghostBasicCount = 0;
     this.player.ghostMistDropAccum = 0;
+    this.player.koboldShotStep = 0;
+    this.player.koboldBoltCounter = 0;
+    this.player.koboldRecoilOffset = 0;
+    this.player.tinkerHasteTimer = 0;
+    this.player.rapidReloadRemaining = 0;
+    this.player.arsenalRemaining = 0;
+    this.player.ultSurgeTimer = 0;
+    this.player.stormReliquaryCount = 0;
+    this.player.deathrattlerTimer = 0;
+    this.player.miasmaShroudTick = 0;
+    this.player.forgeheartTick = 0;
+    this.player.stonebornRegenTick = 0;
+    this.player.abomBonusExtended = 0;
+    this.player.manualAimHoldTimer = 0;
+    this.player.manualPriorityTargetId = null;
+    this.activeSkillAim = null;
+    this.pendingManualAims.clear();
+    this.currentCastManualAim = null;
   }
 
   private recomputePlayerStats(fullHeal: boolean): void {
@@ -1160,6 +2480,7 @@ export class GameEngine {
     const isGob = profile.id === CharacterId.Goblin;
     const isGnome = profile.id === CharacterId.Gnome;
     const isGhost = profile.id === CharacterId.Ghost;
+    const isKobold = profile.id === CharacterId.Kobold;
 
     const upgHp = isSkel
       ? ranks.pathA * 14
@@ -1169,14 +2490,21 @@ export class GameEngine {
       ? ranks.pathA * 26
       : isGhost
       ? ranks.pathA * 9
+      : isKobold
+      ? ranks.pathA * 12
       : ranks.pathA * 24;
     const statueHp =
       (this.activeBlessingIds.has('zombie_bloated_carcass') ? 22 : 0) +
       (this.activeBlessingIds.has('skel_fortified_ribs') ? 18 : 0) +
+      (this.activeBlessingIds.has('gob_shadow_veil') ? 16 : 0) +
       (this.activeBlessingIds.has('gnome_bedrock_plating') ? 24 : 0) +
-      (this.activeBlessingIds.has('ghost_ethereal_veil') ? 14 : 0);
+      (this.activeBlessingIds.has('ghost_ethereal_veil') ? 14 : 0) +
+      (this.activeBlessingIds.has('kobold_dragonscale_quiver') ? 18 : 0) +
+      (this.activeBlessingIds.has('relic_lantern_vitality') ? 20 : 0);
     const levelBonus = (this.runLevel - 1) * 10;
-    const newMaxHp = profile.baseHp + upgHp + statueHp + levelBonus;
+    const rawMaxHp = profile.baseHp + upgHp + statueHp + levelBonus;
+    const pactHpMult = this.activeBlessingIds.has('relic_glass_scythe') ? 0.85 : 1.0;
+    const newMaxHp = Math.max(35, Math.round(rawMaxHp * pactHpMult));
 
     this.player.characterId = profile.id;
     this.player.maxHp = newMaxHp;
@@ -1187,7 +2515,7 @@ export class GameEngine {
     }
 
     const upgSpeedMult =
-      isSkel || isGob
+      isSkel || isGob || isKobold
         ? 1 + ranks.pathE * 0.05
         : isGnome
         ? 1 + ranks.pathE * 0.04
@@ -1196,12 +2524,19 @@ export class GameEngine {
         : 1.0;
     const statueSpeedMult =
       (this.activeBlessingIds.has('skel_phantom_stride') ? 1.1 : 1.0) *
-      (this.activeBlessingIds.has('gob_quicksilver_boots') ? 1.1 : 1.0);
+      (this.activeBlessingIds.has('gob_quicksilver_boots') ? 1.1 : 1.0) *
+      (this.activeBlessingIds.has('gnome_seismic_momentum') ? 1.12 : 1.0) *
+      (this.activeBlessingIds.has('kobold_clockwork_overdrive') ? 1.08 : 1.0);
     this.player.speed = profile.baseSpeed * upgSpeedMult * statueSpeedMult;
 
-    const pathCdStep = isSkel || isGob || isGhost ? 0.07 : 0.06;
+    const pathCdStep = isSkel || isGob || isGhost || isKobold ? 0.07 : 0.06;
     const upgCdMult = 1 - ranks.pathE * pathCdStep;
-    const normalBlessCdMult = this.activeBlessingIds.has('skel_phantom_stride') ? 0.9 : 1.0;
+    const normalBlessCdMult =
+      (this.activeBlessingIds.has('skel_phantom_stride') ? 0.9 : 1.0) *
+      (this.activeBlessingIds.has('ghost_astral_conduit') ? 0.86 : 1.0) *
+      (this.activeBlessingIds.has('kobold_clockwork_overdrive') ? 0.88 : 1.0) *
+      (this.activeBlessingIds.has('relic_chrono_hourglass') ? 0.86 : 1.0);
+    const ultBlessCdMult = this.activeBlessingIds.has('relic_soul_dynamo') ? 0.85 : 1.0;
 
     const s0 = NORMAL_SKILLS[loadout.normalSkills[0]];
     const s1 = NORMAL_SKILLS[loadout.normalSkills[1]];
@@ -1211,7 +2546,7 @@ export class GameEngine {
       Math.max(1.0, +(s0.cooldown * upgCdMult * normalBlessCdMult).toFixed(1)),
       Math.max(1.0, +(s1.cooldown * upgCdMult * normalBlessCdMult).toFixed(1)),
     ];
-    this.player.ultMaxCooldown = Math.max(8, +(ult.cooldown * upgCdMult).toFixed(1));
+    this.player.ultMaxCooldown = Math.max(8, +(ult.cooldown * upgCdMult * ultBlessCdMult).toFixed(1));
     this.player.resolveRatio = isGnome
       ? Math.max(0, Math.min(1, 1 - this.player.hp / Math.max(1, this.player.maxHp)))
       : 0;
@@ -1273,7 +2608,7 @@ export class GameEngine {
     const ranks = this.getActiveUpgrades();
     const charId = this.player.characterId;
     const pathBStep =
-      charId === CharacterId.Skeleton
+      charId === CharacterId.Skeleton || charId === CharacterId.Kobold
         ? 0.13
         : charId === CharacterId.Goblin
         ? 0.12
@@ -1295,6 +2630,8 @@ export class GameEngine {
       charId === CharacterId.Ghost && this.activeBlessingIds.has('ghost_ectoplasm_wisp')
         ? 1.1
         : 1.0;
+    const koboldHaste =
+      charId === CharacterId.Kobold && this.player.tinkerHasteTimer > 0 ? 1.12 : 1.0;
     const ghostRestless = this.getGhostRestlessMultiplier();
     const ghostNightmare =
       charId === CharacterId.Ghost && this.player.nightmareTimer > 0 ? 1.25 : 1.0;
@@ -1302,6 +2639,24 @@ export class GameEngine {
     const colossus = this.player.colossusTimer > 0 ? 1.7 : 1.0;
     const mountain = this.player.mountainHeartTimer > 0 ? 1.55 : 1.0;
     const stolenMight = this.player.stolenMightTimer > 0 ? 1.35 : 1.0;
+    const bloodshield =
+      charId === CharacterId.Zombie &&
+      this.player.undyingTimer > 0 &&
+      this.activeBlessingIds.has('zombie_skill_undying_flesh_alt')
+        ? 1.2
+        : 1.0;
+    const juggernaut =
+      charId === CharacterId.Gnome &&
+      this.player.fortressTimer > 0 &&
+      this.activeBlessingIds.has('gnome_skill_fortress_stance_alt')
+        ? 1.24
+        : 1.0;
+    const gildedGold =
+      charId === CharacterId.Goblin && this.activeBlessingIds.has('gob_gilded_cutthroat')
+        ? 1 + Math.min(0.25, Math.floor(this.runCoins / 10) * 0.01)
+        : 1.0;
+    const glassScythe = this.activeBlessingIds.has('relic_glass_scythe') ? 1.28 : 1.0;
+    const chronoSurge = this.player.ultSurgeTimer > 0 ? 1.22 : 1.0;
     const lvl = 1 + (this.runLevel - 1) * 0.07;
     return (
       upg *
@@ -1309,12 +2664,18 @@ export class GameEngine {
       concussive *
       gritOffense *
       ghostWisp *
+      koboldHaste *
       ghostRestless *
       ghostNightmare *
       abom *
       colossus *
       mountain *
       stolenMight *
+      bloodshield *
+      juggernaut *
+      gildedGold *
+      glassScythe *
+      chronoSurge *
       lvl
     );
   }
@@ -1327,14 +2688,34 @@ export class GameEngine {
         ? ranks.pathD * 0.18
         : charId === CharacterId.Goblin
         ? ranks.pathD * 0.24
+        : charId === CharacterId.Kobold
+        ? ranks.pathD * 0.22
         : charId === CharacterId.Gnome
         ? ranks.pathC * 0.18
         : charId === CharacterId.Ghost
         ? ranks.pathB * 0.14 + ranks.pathC * 0.16
         : ranks.pathC * 0.2;
     const ghostRestless = this.getGhostRestlessMultiplier();
+    const astralConduit =
+      charId === CharacterId.Ghost && this.activeBlessingIds.has('ghost_astral_conduit')
+        ? 1.15
+        : 1.0;
+    const gildedGold =
+      charId === CharacterId.Goblin && this.activeBlessingIds.has('gob_gilded_cutthroat')
+        ? 1 + Math.min(0.25, Math.floor(this.runCoins / 10) * 0.01)
+        : 1.0;
+    const glassScythe = this.activeBlessingIds.has('relic_glass_scythe') ? 1.28 : 1.0;
+    const chronoSurge = this.player.ultSurgeTimer > 0 ? 1.22 : 1.0;
     const lvl = 1 + (this.runLevel - 1) * 0.06;
-    return (1 + upgBonus) * ghostRestless * lvl;
+    return (
+      (1 + upgBonus) *
+      ghostRestless *
+      astralConduit *
+      gildedGold *
+      glassScythe *
+      chronoSurge *
+      lvl
+    );
   }
 
   /**
@@ -1355,15 +2736,55 @@ export class GameEngine {
       enemy.slowTimer > 0 ||
       enemy.hp < enemy.maxHp * 0.55;
 
+    const hasExecGuile = this.activeBlessingIds.has('gob_executioner_guile');
+    const isLowExecute = hasExecGuile && enemy.hp < enemy.maxHp * 0.3;
+
     if (isBehind || isWeakened) {
       const ranks = this.getActiveUpgrades();
       return {
-        dmgMult: 1.32 + ranks.pathC * 0.1,
-        bonusCrit: 0.25,
+        dmgMult: 1.32 + ranks.pathC * 0.1 + (hasExecGuile ? 0.15 : 0),
+        bonusCrit: isLowExecute ? 1.0 : 0.25,
         active: true,
       };
     }
     return { dmgMult: 1, bonusCrit: 0, active: false };
+  }
+
+  /**
+   * Kobold Passive 2: Hunter's Precision
+   * Repeatedly attacking the same enemy identifies its weaknesses, stacking accuracy/crit & damage!
+   */
+  private applyHuntersPrecisionAndRoll(
+    enemy: EnemyEntity,
+    rawDamage: number,
+    bonusCritChance = 0,
+    forceCrit = false,
+    stacksToAdd = 1
+  ): { damage: number; isCrit: boolean } {
+    if (this.player.characterId !== CharacterId.Kobold) {
+      return this.rollPhysicalAttack(rawDamage, bonusCritChance, forceCrit);
+    }
+    const ranks = this.getActiveUpgrades();
+    const hasQuarry = this.activeBlessingIds.has('kobold_hunters_quarry');
+    const maxStacks = hasQuarry ? 7 : 5;
+    const existingStacks = enemy.hunterMarkStacks ?? 0;
+
+    const markDmgMult = 1 + existingStacks * (0.07 + ranks.pathC * 0.02);
+    const markCritBonus = existingStacks * 0.06;
+    const roll = this.rollPhysicalAttack(
+      rawDamage * markDmgMult,
+      bonusCritChance + markCritBonus,
+      forceCrit
+    );
+
+    enemy.hunterMarkStacks = Math.min(maxStacks, existingStacks + stacksToAdd);
+    enemy.hunterMarkTimer = 6.0;
+
+    if (roll.isCrit && existingStacks >= 4 && hasQuarry) {
+      this.player.normalCooldowns[0] = Math.max(0, this.player.normalCooldowns[0] - 0.35);
+      this.player.normalCooldowns[1] = Math.max(0, this.player.normalCooldowns[1] - 0.35);
+    }
+    return roll;
   }
 
   private rollPhysicalAttack(
@@ -1377,10 +2798,23 @@ export class GameEngine {
     const isSkel = profile.id === CharacterId.Skeleton;
     const isGob = profile.id === CharacterId.Goblin;
     const isGhost = profile.id === CharacterId.Ghost;
+    const isKobold = profile.id === CharacterId.Kobold;
 
-    const upgCrit = isSkel || isGob || isGhost ? ranks.pathC * 0.04 : 0;
+    const upgCrit = isSkel || isGob || isGhost || isKobold ? ranks.pathC * 0.04 : 0;
     const ivoryCrit = this.activeBlessingIds.has('skel_ivory_edge') ? 0.1 : 0;
+    const serratedCrit = this.activeBlessingIds.has('kobold_serrated_broadheads') ? 0.1 : 0;
+    const deathrattlerCrit = this.player.deathrattlerTimer > 0 ? 0.15 : 0;
     const heartseekerCrit = this.activeBlessingIds.has('gob_throat_seeker') ? 0.12 : 0;
+    const cycloneCrit =
+      this.player.windrunnerTimer > 0 && this.activeBlessingIds.has('gob_skill_windrunner_alt')
+        ? 0.2
+        : 0;
+    const neuroCrit =
+      this.player.poisonBladesTimer > 0 &&
+      this.activeBlessingIds.has('gob_skill_poisoned_blades_alt')
+        ? 0.15
+        : 0;
+    const shatterstoneCrit = this.activeBlessingIds.has('gnome_shatterstone_grip') ? 0.12 : 0;
     const colossusCrit = this.player.colossusTimer > 0 ? 0.25 : 0;
 
     const totalCritChance = Math.min(
@@ -1388,7 +2822,12 @@ export class GameEngine {
       profile.baseCritChance +
         upgCrit +
         ivoryCrit +
+        serratedCrit +
+        deathrattlerCrit +
         heartseekerCrit +
+        cycloneCrit +
+        neuroCrit +
+        shatterstoneCrit +
         colossusCrit +
         bonusCritChance
     );
@@ -1398,12 +2837,20 @@ export class GameEngine {
       return { damage: Math.max(1, Math.round(rawDamage)), isCrit: false };
     }
 
-    const skelPrecisionMult = isSkel ? ranks.pathC * 0.12 : 0;
+    const skelPrecisionMult = isSkel || isKobold ? ranks.pathC * 0.12 : 0;
     const ivoryMult = this.activeBlessingIds.has('skel_ivory_edge') ? 0.18 : 0;
+    const serratedMult = this.activeBlessingIds.has('kobold_serrated_broadheads') ? 0.24 : 0;
+    const shatterstoneMult = this.activeBlessingIds.has('gnome_shatterstone_grip') ? 0.2 : 0;
     const heartseekerMult =
       isOpportunisticHit && this.activeBlessingIds.has('gob_throat_seeker') ? 0.2 : 0;
 
-    const critMult = profile.critMultiplier + skelPrecisionMult + ivoryMult + heartseekerMult;
+    const critMult =
+      profile.critMultiplier +
+      skelPrecisionMult +
+      ivoryMult +
+      serratedMult +
+      shatterstoneMult +
+      heartseekerMult;
     return {
       damage: Math.max(2, Math.round(rawDamage * critMult)),
       isCrit: true,
@@ -1446,6 +2893,9 @@ export class GameEngine {
     this.minimapJoyY = 0;
     this.attackHeld = false;
     this.bufferedActions.clear();
+    this.activeSkillAim = null;
+    this.pendingManualAims.clear();
+    this.currentCastManualAim = null;
   }
 
   private clampMapPanToWorldBounds(): void {
@@ -1599,6 +3049,10 @@ export class GameEngine {
           Math.hypot(worldX - door.x, worldY - door.y) <= 82 &&
           Math.hypot(this.player.x - door.x, this.player.y - door.y) <= 120
         ) {
+          if (this.isInCoop() && !this.networkManager?.isHost()) {
+            this.showBanner('Waiting for Party Leader to open the Graveyard Gate...');
+            return;
+          }
           soundEngine.playUiClick(640);
           if (this.callbacks.onRequestDifficultySelect) {
             this.callbacks.onRequestDifficultySelect();
@@ -1623,12 +3077,28 @@ export class GameEngine {
           return;
         }
         if (prop.kind === 'PORTAL_ARCH' && tapDist <= 68 && playerDist <= 105) {
+          if (this.isInCoop()) {
+            if (!this.networkManager?.isHost()) {
+              this.showBanner('Waiting for Party Leader to enter the portal...');
+              return;
+            }
+            const maxFloors = this.getDifficultyConfig().maxFloors;
+            if (this.world.floorNumber >= maxFloors) {
+              this.networkManager?.sendClaimVictory();
+            } else {
+              const nextFloor = this.world.floorNumber + 1;
+              const seed = Math.floor(Math.random() * 1000000) + 1;
+              this.networkManager?.sendAdvanceFloor(nextFloor, seed);
+            }
+            return;
+          }
+
           const maxFloors = this.getDifficultyConfig().maxFloors;
           if (this.world.floorNumber >= maxFloors) {
             this.finishRun(true);
           } else {
             const nextFloor = this.world.floorNumber + 1;
-            if (this.world.floorNumber > 7) {
+            if (this.world.floorNumber > 7 || this.activeBlessingIds.size >= MAX_RUN_BLESSINGS) {
               this.loadDungeonFloor(nextFloor);
             } else {
               this.offerBlessingsAndAdvanceFloor(nextFloor, 'STAGE_CLEAR');
@@ -1726,7 +3196,15 @@ export class GameEngine {
           dashTimer: +this.player.dashTimer.toFixed(2),
           leapAirProgress: +this.player.leapAirProgress.toFixed(2),
           isAttacking: this.attackHeld || this.bufferedActions.has('BASIC'),
-          comboStep: this.player.zombieComboStep || this.player.skelComboStep || 0,
+          comboStep:
+            this.player.zombieComboStep ||
+            this.player.skelComboStep ||
+            this.player.goblinComboStep ||
+            this.player.gnomeComboStep ||
+            this.player.ghostComboStep ||
+            this.player.koboldShotStep ||
+            0,
+          comboFlip: this.player.comboFlip,
           isDowned: this.player.isDowned,
           bleedoutTimer: +this.player.bleedoutTimer.toFixed(1),
           reviveProgress: +this.player.reviveProgress.toFixed(2),
@@ -1738,41 +3216,19 @@ export class GameEngine {
             boneStorm: this.player.boneStormTimer > 0,
             colossus: this.player.colossusTimer > 0,
             windrunner: this.player.windrunnerTimer > 0,
+            poisonBlades: this.player.poisonBladesTimer > 0,
+            stolenMight: this.player.stolenMightTimer > 0,
             fortress: this.player.fortressTimer > 0,
+            magnetic: this.player.magneticTimer > 0,
             mountainHeart: this.player.mountainHeartTimer > 0,
             restless: this.player.restlessTimer > 0,
+            soulDrain: this.player.soulDrainTimer > 0,
             nightmare: this.player.nightmareTimer > 0,
+            tinkerHaste: this.player.tinkerHasteTimer > 0,
+            rapidReload: this.player.rapidReloadRemaining > 0,
+            arsenal: this.player.arsenalRemaining > 0,
           },
         });
-
-        // Host in Co-op mode syncs authoritative enemy positions and wave count (10-20 Hz)
-        if (this.networkManager.isHost() && this.isInCoop() && this.phase === GamePhase.Dungeon) {
-          const activeRoom = this.world.rooms.find((r) => r.id === this.currentRoomId);
-          const syncEnemies: EnemySyncState[] = this.world.enemies.map((e) => ({
-            id: e.id,
-            kind: e.kind,
-            x: +e.x.toFixed(1),
-            y: +e.y.toFixed(1),
-            vx: +e.vx.toFixed(1),
-            vy: +e.vy.toFixed(1),
-            hp: e.hp,
-            maxHp: e.maxHp,
-            facingX: e.facingX,
-            aiState: e.aiState,
-            telegraphType: e.telegraphType,
-            telegraphAngle: +e.telegraphAngle.toFixed(2),
-            hitFlashTimer: +e.hitFlashTimer.toFixed(2),
-            stunTimer: +e.stunTimer.toFixed(2),
-            plagueTimer: +e.plagueTimer.toFixed(2),
-            infectionStacks: e.infectionStacks,
-            roomId: e.roomId,
-          }));
-          this.networkManager.sendSyncEnemies(
-            this.currentRoomId,
-            activeRoom?.wavesRemaining ?? 0,
-            syncEnemies
-          );
-        }
       }
     }
     this.updateMinions(dt);
@@ -1780,6 +3236,9 @@ export class GameEngine {
     this.updateProjectiles(dt);
     this.updatePoisonClouds(dt);
     this.updateTraps(dt);
+    this.updateSnareTraps(dt);
+    this.updateTurrets(dt);
+    this.updateDragonsBarrages(dt);
     this.updateDaggerRains(dt);
     this.updateEarthenGrasps(dt);
     this.updateStoneRamparts(dt);
@@ -1836,17 +3295,93 @@ export class GameEngine {
     p.goblinLungeOffset += (0 - p.goblinLungeOffset) * Math.min(1, dt * 18);
     p.gnomeLungeOffset += (0 - p.gnomeLungeOffset) * Math.min(1, dt * 15);
     p.ghostLungeOffset += (0 - p.ghostLungeOffset) * Math.min(1, dt * 16);
+    p.koboldRecoilOffset += (0 - p.koboldRecoilOffset) * Math.min(1, dt * 18);
     if (p.hitFlashTimer > 0) p.hitFlashTimer -= dt;
     if (p.invulnTimer > 0) p.invulnTimer -= dt;
     if (p.basicAttackCooldown > 0) p.basicAttackCooldown -= dt;
-    if (p.normalCooldowns[0] > 0) p.normalCooldowns[0] = Math.max(0, p.normalCooldowns[0] - dt);
-    if (p.normalCooldowns[1] > 0) p.normalCooldowns[1] = Math.max(0, p.normalCooldowns[1] - dt);
+    const cdRecoverMult =
+      p.fortressTimer > 0 && this.activeBlessingIds.has('gnome_skill_fortress_stance_alt')
+        ? 1.3
+        : 1.0;
+    if (p.normalCooldowns[0] > 0) {
+      p.normalCooldowns[0] = Math.max(0, p.normalCooldowns[0] - dt * cdRecoverMult);
+    }
+    if (p.normalCooldowns[1] > 0) {
+      p.normalCooldowns[1] = Math.max(0, p.normalCooldowns[1] - dt * cdRecoverMult);
+    }
     if (p.ultCooldown > 0) p.ultCooldown = Math.max(0, p.ultCooldown - dt);
+    if (p.ultSurgeTimer > 0) p.ultSurgeTimer = Math.max(0, p.ultSurgeTimer - dt);
+    if (p.deathrattlerTimer > 0) p.deathrattlerTimer = Math.max(0, p.deathrattlerTimer - dt);
 
+    const dynamoMult = this.activeBlessingIds.has('relic_soul_dynamo') ? 1.3 : 1.0;
     if (this.world.isGuild) {
       p.ultCharge = Math.min(100, p.ultCharge + 28 * dt);
     } else {
-      p.ultCharge = Math.min(100, p.ultCharge + 1.8 * dt);
+      p.ultCharge = Math.min(100, p.ultCharge + 1.8 * dynamoMult * dt);
+    }
+
+    // Combat passive aura blessings (Miasma Shroud, Forgeheart Furnace, Stoneborn Vigor)
+    if (!this.world.isGuild && !p.isDowned && this.world.enemies.length > 0) {
+      if (p.characterId === CharacterId.Zombie && this.activeBlessingIds.has('zombie_miasma_shroud')) {
+        p.miasmaShroudTick -= dt;
+        if (p.miasmaShroudTick <= 0) {
+          p.miasmaShroudTick = 1.8;
+          this.shockwaves.push({
+            x: p.x,
+            y: p.y,
+            maxRadius: 102,
+            color: '#A3E635',
+            life: 0.24,
+            maxLife: 0.24,
+          });
+          const shroudDmg = Math.round(12 * this.getPlagueOrSkillMultiplier());
+          for (const enemy of [...this.world.enemies]) {
+            if (!enemy || enemy.hp <= 0) continue;
+            if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 102 + enemy.radius) {
+              this.damageEnemy(enemy, shroudDmg, false, p.x, p.y);
+              this.applyInfectiousTouch(enemy, 1);
+            }
+          }
+        }
+      }
+      if (
+        p.characterId === CharacterId.Gnome &&
+        this.activeBlessingIds.has('gnome_forgeheart_furnace')
+      ) {
+        p.forgeheartTick -= dt;
+        if (p.forgeheartTick <= 0) {
+          p.forgeheartTick = 2.0;
+          this.shockwaves.push({
+            x: p.x,
+            y: p.y,
+            maxRadius: 105,
+            color: '#FB923C',
+            life: 0.25,
+            maxLife: 0.25,
+          });
+          const furnaceDmg = Math.round(15 * this.getPhysicalDamageMultiplier());
+          let hitFurnace = false;
+          for (const enemy of [...this.world.enemies]) {
+            if (!enemy || enemy.hp <= 0) continue;
+            if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 105 + enemy.radius) {
+              this.damageEnemy(enemy, furnaceDmg, false, p.x, p.y);
+              hitFurnace = true;
+            }
+          }
+          if (hitFurnace) {
+            p.ultCharge = Math.min(100, p.ultCharge + 3.5 * dynamoMult);
+          }
+        }
+      }
+      if (p.characterId === CharacterId.Gnome && this.activeBlessingIds.has('gnome_stoneborn_regen')) {
+        p.stonebornRegenTick -= dt;
+        if (p.stonebornRegenTick <= 0) {
+          p.stonebornRegenTick = 2.5;
+          if (p.hp < p.maxHp) {
+            this.healPlayer(3);
+          }
+        }
+      }
     }
 
     // Zombie: Undying Flesh regeneration (+ Spined Carapace thorns & 60fps vitality cross motes)
@@ -1931,7 +3466,7 @@ export class GameEngine {
       }
       p.abomStompTick -= dt;
       if (p.abomStompTick <= 0) {
-        p.abomStompTick = 1.4;
+        p.abomStompTick = this.activeBlessingIds.has('zombie_ult_abomination_alt') ? 0.98 : 1.4;
         this.slashes.push({
           x: p.x,
           y: p.y,
@@ -2027,6 +3562,9 @@ export class GameEngine {
           if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= stormRadius + enemy.radius) {
             const roll = this.rollPhysicalAttack(stormRaw);
             this.damageEnemy(enemy, roll.damage, true, p.x, p.y, false, roll.isCrit);
+            if (roll.isCrit && this.activeBlessingIds.has('skel_skill_bone_storm_alt')) {
+              this.healPlayer(2);
+            }
             this.slashes.push({
               x: enemy.x,
               y: enemy.y,
@@ -2497,6 +4035,7 @@ export class GameEngine {
         });
 
         let totalHealed = 0;
+        const overload = this.activeBlessingIds.has('ghost_skill_soul_drain_alt');
         const tickDmg = Math.round(13 * this.getPlagueOrSkillMultiplier());
         for (const target of targets) {
           this.tethers.push({
@@ -2508,6 +4047,10 @@ export class GameEngine {
           });
           this.damageEnemy(target, tickDmg, false, p.x, p.y);
           this.applyGhostChillIfActive(target);
+          if (overload) {
+            target.slowTimer = Math.max(target.slowTimer, 1.0);
+            target.slowFactor = Math.min(target.slowFactor, 0.7);
+          }
           totalHealed += siphonBless ? 4 : 3;
           if (this.particles.length < 238) {
             const ta = Math.atan2(p.y - target.y, p.x - target.x);
@@ -2527,6 +4070,9 @@ export class GameEngine {
             });
           }
         }
+        if (overload && targets.length > 0) {
+          p.ultCharge = Math.min(100, p.ultCharge + 3 * dynamoMult);
+        }
         if (totalHealed > 0) {
           this.healPlayer(totalHealed);
         }
@@ -2540,8 +4086,11 @@ export class GameEngine {
       if (p.nightmareFearTick <= 0) {
         p.nightmareFearTick = 1.45;
         const ranks = this.getActiveUpgrades();
+        const siphonDread = this.activeBlessingIds.has('ghost_ult_nightmare_alt');
         const fearDur = 1.5 + ranks.pathD * 0.2;
-        const pulseDmg = Math.round(12 * this.getPlagueOrSkillMultiplier());
+        const pulseDmg = Math.round(
+          12 * (siphonDread ? 1.35 : 1.0) * this.getPlagueOrSkillMultiplier()
+        );
         this.slashes.push({
           x: p.x,
           y: p.y,
@@ -2555,12 +4104,17 @@ export class GameEngine {
           kind: 'GHOST_NIGHTMARE_NOVA',
           scale: 0.78,
         });
+        let hitAnyNightmare = false;
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
           if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 210 + enemy.radius) {
             this.damageEnemy(enemy, pulseDmg, false, p.x, p.y);
             this.applyEnemyFear(enemy, fearDur);
+            hitAnyNightmare = true;
           }
+        }
+        if (siphonDread && hitAnyNightmare) {
+          this.healPlayer(4);
         }
       }
     }
@@ -2628,10 +4182,66 @@ export class GameEngine {
       }
     }
 
-    // Soul Knight Mobile Aiming: Auto-lock nearest enemy within range; otherwise aim along joystick vector
+    // Kobold Passive 1: Mechanical Expertise — Tinker Haste & Rapid Reload / Deadly Arsenal sequences
+    if (p.tinkerHasteTimer > 0) {
+      p.tinkerHasteTimer = Math.max(0, p.tinkerHasteTimer - dt);
+      if (Math.random() < 0.28 && this.particles.length < 235) {
+        const ka = Math.random() * Math.PI * 2;
+        this.particles.push({
+          x: p.x + Math.cos(ka) * 18,
+          y: p.y + 2 + Math.sin(ka) * 12,
+          vx: Math.cos(ka) * 28,
+          vy: -30 - Math.random() * 18,
+          size: 3.0,
+          color: Math.random() < 0.55 ? '#FBBF24' : '#FB7185',
+          life: 0.28,
+          maxLife: 0.28,
+          gravity: 0,
+          fade: true,
+          kind: 'RUNE_SPARK',
+          rot: ka,
+          vRot: 12,
+          len: 5.5,
+          drag: 3.5,
+        });
+      }
+    }
+
+    if (p.rapidReloadRemaining > 0) {
+      p.rapidReloadTimer -= dt;
+      if (p.rapidReloadTimer <= 0) {
+        const stepIdx = p.rapidReloadTotal - p.rapidReloadRemaining;
+        p.rapidReloadRemaining--;
+        p.rapidReloadTimer = 0.072;
+        this.performRapidReloadBolt(stepIdx, p.rapidReloadRemaining === 0);
+      }
+    }
+
+    if (p.arsenalRemaining > 0) {
+      p.arsenalTimer -= dt;
+      if (p.arsenalTimer <= 0) {
+        const stepIdx = p.arsenalStep;
+        p.arsenalStep++;
+        p.arsenalRemaining--;
+        p.arsenalTimer = 0.105;
+        this.performDeadlyArsenalShot(stepIdx);
+      }
+    }
+
+    // Soul Knight Mobile Aiming: Manual skill drag / combo hold overrides auto-lock; otherwise auto-lock nearest enemy or joystick vector
+    if (p.manualAimHoldTimer > 0) {
+      p.manualAimHoldTimer = Math.max(0, p.manualAimHoldTimer - dt);
+    }
     const joyMag = Math.hypot(this.joyX, this.joyY);
-    const nearestEnemy = this.findNearestEnemy(p.x, p.y, 305);
-    if (nearestEnemy) {
+    const autoLockRange = p.characterId === CharacterId.Kobold ? 420 : 305;
+    const nearestEnemy = this.findNearestEnemy(p.x, p.y, autoLockRange);
+    if (this.activeSkillAim && !this.activeSkillAim.isCancelling) {
+      p.aimAngle = this.activeSkillAim.angle;
+      p.facingX = Math.cos(p.aimAngle) >= 0 ? 1 : -1;
+    } else if (p.manualAimHoldTimer > 0) {
+      p.aimAngle = p.manualAimHoldAngle;
+      p.facingX = Math.cos(p.aimAngle) >= 0 ? 1 : -1;
+    } else if (nearestEnemy) {
       p.aimAngle = Math.atan2(nearestEnemy.y - p.y, nearestEnemy.x - p.x);
       p.facingX = Math.cos(p.aimAngle) >= 0 ? 1 : -1;
     } else if (joyMag > 0.05) {
@@ -2639,11 +4249,27 @@ export class GameEngine {
       p.facingX = this.joyX >= 0 ? 1 : -1;
     }
 
+    const nearbyInfected =
+      p.characterId === CharacterId.Zombie &&
+      this.activeBlessingIds.has('zombie_putrid_frenzy') &&
+      this.world.enemies.some(
+        (e) =>
+          e.hp > 0 &&
+          (e.infectionStacks > 0 || e.plagueTimer > 0) &&
+          Math.hypot(e.x - p.x, e.y - p.y) <= 195
+      );
     const windSpeedMult =
       (p.windrunnerTimer > 0 ? 1.45 : 1.0) *
       (p.reflexBurstTimer > 0 ? 1.24 : 1.0) *
       (p.restlessTimer > 0 ? 1.28 : 1.0) *
-      (p.nightmareTimer > 0 ? 1.14 : 1.0);
+      (p.tinkerHasteTimer > 0 ? 1.25 : 1.0) *
+      (p.arsenalRemaining > 0 && this.activeBlessingIds.has('kobold_ult_arsenal_alt') ? 1.25 : 1.0) *
+      (p.nightmareTimer > 0 ? 1.14 : 1.0) *
+      (p.deathrattlerTimer > 0 ? 1.2 : 1.0) *
+      (p.boneStormTimer > 0 && this.activeBlessingIds.has('skel_skill_bone_storm_alt')
+        ? 1.18
+        : 1.0) *
+      (nearbyInfected ? 1.15 : 1.0);
     const effectiveMoveSpeed = p.speed * windSpeedMult;
 
     // Movement via Virtual Joystick or Dash/Leap Skill (Flesh Ripper / Skeletal Rush / Groundbreaker / Phantom Dash)
@@ -2748,6 +4374,9 @@ export class GameEngine {
               );
               this.damageEnemy(enemy, roll.damage, false, p.x, p.y, false, roll.isCrit);
               this.applyGhostChillIfActive(enemy);
+              if (this.activeBlessingIds.has('ghost_skill_phantom_dash_alt')) {
+                this.healPlayer(4);
+              }
               this.slashes.push({
                 x: enemy.x,
                 y: enemy.y,
@@ -2877,8 +4506,10 @@ export class GameEngine {
                 }
               } else {
                 const goreLunge = this.activeBlessingIds.has('zombie_skill_flesh_ripper');
+                const pounceAlt = this.activeBlessingIds.has('zombie_skill_flesh_ripper_alt');
                 const roll = this.rollPhysicalAttack(
-                  34 * (goreLunge ? 1.15 : 1.0) * this.getPhysicalDamageMultiplier()
+                  34 * (goreLunge ? 1.15 : 1.0) * this.getPhysicalDamageMultiplier(),
+                  pounceAlt ? 0.3 : 0
                 );
                 this.damageEnemy(enemy, roll.damage, true, p.x, p.y, true, roll.isCrit);
                 this.applyInfectiousTouch(enemy, 1);
@@ -2907,10 +4538,17 @@ export class GameEngine {
                   maxLife: 0.28,
                   flip: false,
                   kind: 'ZOMBIE_POISON_BURST',
-                  isCrit: goreLunge,
+                  isCrit: goreLunge || pounceAlt,
                 });
                 if (goreLunge) {
                   this.healPlayer(3);
+                }
+                if (pounceAlt) {
+                  this.healPlayer(4);
+                  if (!p.dashRefunded) {
+                    p.dashRefunded = true;
+                    p.normalCooldowns[p.dashSlotIndex] *= 0.65;
+                  }
                 }
               }
               this.hitstopTimer = 0.04;
@@ -2950,10 +4588,10 @@ export class GameEngine {
       p.vy *= Math.pow(0.001, dt);
     }
 
-    // Co-op: Proximity revival channeling (channel resurrect when standing near a downed ally)
+    // Co-op: Proximity revival visual feedback (server calculates authoritative revive progress)
     if (!p.isDowned && this.isInCoop()) {
-      let nearestDowned: { id: string; x: number; y: number; reviveProgress?: number } | null = null;
-      let nearestDist = 80;
+      let nearestDowned: { id: string; x: number; y: number } | null = null;
+      let nearestDist = 92;
       for (const remote of this.remotePlayers.values()) {
         if (remote.isDowned) {
           const dist = Math.hypot(p.x - remote.x, p.y - remote.y);
@@ -2966,13 +4604,6 @@ export class GameEngine {
 
       if (nearestDowned) {
         p.isRevivingPlayerId = nearestDowned.id;
-        nearestDowned.reviveProgress = Math.min(
-          1.0,
-          (nearestDowned.reviveProgress ?? 0) + dt * 0.45
-        );
-        this.networkManager?.sendReviveProgress(nearestDowned.id, nearestDowned.reviveProgress);
-
-        // Spawn revival healing tether & soul motes
         if (Math.random() < 0.4 && this.particles.length < 240) {
           this.particles.push({
             x: nearestDowned.x + (Math.random() - 0.5) * 16,
@@ -3010,15 +4641,45 @@ export class GameEngine {
       // Consume buffered touch skills & basic attacks
       if (this.bufferedActions.has('SKILL_0') && p.normalCooldowns[0] <= 0) {
         this.bufferedActions.delete('SKILL_0');
+        const manual = this.pendingManualAims.get('NORMAL_0');
+        this.pendingManualAims.delete('NORMAL_0');
+        this.currentCastManualAim = manual
+          ? this.computeSkillTelegraph('NORMAL_0', manual.angle, manual.magnitude, false)
+          : null;
+        if (this.currentCastManualAim) {
+          p.aimAngle = this.currentCastManualAim.angle;
+          p.facingX = Math.cos(p.aimAngle) >= 0 ? 1 : -1;
+        }
         this.castNormalSkill(0);
+        this.currentCastManualAim = null;
       }
       if (this.bufferedActions.has('SKILL_1') && p.normalCooldowns[1] <= 0) {
         this.bufferedActions.delete('SKILL_1');
+        const manual = this.pendingManualAims.get('NORMAL_1');
+        this.pendingManualAims.delete('NORMAL_1');
+        this.currentCastManualAim = manual
+          ? this.computeSkillTelegraph('NORMAL_1', manual.angle, manual.magnitude, false)
+          : null;
+        if (this.currentCastManualAim) {
+          p.aimAngle = this.currentCastManualAim.angle;
+          p.facingX = Math.cos(p.aimAngle) >= 0 ? 1 : -1;
+        }
         this.castNormalSkill(1);
+        this.currentCastManualAim = null;
       }
       if (this.bufferedActions.has('ULT') && p.ultCooldown <= 0 && p.ultCharge >= 100) {
         this.bufferedActions.delete('ULT');
+        const manual = this.pendingManualAims.get('ULTIMATE');
+        this.pendingManualAims.delete('ULTIMATE');
+        this.currentCastManualAim = manual
+          ? this.computeSkillTelegraph('ULTIMATE', manual.angle, manual.magnitude, false)
+          : null;
+        if (this.currentCastManualAim) {
+          p.aimAngle = this.currentCastManualAim.angle;
+          p.facingX = Math.cos(p.aimAngle) >= 0 ? 1 : -1;
+        }
         this.castUltimateSkill();
+        this.currentCastManualAim = null;
       }
 
       if (
@@ -3047,7 +4708,165 @@ export class GameEngine {
     const isGob = profile.id === CharacterId.Goblin;
     const isGnome = profile.id === CharacterId.Gnome;
     const isGhost = profile.id === CharacterId.Ghost;
+    const isKobold = profile.id === CharacterId.Kobold;
     const isTitan = p.abominationTimer > 0 || p.colossusTimer > 0 || p.mountainHeartTimer > 0;
+
+    // === KOBOLD RANGED CROSSBOW BASIC ATTACK (60FPS REPEATER + MECHANICAL EXPERTISE) ===
+    if (isKobold) {
+      // Mechanical Expertise Passive 1: +18% faster crossbow fire rate & bolt velocity!
+      const mechExpertiseRate = 1.18;
+      const hasteMult = p.tinkerHasteTimer > 0 ? 1.25 : 1.0;
+      const overdriveMult = this.activeBlessingIds.has('kobold_clockwork_overdrive') ? 1.15 : 1.0;
+      const kobCd =
+        profile.baseAttackCooldown /
+        (mechExpertiseRate * (1 + ranks.pathB * 0.05) * hasteMult * overdriveMult);
+      p.basicAttackCooldown = Math.max(0.11, kobCd);
+
+      const kobStep = p.koboldShotStep;
+      const isFinisher = kobStep === 2;
+      p.koboldShotStep = (kobStep + 1) % 3;
+      p.comboFlip = kobStep % 2 === 1;
+      p.koboldRecoilOffset = isFinisher ? -6.5 : -4.2;
+      p.squashX = isFinisher ? 0.86 : 0.91;
+      p.squashY = isFinisher ? 1.16 : 1.09;
+
+      soundEngine.playArrow();
+      if (this.isInCoop()) {
+        this.networkManager?.sendCastSkill('BASIC', p.x, p.y, p.aimAngle, 'BASIC');
+      }
+
+      const muzzleX = p.x + Math.cos(p.aimAngle) * 21;
+      const muzzleY = p.y - 3 + Math.sin(p.aimAngle) * 21;
+
+      this.slashes.push({
+        x: muzzleX,
+        y: muzzleY,
+        angle: p.aimAngle,
+        radius: isFinisher ? 34 : 26,
+        arcSpread: isFinisher ? 1.1 : 0.85,
+        color: isFinisher ? '#FDE047' : '#FB7185',
+        life: isFinisher ? 0.17 : 0.13,
+        maxLife: isFinisher ? 0.17 : 0.13,
+        flip: p.comboFlip,
+        kind: 'KOBOLD_MUZZLE_FLASH',
+        scale: isFinisher ? 1.28 : 1.0,
+        isCrit: isFinisher,
+      });
+
+      // Eject crisp 60fps brass ratchet sparks & bowstring slipstream streaks
+      const sparkCount = isFinisher ? 7 : 4;
+      for (let i = 0; i < sparkCount; i++) {
+        if (this.particles.length > 240) break;
+        const side = i % 2 === 0 ? 1 : -1;
+        const sa = p.aimAngle + side * (0.28 + Math.random() * 0.55);
+        const sspd = (isFinisher ? 165 : 120) + Math.random() * 85;
+        this.particles.push({
+          x: muzzleX,
+          y: muzzleY,
+          vx: Math.cos(sa) * sspd,
+          vy: Math.sin(sa) * sspd,
+          size: i === 0 ? 3.4 : 2.6,
+          color: i % 2 === 0 ? '#FDE047' : '#FB7185',
+          life: 0.18 + Math.random() * 0.08,
+          maxLife: 0.24,
+          gravity: 0,
+          fade: true,
+          kind: i === 0 ? 'BRASS_SHRAPNEL' : 'SLASH_STREAK',
+          rot: sa,
+          vRot: (Math.random() - 0.5) * 18,
+          len: i === 0 ? 5.5 : 12,
+          thick: 2.0,
+          drag: 5.8,
+        });
+      }
+
+      if (isFinisher) {
+        this.shakeMag = Math.max(this.shakeMag, 2.8);
+      }
+
+      const boltSpeed = 695 * mechExpertiseRate;
+      const baseDmg =
+        profile.baseAttackDamage *
+        (isFinisher ? 1.32 : 1.0) *
+        this.getPhysicalDamageMultiplier();
+      const hasTwinRatchet = this.activeBlessingIds.has('kobold_twin_ratchet');
+      const hasAlchemical = this.activeBlessingIds.has('kobold_alchemical_fletching');
+
+      const shotOffsets = isFinisher && hasTwinRatchet ? [-0.055, 0.055] : [0];
+      for (const off of shotOffsets) {
+        p.koboldBoltCounter++;
+        const shotAng = p.aimAngle + off;
+        const alchProc = hasAlchemical && p.koboldBoltCounter % 4 === 0;
+        const elemKind: 'FIRE' | 'FROST' | 'LIGHTNING' | undefined = alchProc
+          ? p.koboldBoltCounter % 8 === 0
+            ? 'LIGHTNING'
+            : 'FROST'
+          : undefined;
+
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x: muzzleX,
+          y: muzzleY,
+          vx: Math.cos(shotAng) * boltSpeed,
+          vy: Math.sin(shotAng) * boltSpeed,
+          radius: isFinisher ? 7.5 : 6,
+          damage: shotOffsets.length > 1 ? baseDmg * 0.78 : baseDmg,
+          life: 0.62,
+          color: elemKind === 'LIGHTNING'
+            ? '#FDE047'
+            : elemKind === 'FROST'
+            ? '#38BDF8'
+            : isFinisher
+            ? '#FBBF24'
+            : '#FB7185',
+          kind: elemKind ? 'PLAYER_ELEMENTAL_BOLT' : 'PLAYER_CROSSBOW_BOLT',
+          angle: shotAng,
+          pierce: isFinisher,
+          isFinisherBolt: isFinisher,
+          elementKind: elemKind,
+          hitEnemyIds: new Set<number>(),
+        });
+      }
+
+      // Universal Relic Blessing: Stormbound Reliquary — every 4th basic attack chains spectral lightning!
+      if (this.activeBlessingIds.has('relic_storm_reliquary')) {
+        p.stormReliquaryCount++;
+        if (p.stormReliquaryCount >= 4) {
+          p.stormReliquaryCount = 0;
+          const arcTargets = [...this.world.enemies]
+            .filter((e) => e && e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) <= 285)
+            .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))
+            .slice(0, 2);
+          if (arcTargets.length > 0) {
+            const arcDmg = Math.round(18 * this.getPhysicalDamageMultiplier());
+            let prevX = p.x;
+            let prevY = p.y - 8;
+            for (const target of arcTargets) {
+              this.slashes.push({
+                x: target.x,
+                y: target.y,
+                fromX: prevX,
+                fromY: prevY,
+                angle: Math.atan2(target.y - prevY, target.x - prevX),
+                radius: 0,
+                arcSpread: 0,
+                color: '#67E8F9',
+                life: 0.22,
+                maxLife: 0.22,
+                flip: false,
+                kind: 'GNOME_MAGNETIC_ARC',
+              });
+              this.damageEnemy(target, arcDmg, false, prevX, prevY);
+              this.spawnBurst(target.x, target.y, '#67E8F9', 5, 75);
+              prevX = target.x;
+              prevY = target.y;
+            }
+          }
+        }
+      }
+      return;
+    }
 
     let cd = profile.baseAttackCooldown;
     if (isSkel) {
@@ -3056,6 +4875,17 @@ export class GameEngine {
       cd /= 1 + ranks.pathB * 0.06;
     } else if (isGhost) {
       cd /= (1 + ranks.pathE * 0.05) * (p.restlessTimer > 0 ? 1.18 : 1.0);
+    } else if (
+      profile.id === CharacterId.Zombie &&
+      this.activeBlessingIds.has('zombie_putrid_frenzy') &&
+      this.world.enemies.some(
+        (e) =>
+          e.hp > 0 &&
+          (e.infectionStacks > 0 || e.plagueTimer > 0) &&
+          Math.hypot(e.x - p.x, e.y - p.y) <= 195
+      )
+    ) {
+      cd /= 1.15;
     }
     if (isTitan) cd = Math.max(0.16, cd - 0.04);
     if (p.windrunnerTimer > 0) cd *= 0.76;
@@ -3072,6 +4902,9 @@ export class GameEngine {
     const isGnomeFinisher = isGnome && gnomeStep === 2;
     const ghostStep = isGhost ? p.ghostComboStep : 0;
     const isGhostFinisher = isGhost && ghostStep === 2;
+    if (this.isInCoop()) {
+      this.networkManager?.sendCastSkill('BASIC', p.x, p.y, p.aimAngle, 'BASIC');
+    }
 
     if (isSkel) {
       p.skelComboStep = (skelStep + 1) % 3;
@@ -3109,8 +4942,12 @@ export class GameEngine {
       p.squashY = 0.85;
     }
 
+    const skelSerratedReach =
+      isSkel && this.activeBlessingIds.has('skel_serrated_femur') ? 1.14 : 1.0;
     const baseReach = isSkel
-      ? (p.colossusTimer > 0 ? 96 : isSkelFinisher ? 80 : 68) * (1 + ranks.pathB * 0.04)
+      ? (p.colossusTimer > 0 ? 96 : isSkelFinisher ? 80 : 68) *
+        (1 + ranks.pathB * 0.04) *
+        skelSerratedReach
       : isGob
       ? isGobFinisher
         ? 68
@@ -3526,10 +5363,12 @@ export class GameEngine {
       }
     }
 
+    const skelFinisherMult =
+      isSkelFinisher && this.activeBlessingIds.has('skel_serrated_femur') ? 1.24 : 1.0;
     const rawDmg =
       profile.baseAttackDamage *
       (isSkelFinisher
-        ? 1.55
+        ? 1.55 * skelFinisherMult
         : isGnomeFinisher || isGhostFinisher
         ? 1.24
         : isZombieFinisher || isGobFinisher
@@ -3625,11 +5464,49 @@ export class GameEngine {
         this.spawnBurst(puffX, puffY, '#A3E635', 6, 60);
       }
     }
+
+    // Universal Relic Blessing: Stormbound Reliquary — every 4th basic attack chains spectral lightning!
+    if (this.activeBlessingIds.has('relic_storm_reliquary')) {
+      p.stormReliquaryCount++;
+      if (p.stormReliquaryCount >= 4) {
+        p.stormReliquaryCount = 0;
+        const arcTargets = [...this.world.enemies]
+          .filter((e) => e && e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) <= 225)
+          .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))
+          .slice(0, 2);
+        if (arcTargets.length > 0) {
+          const arcDmg = Math.round(18 * this.getPhysicalDamageMultiplier());
+          let prevX = p.x;
+          let prevY = p.y - 8;
+          for (const target of arcTargets) {
+            this.slashes.push({
+              x: target.x,
+              y: target.y,
+              fromX: prevX,
+              fromY: prevY,
+              angle: Math.atan2(target.y - prevY, target.x - prevX),
+              radius: 0,
+              arcSpread: 0,
+              color: '#67E8F9',
+              life: 0.22,
+              maxLife: 0.22,
+              flip: false,
+              kind: 'GNOME_MAGNETIC_ARC',
+            });
+            this.damageEnemy(target, arcDmg, false, prevX, prevY);
+            this.spawnBurst(target.x, target.y, '#67E8F9', 5, 75);
+            prevX = target.x;
+            prevY = target.y;
+          }
+        }
+      }
+    }
   }
 
   private castNormalSkill(slotIndex: 0 | 1): void {
     const loadout = this.getActiveLoadout();
     const skillId = loadout.normalSkills[slotIndex];
+    const manual = this.currentCastManualAim;
     this.player.normalCooldowns[slotIndex] = this.player.normalMaxCooldowns[slotIndex];
     if (this.isInCoop()) {
       this.networkManager?.sendCastSkill(
@@ -3637,7 +5514,9 @@ export class GameEngine {
         this.player.x,
         this.player.y,
         this.player.aimAngle,
-        slotIndex === 0 ? 'NORMAL_0' : 'NORMAL_1'
+        slotIndex === 0 ? 'NORMAL_0' : 'NORMAL_1',
+        manual?.targetX,
+        manual?.targetY
       );
     }
 
@@ -3645,6 +5524,10 @@ export class GameEngine {
       // === ZOMBIE NORMAL SKILLS ===
       case NormalSkillId.RottingClaw: {
         const hits = this.activeBlessingIds.has('zombie_skill_rotting_claw') ? 4 : 3;
+        if (manual) {
+          this.player.manualAimHoldAngle = manual.angle;
+          this.player.manualAimHoldTimer = 0.5;
+        }
         this.player.rottingComboTotal = hits;
         this.player.rottingComboRemaining = hits;
         this.player.rottingComboTimer = 0;
@@ -3713,12 +5596,15 @@ export class GameEngine {
             drag: isSpore ? 3.2 : 4.6,
           });
         }
+        const corpseDet = this.activeBlessingIds.has('zombie_skill_plague_burst_alt');
+        const blastMult = corpseDet ? 1.4 : 1.0;
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
           if (Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y) <= radius + enemy.radius) {
+            const wasInfected = enemy.infectionStacks > 0 || enemy.plagueTimer > 0;
             this.damageEnemy(
               enemy,
-              Math.round(18 * this.getPlagueOrSkillMultiplier()),
+              Math.round(18 * blastMult * this.getPlagueOrSkillMultiplier()),
               false,
               this.player.x,
               this.player.y
@@ -3728,6 +5614,9 @@ export class GameEngine {
               enemy.slowTimer = Math.max(enemy.slowTimer, 3.5);
               enemy.slowFactor = Math.min(enemy.slowFactor, 0.65);
             }
+            if (corpseDet && wasInfected) {
+              this.applyEnemyStun(enemy, 0.7);
+            }
             this.applyInfectiousTouch(enemy, 2);
           }
         }
@@ -3736,7 +5625,11 @@ export class GameEngine {
       case NormalSkillId.FleshRipper: {
         soundEngine.playDash();
         const joyMag = Math.hypot(this.joyX, this.joyY);
-        const lungeAngle = joyMag > 0.3 ? Math.atan2(this.joyY, this.joyX) : this.player.aimAngle;
+        const lungeAngle = manual
+          ? manual.angle
+          : joyMag > 0.3
+          ? Math.atan2(this.joyY, this.joyX)
+          : this.player.aimAngle;
         this.player.dashKind = 'FLESH_RIPPER';
         this.player.dashSlotIndex = slotIndex;
         this.player.dashRefunded = false;
@@ -3781,6 +5674,9 @@ export class GameEngine {
       case NormalSkillId.UndyingFlesh: {
         soundEngine.playHeal();
         const spined = this.activeBlessingIds.has('zombie_skill_undying_flesh');
+        if (this.activeBlessingIds.has('zombie_skill_undying_flesh_alt')) {
+          this.healPlayer(Math.round(this.player.maxHp * 0.14));
+        }
         this.player.undyingTimer = spined ? 6.2 : 5.0;
         this.player.undyingHealTick = 0.15;
         this.player.squashX = 1.2;
@@ -3831,6 +5727,7 @@ export class GameEngine {
         soundEngine.playSummon();
         const ranks = this.getActiveUpgrades();
         const extra = this.activeBlessingIds.has('zombie_skill_grave_call') ? 1 : 0;
+        const volatileAlt = this.activeBlessingIds.has('zombie_skill_grave_call_alt');
         const count = 2 + extra;
         const life = 15 + ranks.pathD * 1.5;
         this.player.squashX = 1.22;
@@ -3839,7 +5736,7 @@ export class GameEngine {
           x: this.player.x,
           y: this.player.y,
           angle: 0,
-          radius: 66,
+          radius: volatileAlt ? 115 : 66,
           arcSpread: Math.PI * 2,
           color: '#86EFAC',
           life: 0.36,
@@ -3847,11 +5744,29 @@ export class GameEngine {
           flip: false,
           kind: 'ZOMBIE_GRAVE_ERUPTION',
         });
+        if (volatileAlt) {
+          this.shockwaves.push({
+            x: this.player.x,
+            y: this.player.y,
+            maxRadius: 115,
+            color: '#A3E635',
+            life: 0.28,
+            maxLife: 0.28,
+          });
+          const graveNovaDmg = Math.round(22 * this.getPlagueOrSkillMultiplier());
+          for (const enemy of [...this.world.enemies]) {
+            if (!enemy || enemy.hp <= 0) continue;
+            if (Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y) <= 115 + enemy.radius) {
+              this.damageEnemy(enemy, graveNovaDmg, false, this.player.x, this.player.y);
+              this.applyInfectiousTouch(enemy, 1);
+            }
+          }
+        }
         for (let i = 0; i < count; i++) {
           const ang = this.player.aimAngle + (i - (count - 1) / 2) * 0.85;
           const sx = this.player.x + Math.cos(ang) * 44;
           const sy = this.player.y + Math.sin(ang) * 44;
-          this.spawnMinion(sx, sy, life, extra > 0, 'ZOMBIE_SHAMBLER');
+          this.spawnMinion(sx, sy, life, extra > 0 || volatileAlt, 'ZOMBIE_SHAMBLER');
         }
         this.spawnPopup(this.player.x, this.player.y - 26, 'GRAVE CALL!', '#86EFAC', 0.95);
         break;
@@ -3915,6 +5830,15 @@ export class GameEngine {
           });
         }
 
+        const execCleave = this.activeBlessingIds.has('skel_skill_bone_slash_alt');
+        const hitsWounded =
+          execCleave &&
+          this.world.enemies.some(
+            (e) =>
+              e.hp > 0 &&
+              e.hp < e.maxHp * 0.5 &&
+              this.isEnemyInArc(e, this.player.x, this.player.y, angle, reach, 1.0)
+          );
         const rawDmg = 30 * (crescent ? 1.14 : 1.0) * this.getPhysicalDamageMultiplier();
         this.hitEnemiesInArc(
           this.player.x,
@@ -3924,10 +5848,16 @@ export class GameEngine {
           1.0,
           rawDmg,
           true,
-          0.35,
+          hitsWounded ? 1.0 : 0.35,
           false,
           boneSlashFx
         );
+        if (hitsWounded) {
+          this.player.normalCooldowns[slotIndex] = Math.max(
+            0,
+            this.player.normalCooldowns[slotIndex] - 1.0
+          );
+        }
         this.hitDestructibleProps(this.player.x, this.player.y, reach);
 
         if (crescent) {
@@ -3959,8 +5889,13 @@ export class GameEngine {
         this.player.squashY = 0.8;
         this.player.skelLungeOffset = 7.5;
         const baseAngle = this.player.aimAngle;
-        const speed = 640;
-        const rawSpearDmg = 32 * this.getPhysicalDamageMultiplier() * (1 + ranks.pathB * 0.06);
+        const impalingAlt = this.activeBlessingIds.has('skel_skill_bone_spear_alt');
+        const speed = impalingAlt ? 768 : 640;
+        const rawSpearDmg =
+          32 *
+          (impalingAlt ? 1.28 : 1.0) *
+          this.getPhysicalDamageMultiplier() *
+          (1 + ranks.pathB * 0.06);
         const twinVolley = this.activeBlessingIds.has('skel_skill_bone_spear');
         const angles = twinVolley ? [baseAngle - 0.075, baseAngle + 0.075] : [baseAngle];
 
@@ -4031,6 +5966,11 @@ export class GameEngine {
           (this.activeBlessingIds.has('skel_skill_ribcage_shield') ? 1 : 0);
         this.player.ribcageTimer = 6.5;
         this.player.ribcageCharges = 3 + extraCharges;
+        if (this.activeBlessingIds.has('skel_skill_ribcage_shield_alt')) {
+          const maxUnyielding = this.activeBlessingIds.has('skel_fortified_ribs') ? 4 : 3;
+          this.player.unyieldingStacks = Math.min(maxUnyielding, this.player.unyieldingStacks + 2);
+          this.player.unyieldingTimer = 5.5;
+        }
         this.player.squashX = 1.18;
         this.player.squashY = 0.84;
         this.slashes.push({
@@ -4083,7 +6023,11 @@ export class GameEngine {
       case NormalSkillId.SkeletalRush: {
         soundEngine.playDash();
         const joyMag = Math.hypot(this.joyX, this.joyY);
-        const rushAngle = joyMag > 0.3 ? Math.atan2(this.joyY, this.joyX) : this.player.aimAngle;
+        const rushAngle = manual
+          ? manual.angle
+          : joyMag > 0.3
+          ? Math.atan2(this.joyY, this.joyX)
+          : this.player.aimAngle;
         this.player.dashKind = 'SKELETAL_RUSH';
         this.player.dashSlotIndex = slotIndex;
         this.player.dashRefunded = false;
@@ -4111,6 +6055,30 @@ export class GameEngine {
           kind: 'SKELETON_RUSH_WAKE',
           scale: this.player.colossusTimer > 0 ? 1.35 : 1.0,
         });
+        if (this.activeBlessingIds.has('skel_skill_skeletal_rush_alt')) {
+          const dynamo = this.activeBlessingIds.has('relic_soul_dynamo') ? 1.3 : 1.0;
+          this.player.ultCharge = Math.min(100, this.player.ultCharge + 10 * dynamo);
+          const wakeSpearDmg = 22 * this.getPhysicalDamageMultiplier();
+          for (const off of [-0.09, 0.09]) {
+            const sa = rushAngle + off;
+            this.projectiles.push({
+              id: allocEntityId(),
+              fromPlayer: true,
+              x: this.player.x + Math.cos(sa) * 18,
+              y: this.player.y + Math.sin(sa) * 18,
+              vx: Math.cos(sa) * 660,
+              vy: Math.sin(sa) * 660,
+              radius: 9,
+              damage: wakeSpearDmg,
+              life: 1.2,
+              color: '#7DD3FC',
+              kind: 'PLAYER_BONE_SPEAR',
+              angle: sa,
+              pierce: true,
+              hitEnemyIds: new Set<number>(),
+            });
+          }
+        }
         break;
       }
 
@@ -4172,6 +6140,10 @@ export class GameEngine {
       // === GOBLIN NORMAL SKILLS ===
       case NormalSkillId.DaggerFlurry: {
         const hits = this.activeBlessingIds.has('gob_skill_dagger_flurry') ? 6 : 5;
+        if (manual) {
+          this.player.manualAimHoldAngle = manual.angle;
+          this.player.manualAimHoldTimer = 0.45;
+        }
         this.player.flurryTotal = hits;
         this.player.flurryRemaining = hits;
         this.player.flurryTimer = 0;
@@ -4216,7 +6188,16 @@ export class GameEngine {
           });
         }
 
-        const target = this.findNearestEnemy(p.x, p.y, 325);
+        const target = manual
+          ? manual.lockedEnemyId
+            ? this.world.enemies.find(
+                (e) =>
+                  e.id === manual.lockedEnemyId &&
+                  e.hp > 0 &&
+                  Math.hypot(e.x - p.x, e.y - p.y) <= 325
+              ) ?? null
+            : null
+          : this.findNearestEnemy(p.x, p.y, 325);
         if (target) {
           const behindX = target.x - target.facingX * (target.radius + 26);
           const behindY = target.y;
@@ -4276,10 +6257,11 @@ export class GameEngine {
           }
           this.spawnPopup(p.x, p.y - 30, 'BACKSTAB!', '#FDE047', 1.0);
         } else {
-          const blinkAngle =
-            Math.hypot(this.joyX, this.joyY) > 0.2
-              ? Math.atan2(this.joyY, this.joyX)
-              : p.aimAngle;
+          const blinkAngle = manual
+            ? manual.angle
+            : Math.hypot(this.joyX, this.joyY) > 0.2
+            ? Math.atan2(this.joyY, this.joyX)
+            : p.aimAngle;
           const resolved = this.resolveWorldCollision(
             p.x + Math.cos(blinkAngle) * 140,
             p.y + Math.sin(blinkAngle) * 140,
@@ -4318,6 +6300,24 @@ export class GameEngine {
             isCrit: true,
           });
         }
+        if (this.activeBlessingIds.has('gob_skill_shadowstep_alt')) {
+          this.shockwaves.push({
+            x: p.x,
+            y: p.y,
+            maxRadius: 95,
+            color: '#FDE047',
+            life: 0.26,
+            maxLife: 0.26,
+          });
+          const flashDmg = Math.round(16 * this.getPhysicalDamageMultiplier());
+          for (const enemy of [...this.world.enemies]) {
+            if (!enemy || enemy.hp <= 0) continue;
+            if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 95 + enemy.radius) {
+              this.damageEnemy(enemy, flashDmg, false, p.x, p.y);
+              this.applyEnemyStun(enemy, 0.8);
+            }
+          }
+        }
         for (let s = 0; s < 6; s++) {
           if (this.particles.length > 240) break;
           const a = (s / 6) * Math.PI * 2;
@@ -4343,28 +6343,43 @@ export class GameEngine {
         soundEngine.playPickup();
         const ranks = this.getActiveUpgrades();
         const kegBless = this.activeBlessingIds.has('gob_skill_explosive_trap') ? 1.20 : 1.0;
+        const clusterAlt = this.activeBlessingIds.has('gob_skill_explosive_trap_alt');
         const trapDmg = Math.round(
           48 * this.getPhysicalDamageMultiplier() * this.getPlagueOrSkillMultiplier() * kegBless
         );
         const blastRadius = Math.round(132 * (1 + ranks.pathD * 0.08));
+        const maxTraps = clusterAlt ? 6 : 4;
+        const trapsToPlace = clusterAlt ? 2 : 1;
 
-        if (this.traps.length >= 4) {
+        while (this.traps.length + trapsToPlace > maxTraps) {
           const oldest = this.traps.shift();
           if (oldest) this.detonateTrap(oldest);
         }
 
-        this.traps.push({
-          id: allocEntityId(),
-          x: this.player.x,
-          y: this.player.y,
-          triggerRadius: 58,
-          blastRadius,
-          damage: trapDmg,
-          armTimer: 0.3,
-          life: 18,
-        });
+        const perp = this.player.aimAngle + Math.PI * 0.5;
+        for (let t = 0; t < trapsToPlace; t++) {
+          const off = clusterAlt ? (t === 0 ? -18 : 18) : 0;
+          const tx = this.player.x + Math.cos(perp) * off;
+          const ty = this.player.y + Math.sin(perp) * off;
+          this.traps.push({
+            id: allocEntityId(),
+            x: tx,
+            y: ty,
+            triggerRadius: 58,
+            blastRadius,
+            damage: trapDmg,
+            armTimer: clusterAlt ? 0.2 : 0.3,
+            life: 18,
+          });
+        }
         this.spawnBurst(this.player.x, this.player.y, '#FB923C', 8, 70);
-        this.spawnPopup(this.player.x, this.player.y - 24, 'TRAP SET', '#FB923C', 0.9);
+        this.spawnPopup(
+          this.player.x,
+          this.player.y - 24,
+          clusterAlt ? 'CLUSTER TRAPS' : 'TRAP SET',
+          '#FB923C',
+          0.9
+        );
         break;
       }
 
@@ -4378,11 +6393,20 @@ export class GameEngine {
         this.shockwaves.push({
           x: this.player.x,
           y: this.player.y,
-          maxRadius: 78,
+          maxRadius: this.activeBlessingIds.has('gob_skill_windrunner_alt') ? 96 : 78,
           color: '#FDE047',
           life: 0.28,
           maxLife: 0.28,
         });
+        if (this.activeBlessingIds.has('gob_skill_windrunner_alt')) {
+          const galeDmg = Math.round(20 * this.getPhysicalDamageMultiplier());
+          for (const enemy of [...this.world.enemies]) {
+            if (!enemy || enemy.hp <= 0) continue;
+            if (Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y) <= 96 + enemy.radius) {
+              this.damageEnemy(enemy, galeDmg, true, this.player.x, this.player.y, true);
+            }
+          }
+        }
         for (let w = 0; w < 8; w++) {
           if (this.particles.length > 240) break;
           const wa = (w / 8) * Math.PI * 2;
@@ -4526,6 +6550,10 @@ export class GameEngine {
           }
         }
 
+        const haymakerAlt = this.activeBlessingIds.has('gnome_skill_iron_fist_alt');
+        if (haymakerAlt) {
+          p.fortressTimer = Math.max(p.fortressTimer, 1.8);
+        }
         const rawFistDmg =
           35 * (tectonic ? 1.16 : 1.0) * this.getPhysicalDamageMultiplier();
         const stunDur = 1.1 + ranks.pathC * 0.25 + (tectonic ? 0.3 : 0);
@@ -4533,7 +6561,7 @@ export class GameEngine {
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
           if (this.isEnemyInArc(enemy, p.x, p.y, angle, reach, 0.72)) {
-            const roll = this.rollPhysicalAttack(rawFistDmg, 0.15);
+            const roll = this.rollPhysicalAttack(rawFistDmg, 0.15, haymakerAlt);
             this.damageEnemy(enemy, roll.damage, true, p.x, p.y, true, roll.isCrit);
             this.applyEnemyStun(enemy, stunDur);
           }
@@ -4615,7 +6643,11 @@ export class GameEngine {
         soundEngine.playDash();
         const p = this.player;
         const joyMag = Math.hypot(this.joyX, this.joyY);
-        const leapAngle = joyMag > 0.25 ? Math.atan2(this.joyY, this.joyX) : p.aimAngle;
+        const leapAngle = manual
+          ? manual.angle
+          : joyMag > 0.25
+          ? Math.atan2(this.joyY, this.joyX)
+          : p.aimAngle;
         p.dashKind = 'GROUNDBREAKER_LEAP';
         p.dashSlotIndex = slotIndex;
         p.dashRefunded = false;
@@ -4702,6 +6734,20 @@ export class GameEngine {
             drag: 4.5,
           });
         }
+        if (this.activeBlessingIds.has('gnome_skill_magnetic_guard_alt')) {
+          const dynamo = this.activeBlessingIds.has('relic_soul_dynamo') ? 1.3 : 1.0;
+          p.ultCharge = Math.min(100, p.ultCharge + 12 * dynamo);
+          for (const enemy of [...this.world.enemies]) {
+            if (!enemy || enemy.hp <= 0 || enemy.kind === EnemyKind.TrainingDummy) continue;
+            const dist = Math.hypot(enemy.x - p.x, enemy.y - p.y);
+            if (dist <= 185 + enemy.radius && dist > 12) {
+              enemy.vx += ((p.x - enemy.x) / dist) * 240;
+              enemy.vy += ((p.y - enemy.y) / dist) * 240;
+              enemy.slowTimer = Math.max(enemy.slowTimer, 2.2);
+              enemy.slowFactor = Math.min(enemy.slowFactor, 0.7);
+            }
+          }
+        }
         this.spawnPopup(p.x, p.y - 26, 'MAGNETIC GUARD!', '#7DD3FC', 0.98);
         break;
       }
@@ -4711,6 +6757,7 @@ export class GameEngine {
         const p = this.player;
         const ranks = this.getActiveUpgrades();
         const crushing = this.activeBlessingIds.has('gnome_skill_earthen_grasp');
+        const siphonAlt = this.activeBlessingIds.has('gnome_skill_earthen_grasp_alt');
         p.squashX = 1.24;
         p.squashY = 0.78;
         p.gnomeLungeOffset = 9;
@@ -4721,11 +6768,14 @@ export class GameEngine {
         const initialDmg = Math.round(18 * crushMult);
         const dotDmg = Math.round(9 * crushMult);
 
+        const sortAnchorX = manual?.targetX ?? p.x;
+        const sortAnchorY = manual?.targetY ?? p.y;
         const inRange = [...this.world.enemies]
           .filter((e) => e && e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) <= 220)
           .sort(
             (a, b) =>
-              Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y)
+              Math.hypot(a.x - sortAnchorX, a.y - sortAnchorY) -
+              Math.hypot(b.x - sortAnchorX, b.y - sortAnchorY)
           )
           .slice(0, 6);
 
@@ -4752,10 +6802,16 @@ export class GameEngine {
         });
 
         if (inRange.length > 0) {
+          if (siphonAlt) {
+            this.healPlayer(inRange.length * 4);
+          }
           for (const target of inRange) {
             target.rootTimer = Math.max(target.rootTimer, rootDuration);
             target.vx = 0;
             target.vy = 0;
+            if (siphonAlt) {
+              this.applyEnemyStun(target, 0.5);
+            }
             this.damageEnemy(target, initialDmg, false, target.x, target.y);
             this.earthenGrasps.push({
               id: allocEntityId(),
@@ -4772,9 +6828,9 @@ export class GameEngine {
           }
           this.spawnPopup(p.x, p.y - 28, 'EARTHEN GRASP!', '#FDBA74', 0.98);
         } else {
-          // Spawn a stone hand cluster ahead of the Gnome if cast with no nearby targets
-          const gx = p.x + Math.cos(p.aimAngle) * 75;
-          const gy = p.y + Math.sin(p.aimAngle) * 75;
+          // Spawn a stone hand cluster at aimed spot (within 220px) or 75px ahead if auto-cast
+          const gx = manual?.targetX ?? p.x + Math.cos(p.aimAngle) * 75;
+          const gy = manual?.targetY ?? p.y + Math.sin(p.aimAngle) * 75;
           this.earthenGrasps.push({
             id: allocEntityId(),
             targetEnemyId: null,
@@ -4801,12 +6857,14 @@ export class GameEngine {
         p.squashX = 1.24;
         p.squashY = 0.8;
 
+        const soulpiercer = this.activeBlessingIds.has('ghost_skill_spectral_bolt_alt');
         const baseAngle = p.aimAngle;
         const angles = twinLance ? [baseAngle - 0.14, baseAngle + 0.14] : [baseAngle];
         const boltSpeed = 610;
         const boltDamage =
           33 *
           (twinLance ? 1.12 : 1.0) *
+          (soulpiercer ? 1.24 : 1.0) *
           this.getPhysicalDamageMultiplier() *
           this.getPlagueOrSkillMultiplier();
 
@@ -4871,7 +6929,11 @@ export class GameEngine {
         soundEngine.playDash();
         const p = this.player;
         const joyMag = Math.hypot(this.joyX, this.joyY);
-        const dashAng = joyMag > 0.12 ? Math.atan2(this.joyY, this.joyX) : p.aimAngle;
+        const dashAng = manual
+          ? manual.angle
+          : joyMag > 0.12
+          ? Math.atan2(this.joyY, this.joyX)
+          : p.aimAngle;
         p.dashAngle = dashAng;
         p.facingX = Math.cos(dashAng) >= 0 ? 1 : -1;
         p.dashTimer = 0.24;
@@ -4885,11 +6947,12 @@ export class GameEngine {
         p.squashX = 1.32;
         p.squashY = 0.72;
 
+        const novaStep = this.activeBlessingIds.has('ghost_skill_phantom_dash_alt');
         this.slashes.push({
           x: p.x,
           y: p.y,
           angle: dashAng,
-          radius: 56,
+          radius: novaStep ? 92 : 56,
           arcSpread: Math.PI * 2,
           color: '#67E8F9',
           life: 0.32,
@@ -4897,6 +6960,24 @@ export class GameEngine {
           flip: false,
           kind: 'GHOST_MIST_WAKE',
         });
+        if (novaStep) {
+          this.shockwaves.push({
+            x: p.x,
+            y: p.y,
+            maxRadius: 92,
+            color: '#67E8F9',
+            life: 0.26,
+            maxLife: 0.26,
+          });
+          const novaDmg = Math.round(20 * this.getPlagueOrSkillMultiplier());
+          for (const enemy of [...this.world.enemies]) {
+            if (!enemy || enemy.hp <= 0) continue;
+            if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 92 + enemy.radius) {
+              this.damageEnemy(enemy, novaDmg, false, p.x, p.y);
+              this.applyGhostChillIfActive(enemy);
+            }
+          }
+        }
         this.spawnPopup(p.x, p.y - 26, 'PHANTOM DASH!', '#67E8F9', 0.96);
         break;
       }
@@ -4932,6 +7013,7 @@ export class GameEngine {
         const p = this.player;
         const ranks = this.getActiveUpgrades();
         const banshee = this.activeBlessingIds.has('ghost_skill_wailing_scream');
+        const shatterAlt = this.activeBlessingIds.has('ghost_skill_wailing_scream_alt');
         this.hitstopTimer = 0.04;
         this.shakeMag = Math.max(this.shakeMag, 9.5);
         p.squashX = 1.34;
@@ -4942,6 +7024,7 @@ export class GameEngine {
         const rawDmg =
           30 *
           (banshee ? 1.15 : 1.0) *
+          (shatterAlt ? 1.28 : 1.0) *
           this.getPhysicalDamageMultiplier() *
           this.getPlagueOrSkillMultiplier();
 
@@ -4991,9 +7074,12 @@ export class GameEngine {
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
           if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= screamRadius + enemy.radius) {
-            const roll = this.rollPhysicalAttack(rawDmg, 0.2);
+            const roll = this.rollPhysicalAttack(rawDmg, shatterAlt ? 0.5 : 0.2);
             this.damageEnemy(enemy, roll.damage, true, p.x, p.y, true, roll.isCrit);
             this.applyEnemyFear(enemy, fearDur);
+            if (shatterAlt) {
+              this.applyEnemyStun(enemy, 0.6);
+            }
             this.applyGhostChillIfActive(enemy);
           }
         }
@@ -5006,7 +7092,17 @@ export class GameEngine {
         const p = this.player;
         const ranks = this.getActiveUpgrades();
         const puppeteer = this.activeBlessingIds.has('ghost_skill_haunted_possession');
-        const host = this.findNearestEnemy(p.x, p.y, 265);
+        const host = manual
+          ? manual.lockedEnemyId
+            ? this.world.enemies.find(
+                (e) =>
+                  e.id === manual.lockedEnemyId &&
+                  e.hp > 0 &&
+                  e.kind !== EnemyKind.TrainingDummy &&
+                  Math.hypot(e.x - p.x, e.y - p.y) <= 265
+              ) ?? null
+            : null
+          : this.findNearestEnemy(p.x, p.y, 265);
 
         if (host && host.kind !== EnemyKind.TrainingDummy) {
           soundEngine.playSummon();
@@ -5057,6 +7153,314 @@ export class GameEngine {
             host ? host.y : p.y + Math.sin(p.aimAngle) * 52
           );
         }
+        break;
+      }
+
+      // === KOBOLD NORMAL SKILLS ===
+      case NormalSkillId.PiercingBolt: {
+        soundEngine.playArrow();
+        soundEngine.playSlash(2);
+        const p = this.player;
+        const bodkin = this.activeBlessingIds.has('kobold_skill_piercing_bolt');
+        const angle = manual ? manual.angle : p.aimAngle;
+        p.aimAngle = angle;
+        p.facingX = Math.cos(angle) >= 0 ? 1 : -1;
+        p.koboldRecoilOffset = -8.5;
+        p.squashX = 0.82;
+        p.squashY = 1.2;
+        this.shakeMag = Math.max(this.shakeMag, 6.5);
+
+        const muzzleX = p.x + Math.cos(angle) * 22;
+        const muzzleY = p.y - 3 + Math.sin(angle) * 22;
+        this.slashes.push({
+          x: muzzleX,
+          y: muzzleY,
+          angle,
+          radius: 74,
+          arcSpread: 0.7,
+          color: '#FB7185',
+          life: 0.24,
+          maxLife: 0.24,
+          flip: false,
+          kind: 'KOBOLD_PIERCING_LANCE',
+          isCrit: true,
+        });
+
+        for (let s = 0; s < 10; s++) {
+          if (this.particles.length > 240) break;
+          const sa = angle + (Math.random() - 0.5) * 0.45;
+          const sspd = 230 + Math.random() * 140;
+          this.particles.push({
+            x: muzzleX + Math.cos(angle) * (s * 4),
+            y: muzzleY + Math.sin(angle) * (s * 4),
+            vx: Math.cos(sa) * sspd,
+            vy: Math.sin(sa) * sspd,
+            size: 2.8,
+            color: s % 2 === 0 ? '#FDE047' : '#FB7185',
+            life: 0.22,
+            maxLife: 0.22,
+            gravity: 0,
+            fade: true,
+            kind: 'SLASH_STREAK',
+            rot: sa,
+            len: 18,
+            thick: 2.2,
+            drag: 5.0,
+          });
+        }
+
+        const rawDmg =
+          38 *
+          (bodkin ? 1.22 : 1.0) *
+          this.getPhysicalDamageMultiplier() *
+          this.getPlagueOrSkillMultiplier();
+        const speed = 940;
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x: muzzleX,
+          y: muzzleY,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          radius: 10,
+          damage: rawDmg,
+          life: 0.8,
+          color: '#FB7185',
+          kind: 'PLAYER_PIERCING_BOLT',
+          angle,
+          pierce: true,
+          hitEnemyIds: new Set<number>(),
+        });
+        this.spawnPopup(p.x, p.y - 28, 'PIERCING BOLT!', '#FB7185', 1.0);
+        break;
+      }
+
+      case NormalSkillId.RapidReload: {
+        soundEngine.playUiClick(820);
+        soundEngine.playDash();
+        const p = this.player;
+        const magDrum = this.activeBlessingIds.has('kobold_skill_rapid_reload');
+        const evasiveHop = this.activeBlessingIds.has('kobold_skill_rapid_reload_alt');
+        const angle = manual ? manual.angle : p.aimAngle;
+        if (manual) {
+          p.manualAimHoldAngle = angle;
+          p.manualAimHoldTimer = 0.65;
+        }
+        p.tinkerHasteTimer = Math.max(p.tinkerHasteTimer, 2.5);
+        p.rapidReloadTotal = magDrum ? 8 : 6;
+        p.rapidReloadRemaining = p.rapidReloadTotal;
+        p.rapidReloadTimer = 0;
+        p.rapidReloadAngle = angle;
+        p.squashX = 1.22;
+        p.squashY = 0.82;
+
+        if (evasiveHop) {
+          p.invulnTimer = Math.max(p.invulnTimer, 0.35);
+          this.afterimages.push({
+            x: p.x,
+            y: p.y,
+            facingX: p.facingX,
+            color: '#FB7185',
+            life: 0.32,
+            maxLife: 0.32,
+            archetype: 'KOBOLD',
+          });
+        }
+
+        // Eject brass magazine clip sparks
+        for (let b = 0; b < 8; b++) {
+          if (this.particles.length > 240) break;
+          const ba = (b / 8) * Math.PI * 2;
+          this.particles.push({
+            x: p.x,
+            y: p.y - 4,
+            vx: Math.cos(ba) * 110,
+            vy: Math.sin(ba) * 90 - 25,
+            size: 3.4,
+            color: b % 2 === 0 ? '#FBBF24' : '#FB7185',
+            life: 0.26,
+            maxLife: 0.26,
+            gravity: 0,
+            fade: true,
+            kind: 'BRASS_SHRAPNEL',
+            rot: ba,
+            vRot: 18,
+            len: 6,
+            thick: 2.5,
+            drag: 4.5,
+          });
+        }
+        this.spawnPopup(p.x, p.y - 28, 'RAPID RELOAD!', '#FBBF24', 1.0);
+        break;
+      }
+
+      case NormalSkillId.ExplosiveBolt: {
+        soundEngine.playArrow();
+        const p = this.player;
+        const ranks = this.getActiveUpgrades();
+        const thermo = this.activeBlessingIds.has('kobold_skill_explosive_bolt');
+        const angle = manual ? manual.angle : p.aimAngle;
+        p.aimAngle = angle;
+        p.facingX = Math.cos(angle) >= 0 ? 1 : -1;
+        p.koboldRecoilOffset = -7.5;
+        p.squashX = 0.85;
+        p.squashY = 1.18;
+        this.shakeMag = Math.max(this.shakeMag, 5.0);
+
+        const muzzleX = p.x + Math.cos(angle) * 21;
+        const muzzleY = p.y - 3 + Math.sin(angle) * 21;
+        this.slashes.push({
+          x: muzzleX,
+          y: muzzleY,
+          angle,
+          radius: 38,
+          arcSpread: 1.0,
+          color: '#FB923C',
+          life: 0.18,
+          maxLife: 0.18,
+          flip: false,
+          kind: 'KOBOLD_MUZZLE_FLASH',
+          scale: 1.35,
+          isCrit: true,
+        });
+
+        const blastRadius = Math.round(
+          118 * (1 + ranks.pathD * 0.08) * (thermo ? 1.24 : 1.0)
+        );
+        const rawDmg =
+          42 *
+          (thermo ? 1.18 : 1.0) *
+          this.getPhysicalDamageMultiplier() *
+          this.getPlagueOrSkillMultiplier();
+        const speed = 700;
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x: muzzleX,
+          y: muzzleY,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          radius: 9,
+          damage: rawDmg,
+          life: 0.74,
+          color: '#FB923C',
+          kind: 'PLAYER_EXPLOSIVE_BOLT',
+          angle,
+          blastRadius,
+          hitEnemyIds: new Set<number>(),
+        });
+        this.spawnPopup(p.x, p.y - 28, 'EXPLOSIVE BOLT!', '#FB923C', 1.0);
+        break;
+      }
+
+      case NormalSkillId.SnareTrap: {
+        soundEngine.playUiClick(740);
+        const p = this.player;
+        const ranks = this.getActiveUpgrades();
+        const doubleJaws = this.activeBlessingIds.has('kobold_skill_snare_trap');
+
+        // Mechanical Expertise Passive 1: deploying traps grants Tinker Haste (+25% move/reload speed)!
+        p.tinkerHasteTimer = Math.max(p.tinkerHasteTimer, 2.8);
+        p.squashX = 1.2;
+        p.squashY = 0.84;
+
+        const baseTx = manual
+          ? (manual.targetX ?? p.x + Math.cos(p.aimAngle) * 52)
+          : p.x + Math.cos(p.aimAngle) * 44;
+        const baseTy = manual
+          ? (manual.targetY ?? p.y + Math.sin(p.aimAngle) * 52)
+          : p.y + Math.sin(p.aimAngle) * 44;
+
+        const offsets = doubleJaws
+          ? [
+              { dx: -Math.sin(p.aimAngle) * 24, dy: Math.cos(p.aimAngle) * 24 },
+              { dx: Math.sin(p.aimAngle) * 24, dy: -Math.cos(p.aimAngle) * 24 },
+            ]
+          : [{ dx: 0, dy: 0 }];
+
+        for (const off of offsets) {
+          const pos = this.resolveWorldCollision(baseTx + off.dx, baseTy + off.dy, 14, true);
+          this.snareTraps.push({
+            id: allocEntityId(),
+            x: pos.x,
+            y: pos.y,
+            triggerRadius: 34,
+            captureRadius: Math.round(78 * (1 + ranks.pathD * 0.08)),
+            damage: Math.round(
+              28 * this.getPhysicalDamageMultiplier() * this.getPlagueOrSkillMultiplier()
+            ),
+            rootDuration: 3.2 + ranks.pathD * 0.25,
+            vulnerableDuration: 4.5 + ranks.pathD * 0.3,
+            armTimer: 0.16,
+            life: 18,
+            maxLife: 18,
+          });
+          this.spawnBurst(pos.x, pos.y, '#F59E0B', 7, 70);
+        }
+        this.spawnPopup(p.x, p.y - 26, 'SNARE ARMED!', '#F59E0B', 0.98);
+        break;
+      }
+
+      case NormalSkillId.MultiShot: {
+        soundEngine.playArrow();
+        soundEngine.playSlash(1);
+        const p = this.player;
+        const wideSalvo = this.activeBlessingIds.has('kobold_skill_multi_shot');
+        const barbedFan = this.activeBlessingIds.has('kobold_skill_multi_shot_alt');
+        const angle = manual ? manual.angle : p.aimAngle;
+        p.aimAngle = angle;
+        p.facingX = Math.cos(angle) >= 0 ? 1 : -1;
+        p.koboldRecoilOffset = -7.5;
+        p.squashX = 0.84;
+        p.squashY = 1.18;
+        this.shakeMag = Math.max(this.shakeMag, 5.5);
+
+        const spread = wideSalvo ? 1.75 : 1.48;
+        const boltCount = wideSalvo ? 9 : 7;
+        const muzzleX = p.x + Math.cos(angle) * 20;
+        const muzzleY = p.y - 3 + Math.sin(angle) * 20;
+
+        this.slashes.push({
+          x: muzzleX,
+          y: muzzleY,
+          angle,
+          radius: 68,
+          arcSpread: spread,
+          color: '#FB7185',
+          life: 0.24,
+          maxLife: 0.24,
+          flip: false,
+          kind: 'KOBOLD_MULTISHOT_FAN',
+        });
+
+        const boltSpeed = 760;
+        const boltDmg =
+          21 *
+          (barbedFan ? 1.15 : 1.0) *
+          this.getPhysicalDamageMultiplier() *
+          this.getPlagueOrSkillMultiplier();
+        for (let i = 0; i < boltCount; i++) {
+          const t = boltCount > 1 ? i / (boltCount - 1) - 0.5 : 0;
+          const shotAng = angle + t * spread;
+          this.projectiles.push({
+            id: allocEntityId(),
+            fromPlayer: true,
+            x: muzzleX,
+            y: muzzleY,
+            vx: Math.cos(shotAng) * boltSpeed,
+            vy: Math.sin(shotAng) * boltSpeed,
+            radius: 6.5,
+            damage: boltDmg,
+            life: 0.54,
+            color: i % 2 === 0 ? '#FB7185' : '#FBBF24',
+            kind: 'PLAYER_CROSSBOW_BOLT',
+            angle: shotAng,
+            pierce: barbedFan,
+            isFinisherBolt: i === Math.floor(boltCount / 2),
+            hitEnemyIds: new Set<number>(),
+          });
+        }
+        this.spawnPopup(p.x, p.y - 28, 'MULTI-SHOT!', '#FB7185', 1.0);
         break;
       }
     }
@@ -5127,6 +7531,11 @@ export class GameEngine {
         this.applyGhostChillIfActive(enemy);
       }
     }
+    if (this.activeBlessingIds.has('ghost_skill_haunted_possession_alt')) {
+      this.healPlayer(Math.round(p.maxHp * 0.14));
+      p.normalCooldowns[0] = Math.max(0, p.normalCooldowns[0] - 1.5);
+      p.normalCooldowns[1] = Math.max(0, p.normalCooldowns[1] - 1.5);
+    }
     this.spawnBurst(x, y, '#E879F9', 14, 120);
     this.spawnPopup(x, y - 30, 'EXORCISM!', '#F0ABFC', 1.05);
   }
@@ -5147,6 +7556,7 @@ export class GameEngine {
     const p = this.player;
     const ranks = this.getActiveUpgrades();
     const faultline = this.activeBlessingIds.has('gnome_skill_groundbreaker');
+    const magmaAlt = this.activeBlessingIds.has('gnome_skill_groundbreaker_alt');
     soundEngine.playBossSlam();
     this.hitstopTimer = 0.055;
     this.shakeMag = Math.max(this.shakeMag, 11);
@@ -5214,17 +7624,26 @@ export class GameEngine {
     const rawCrash =
       38 *
       (faultline ? 1.18 : 1.0) *
+      (magmaAlt ? 1.22 : 1.0) *
       this.getPhysicalDamageMultiplier() *
       this.getPlagueOrSkillMultiplier();
     const stunDur = 0.95 + ranks.pathC * 0.25 + (faultline ? 0.3 : 0);
 
+    let hitCount = 0;
     for (const enemy of [...this.world.enemies]) {
       if (!enemy || enemy.hp <= 0) continue;
       if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= crashRadius + enemy.radius) {
         const roll = this.rollPhysicalAttack(rawCrash, 0.15);
         this.damageEnemy(enemy, roll.damage, true, p.x, p.y, true, roll.isCrit);
         this.applyEnemyStun(enemy, stunDur);
+        hitCount++;
       }
+    }
+    if (magmaAlt && hitCount >= 2) {
+      p.normalCooldowns[p.dashSlotIndex] = Math.max(
+        0,
+        p.normalCooldowns[p.dashSlotIndex] - 1.5
+      );
     }
     this.hitDestructibleProps(p.x, p.y, crashRadius);
   }
@@ -5233,6 +7652,7 @@ export class GameEngine {
     const p = this.player;
     const ranks = this.getActiveUpgrades();
     const worldshatter = this.activeBlessingIds.has('gnome_ult_cataclysm');
+    const tectonicSnare = this.activeBlessingIds.has('gnome_ult_cataclysm_alt');
     soundEngine.playBossSlam();
     this.shakeMag = Math.max(this.shakeMag, 10 + waveIndex * 2.5);
 
@@ -5289,6 +7709,7 @@ export class GameEngine {
 
     const waveDmg =
       (28 + waveIndex * 6) *
+      (tectonicSnare ? 1.22 : 1.0) *
       this.getPhysicalDamageMultiplier() *
       this.getPlagueOrSkillMultiplier();
     const stunDur = (worldshatter ? 2.0 : 1.3) + ranks.pathC * 0.2;
@@ -5301,6 +7722,9 @@ export class GameEngine {
         const roll = this.rollPhysicalAttack(waveDmg, 0.2);
         this.damageEnemy(enemy, roll.damage, true, ox, oy, true, roll.isCrit);
         this.applyEnemyStun(enemy, stunDur);
+        if (tectonicSnare && enemy.kind !== EnemyKind.TrainingDummy) {
+          enemy.rootTimer = Math.max(enemy.rootTimer, 2.0);
+        }
       }
     }
     this.hitDestructibleProps(ox, oy, waveRadius);
@@ -5310,10 +7734,14 @@ export class GameEngine {
     const p = this.player;
     soundEngine.playSlash(step % 3);
     const sevenfold = this.activeBlessingIds.has('gob_skill_dagger_flurry');
+    const venomBarrage = this.activeBlessingIds.has('gob_skill_dagger_flurry_alt');
     const reach = isFinal && sevenfold ? 94 : isFinal ? 82 : 74;
     const jitter = (step % 2 === 0 ? 1 : -1) * ((step % 4) * 0.085);
     const angle = p.aimAngle + jitter;
-    const venomGlow = p.poisonBladesTimer > 0 || this.activeBlessingIds.has('gob_viper_toxin');
+    const venomGlow =
+      p.poisonBladesTimer > 0 ||
+      this.activeBlessingIds.has('gob_viper_toxin') ||
+      venomBarrage;
 
     p.squashX = isFinal ? 1.24 : 1.16;
     p.squashY = isFinal ? 0.8 : 0.86;
@@ -5362,12 +7790,27 @@ export class GameEngine {
     }
 
     const rawDmg = (isFinal && sevenfold ? 20 : 13) * this.getPhysicalDamageMultiplier();
+    const halfArc = isFinal && sevenfold ? 1.05 : 0.85;
+    if (venomBarrage) {
+      let flurryHitAny = false;
+      for (const enemy of [...this.world.enemies]) {
+        if (enemy.hp > 0 && this.isEnemyInArc(enemy, p.x, p.y, angle, reach, halfArc)) {
+          enemy.infectionStacks = Math.min(3, enemy.infectionStacks + 1);
+          enemy.plagueTimer = Math.max(enemy.plagueTimer, 3.2);
+          if (enemy.infectionTimer <= 0) enemy.infectionTimer = 0.6;
+          flurryHitAny = true;
+        }
+      }
+      if (isFinal && flurryHitAny) {
+        this.healPlayer(4);
+      }
+    }
     this.hitEnemiesInArc(
       p.x,
       p.y,
       angle,
       reach,
-      isFinal && sevenfold ? 1.05 : 0.85,
+      halfArc,
       rawDmg,
       isFinal,
       isFinal && sevenfold ? 1.0 : 0.12,
@@ -5381,7 +7824,11 @@ export class GameEngine {
     const p = this.player;
     const prevX = p.x;
     const prevY = p.y;
-    const venomGlow = p.poisonBladesTimer > 0 || this.activeBlessingIds.has('gob_viper_toxin');
+    const galePhantom = this.activeBlessingIds.has('gob_ult_phantom_alt');
+    const venomGlow =
+      p.poisonBladesTimer > 0 ||
+      this.activeBlessingIds.has('gob_viper_toxin') ||
+      galePhantom;
 
     this.afterimages.push({
       x: prevX,
@@ -5394,7 +7841,12 @@ export class GameEngine {
 
     const candidates = this.world.enemies.filter((e) => e.hp > 0);
     if (candidates.length > 0) {
-      const target = candidates[step % candidates.length];
+      let target = candidates[step % candidates.length];
+      if (p.manualPriorityTargetId !== null) {
+        const chosen = candidates.find((e) => e.id === p.manualPriorityTargetId);
+        p.manualPriorityTargetId = null;
+        if (chosen) target = chosen;
+      }
       const strikeAngle = (step * Math.PI * 2) / Math.max(8, p.phantomTotal);
       const dest = this.resolveWorldCollision(
         target.x + Math.cos(strikeAngle) * (target.radius + 26),
@@ -5451,6 +7903,11 @@ export class GameEngine {
         roll.isCrit
       );
       this.applyGoblinPoisonIfActive(target);
+      if (galePhantom && target.hp > 0) {
+        target.infectionStacks = Math.min(3, target.infectionStacks + 1);
+        target.plagueTimer = Math.max(target.plagueTimer, 3.6);
+        if (target.infectionTimer <= 0) target.infectionTimer = 0.6;
+      }
     } else {
       const ang = (step * Math.PI * 2) / Math.max(8, p.phantomTotal);
       const dest = this.resolveWorldCollision(
@@ -5510,7 +7967,12 @@ export class GameEngine {
     const alive = this.world.enemies.filter((e) => e.hp > 0);
     if (alive.length === 0) return;
 
-    const target = alive[Math.floor(Math.random() * alive.length)];
+    let target = alive[Math.floor(Math.random() * alive.length)];
+    if (p.manualPriorityTargetId !== null) {
+      const chosen = alive.find((e) => e.id === p.manualPriorityTargetId);
+      p.manualPriorityTargetId = null;
+      if (chosen) target = chosen;
+    }
     const behind = this.resolveWorldCollision(
       target.x - target.facingX * (target.radius + 24),
       target.y + (Math.random() - 0.5) * 18,
@@ -5603,6 +8065,7 @@ export class GameEngine {
     const p = this.player;
     const ranks = this.getActiveUpgrades();
     const festering = this.activeBlessingIds.has('zombie_skill_rotting_claw');
+    const leechTalons = this.activeBlessingIds.has('zombie_skill_rotting_claw_alt');
     const isFinal = step === p.rottingComboTotal;
     soundEngine.playSlash(step);
     const reach = (p.abominationTimer > 0 ? 96 : 78) * (isFinal ? 1.12 : 1.0);
@@ -5658,6 +8121,7 @@ export class GameEngine {
 
     const rawDmg = 16 * (festering ? 1.12 : 1.0) * this.getPhysicalDamageMultiplier();
     const slowDuration = 3.5 + ranks.pathB * 0.4;
+    let clawHitCount = 0;
     for (const enemy of [...this.world.enemies]) {
       if (!enemy || enemy.hp <= 0) continue;
       if (this.isEnemyInArc(enemy, p.x, p.y, angle, reach, 0.95)) {
@@ -5666,6 +8130,7 @@ export class GameEngine {
         enemy.slowTimer = Math.max(enemy.slowTimer, slowDuration);
         enemy.slowFactor = 0.6;
         this.applyInfectiousTouch(enemy, festering ? 2 : 1);
+        clawHitCount++;
         this.slashes.push({
           x: enemy.x,
           y: enemy.y,
@@ -5682,17 +8147,226 @@ export class GameEngine {
         });
       }
     }
+    if (leechTalons && clawHitCount > 0) {
+      this.healPlayer(clawHitCount * 2);
+      if (isFinal) {
+        const loadout = this.getActiveLoadout();
+        const slotIdx = loadout.normalSkills.indexOf(NormalSkillId.RottingClaw);
+        if (slotIdx === 0 || slotIdx === 1) {
+          p.normalCooldowns[slotIdx] = Math.max(0, p.normalCooldowns[slotIdx] - 0.6);
+        }
+      }
+    }
     this.hitDestructibleProps(p.x, p.y, reach);
+  }
+
+  private performRapidReloadBolt(step: number, isFinal: boolean): void {
+    const p = this.player;
+    soundEngine.playArrow();
+    const target = this.findNearestEnemy(p.x, p.y, 410);
+    const baseAngle =
+      p.manualAimHoldTimer > 0
+        ? p.manualAimHoldAngle
+        : target
+        ? Math.atan2(target.y - p.y, target.x - p.x)
+        : p.rapidReloadAngle;
+    const jitter = (step % 2 === 0 ? 1 : -1) * (0.04 + (step % 3) * 0.028);
+    const shotAng = baseAngle + (isFinal ? 0 : jitter);
+
+    p.aimAngle = shotAng;
+    p.facingX = Math.cos(shotAng) >= 0 ? 1 : -1;
+    p.koboldRecoilOffset = isFinal ? -6.5 : -3.8;
+    p.squashX = isFinal ? 0.86 : 0.92;
+    p.squashY = isFinal ? 1.15 : 1.08;
+
+    const muzzleX = p.x + Math.cos(shotAng) * 20;
+    const muzzleY = p.y - 3 + Math.sin(shotAng) * 20;
+    this.slashes.push({
+      x: muzzleX,
+      y: muzzleY,
+      angle: shotAng,
+      radius: isFinal ? 34 : 24,
+      arcSpread: 0.85,
+      color: isFinal ? '#FDE047' : '#FB7185',
+      life: 0.13,
+      maxLife: 0.13,
+      flip: step % 2 === 1,
+      kind: 'KOBOLD_MUZZLE_FLASH',
+      isCrit: isFinal,
+    });
+
+    const evasiveAlt = this.activeBlessingIds.has('kobold_skill_rapid_reload_alt');
+    const boltDmg =
+      (isFinal ? 22 : 16) *
+      (evasiveAlt ? 1.14 : 1.0) *
+      this.getPhysicalDamageMultiplier() *
+      this.getPlagueOrSkillMultiplier();
+    const speed = 820;
+    this.projectiles.push({
+      id: allocEntityId(),
+      fromPlayer: true,
+      x: muzzleX,
+      y: muzzleY,
+      vx: Math.cos(shotAng) * speed,
+      vy: Math.sin(shotAng) * speed,
+      radius: isFinal ? 7.5 : 6,
+      damage: boltDmg,
+      life: 0.58,
+      color: isFinal ? '#FDE047' : '#FB7185',
+      kind: 'PLAYER_CROSSBOW_BOLT',
+      angle: shotAng,
+      pierce: isFinal,
+      isFinisherBolt: isFinal,
+      hitEnemyIds: new Set<number>(),
+    });
+  }
+
+  private performDeadlyArsenalShot(step: number): void {
+    const p = this.player;
+    const ranks = this.getActiveUpgrades();
+    const target = this.findNearestEnemy(p.x, p.y, 450);
+    const baseAngle =
+      p.manualAimHoldTimer > 0
+        ? p.manualAimHoldAngle
+        : target
+        ? Math.atan2(target.y - p.y, target.x - p.x)
+        : p.aimAngle;
+    p.aimAngle = baseAngle;
+    p.facingX = Math.cos(baseAngle) >= 0 ? 1 : -1;
+    p.koboldRecoilOffset = -7.5;
+    p.squashX = 0.85;
+    p.squashY = 1.18;
+    soundEngine.playArrow();
+    this.shakeMag = Math.max(this.shakeMag, 4.5);
+
+    const muzzleX = p.x + Math.cos(baseAngle) * 22;
+    const muzzleY = p.y - 3 + Math.sin(baseAngle) * 22;
+    const cycle = step % 5;
+    const mult = this.getPhysicalDamageMultiplier() * this.getPlagueOrSkillMultiplier();
+
+    if (cycle === 0) {
+      // Piercing Lance Bolt
+      this.slashes.push({
+        x: muzzleX,
+        y: muzzleY,
+        angle: baseAngle,
+        radius: 62,
+        arcSpread: 0.65,
+        color: '#FB7185',
+        life: 0.2,
+        maxLife: 0.2,
+        flip: false,
+        kind: 'KOBOLD_PIERCING_LANCE',
+        isCrit: true,
+      });
+      this.projectiles.push({
+        id: allocEntityId(),
+        fromPlayer: true,
+        x: muzzleX,
+        y: muzzleY,
+        vx: Math.cos(baseAngle) * 960,
+        vy: Math.sin(baseAngle) * 960,
+        radius: 9.5,
+        damage: 34 * mult,
+        life: 0.78,
+        color: '#FB7185',
+        kind: 'PLAYER_PIERCING_BOLT',
+        angle: baseAngle,
+        pierce: true,
+        hitEnemyIds: new Set<number>(),
+      });
+    } else if (cycle === 1) {
+      // Explosive Ordnance Bolt
+      this.slashes.push({
+        x: muzzleX,
+        y: muzzleY,
+        angle: baseAngle,
+        radius: 36,
+        arcSpread: 1.0,
+        color: '#FB923C',
+        life: 0.16,
+        maxLife: 0.16,
+        flip: false,
+        kind: 'KOBOLD_MUZZLE_FLASH',
+        isCrit: true,
+      });
+      this.projectiles.push({
+        id: allocEntityId(),
+        fromPlayer: true,
+        x: muzzleX,
+        y: muzzleY,
+        vx: Math.cos(baseAngle) * 730,
+        vy: Math.sin(baseAngle) * 730,
+        radius: 9,
+        damage: 36 * mult,
+        life: 0.72,
+        color: '#FB923C',
+        kind: 'PLAYER_EXPLOSIVE_BOLT',
+        angle: baseAngle,
+        blastRadius: Math.round(114 * (1 + ranks.pathD * 0.06)),
+        hitEnemyIds: new Set<number>(),
+      });
+    } else {
+      // Elemental Twin-Spread Bolts (FIRE -> FROST -> LIGHTNING)
+      const elem: 'FIRE' | 'FROST' | 'LIGHTNING' =
+        cycle === 2 ? 'FIRE' : cycle === 3 ? 'FROST' : 'LIGHTNING';
+      const elemColor =
+        elem === 'FIRE' ? '#FB923C' : elem === 'FROST' ? '#38BDF8' : '#FDE047';
+      this.slashes.push({
+        x: muzzleX,
+        y: muzzleY,
+        angle: baseAngle,
+        radius: 32,
+        arcSpread: 0.9,
+        color: elemColor,
+        life: 0.15,
+        maxLife: 0.15,
+        flip: step % 2 === 1,
+        kind: 'KOBOLD_MUZZLE_FLASH',
+      });
+      for (const off of [-0.09, 0.09]) {
+        const sa = baseAngle + off;
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x: muzzleX,
+          y: muzzleY,
+          vx: Math.cos(sa) * 820,
+          vy: Math.sin(sa) * 820,
+          radius: 7.5,
+          damage: 24 * mult,
+          life: 0.68,
+          color: elemColor,
+          kind: 'PLAYER_ELEMENTAL_BOLT',
+          angle: sa,
+          pierce: elem === 'LIGHTNING',
+          elementKind: elem,
+          hitEnemyIds: new Set<number>(),
+        });
+      }
+    }
   }
 
   private castUltimateSkill(): void {
     const p = this.player;
     const loadout = this.getActiveLoadout();
     const ultId = loadout.ultimateSkill;
+    const manual = this.currentCastManualAim;
     p.ultCharge = 0;
     p.ultCooldown = p.ultMaxCooldown;
+    if (this.activeBlessingIds.has('relic_chrono_hourglass')) {
+      p.ultSurgeTimer = 5.0;
+    }
     if (this.isInCoop()) {
-      this.networkManager?.sendCastSkill(ultId, p.x, p.y, p.aimAngle, 'ULTIMATE');
+      this.networkManager?.sendCastSkill(
+        ultId,
+        p.x,
+        p.y,
+        p.aimAngle,
+        'ULTIMATE',
+        manual?.targetX,
+        manual?.targetY
+      );
     }
 
     switch (ultId) {
@@ -5701,6 +8375,7 @@ export class GameEngine {
         soundEngine.playBossSlam();
         const behemoth = this.activeBlessingIds.has('zombie_ult_abomination');
         p.abominationTimer = behemoth ? 12.0 : 10.0;
+        p.abomBonusExtended = 0;
         p.abomStompTick = 0.8;
         p.squashX = 1.38;
         p.squashY = 0.7;
@@ -5812,6 +8487,19 @@ export class GameEngine {
           const sy = p.y + Math.sin(ang) * 62;
           this.spawnMinion(sx, sy, hordeLife, true, 'ZOMBIE_SHAMBLER');
         }
+        if (this.activeBlessingIds.has('zombie_ult_kingdom_alt')) {
+          this.healPlayer(Math.round(p.maxHp * 0.18));
+          this.poisonClouds.push({
+            id: allocEntityId(),
+            x: p.x,
+            y: p.y,
+            radius: 165,
+            life: 5.5,
+            maxLife: 5.5,
+            tickTimer: 0.15,
+            damagePerTick: Math.round(11 * this.getPlagueOrSkillMultiplier()),
+          });
+        }
         break;
       }
 
@@ -5842,6 +8530,8 @@ export class GameEngine {
         this.spawnPopup(p.x, p.y - 34, "DEATH'S EMBRACE", '#A3E635', 1.15);
 
         let totalDrain = 0;
+        let embraceHitCount = 0;
+        const singularityAlt = this.activeBlessingIds.has('zombie_ult_embrace_alt');
         const waveDmg = Math.round(
           58 * (ravenous ? 1.2 : 1.0) * this.getPlagueOrSkillMultiplier()
         );
@@ -5857,8 +8547,15 @@ export class GameEngine {
             });
             this.damageEnemy(enemy, waveDmg, false, p.x, p.y, true);
             this.applyInfectiousTouch(enemy, 3);
+            if (singularityAlt) {
+              this.applyEnemyStun(enemy, 1.2);
+            }
+            embraceHitCount++;
             totalDrain += ravenous ? 19 : 14;
           }
+        }
+        if (singularityAlt && embraceHitCount >= 3) {
+          p.ultCharge = Math.min(100, p.ultCharge + 25);
         }
         embraceEffect.totalDrain = totalDrain;
         this.hitDestructibleProps(p.x, p.y, slamRadius);
@@ -5926,15 +8623,35 @@ export class GameEngine {
         }
         this.spawnPopup(p.x, p.y - 36, 'BONE COLOSSUS!', '#38BDF8', 1.18);
 
+        const sovWrath = this.activeBlessingIds.has('skel_ult_colossus_alt');
+        const colossusSlamBase = 32 * (sovWrath ? 1.45 : 1.0) * this.getPhysicalDamageMultiplier();
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
           if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 160 + enemy.radius) {
-            const roll = this.rollPhysicalAttack(
-              32 * this.getPhysicalDamageMultiplier(),
-              0,
-              true
-            );
+            const roll = this.rollPhysicalAttack(colossusSlamBase, 0, true);
             this.damageEnemy(enemy, roll.damage, true, p.x, p.y, true, true);
+          }
+        }
+        if (sovWrath) {
+          const radialDmg = 24 * this.getPhysicalDamageMultiplier();
+          for (let r = 0; r < 8; r++) {
+            const ra = (r / 8) * Math.PI * 2;
+            this.projectiles.push({
+              id: allocEntityId(),
+              fromPlayer: true,
+              x: p.x + Math.cos(ra) * 22,
+              y: p.y + Math.sin(ra) * 22,
+              vx: Math.cos(ra) * 620,
+              vy: Math.sin(ra) * 620,
+              radius: 10,
+              damage: radialDmg,
+              life: 1.25,
+              color: '#38BDF8',
+              kind: 'PLAYER_BONE_SPEAR',
+              angle: ra,
+              pierce: true,
+              hitEnemyIds: new Set<number>(),
+            });
           }
         }
         this.hitDestructibleProps(p.x, p.y, 160);
@@ -5978,6 +8695,12 @@ export class GameEngine {
           const sx = p.x + Math.cos(ang) * 70;
           const sy = p.y + Math.sin(ang) * 60;
           this.spawnMinion(sx, sy, 15, true, 'SKELETON_WARRIOR_ALLY');
+        }
+        if (this.activeBlessingIds.has('skel_ult_army_alt')) {
+          const maxUnyielding = this.activeBlessingIds.has('skel_fortified_ribs') ? 4 : 3;
+          p.unyieldingStacks = maxUnyielding;
+          p.unyieldingTimer = 6.0;
+          this.healPlayer(16);
         }
         break;
       }
@@ -6047,7 +8770,8 @@ export class GameEngine {
         this.spawnPopup(p.x, p.y - 36, "REAPER'S JUDGMENT!", '#C084FC', 1.18);
 
         // Wide spectral scythe sweep (Guaranteed Critical Strike!)
-        const rawSweep = 48 * this.getPhysicalDamageMultiplier();
+        const guillotine = this.activeBlessingIds.has('skel_ult_reaper_alt');
+        const rawSweep = 48 * (guillotine ? 1.3 : 1.0) * this.getPhysicalDamageMultiplier();
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
           if (this.isEnemyInArc(enemy, p.x, p.y, angle, scytheReach, 1.38)) {
@@ -6068,6 +8792,9 @@ export class GameEngine {
               isCrit: true,
             });
           }
+        }
+        if (guillotine) {
+          p.ultCharge = Math.min(100, p.ultCharge + 25);
         }
         this.hitDestructibleProps(p.x, p.y, scytheReach);
 
@@ -6101,6 +8828,7 @@ export class GameEngine {
         soundEngine.playDash();
         const mirage = this.activeBlessingIds.has('gob_ult_phantom');
         const total = mirage ? 9 : 8;
+        p.manualPriorityTargetId = manual?.lockedEnemyId ?? null;
         p.phantomTotal = total;
         p.phantomRemaining = total;
         p.phantomTimer = 0;
@@ -6108,6 +8836,9 @@ export class GameEngine {
         if (mirage) {
           p.normalCooldowns = [0, 0];
           this.healPlayer(12);
+        }
+        if (this.activeBlessingIds.has('gob_ult_phantom_alt')) {
+          p.windrunnerTimer = Math.max(p.windrunnerTimer, 4.0);
         }
         this.shakeMag = 8;
         this.shockwaves.push({
@@ -6125,7 +8856,12 @@ export class GameEngine {
       case UltimateSkillId.KingOfThieves: {
         soundEngine.playSummon();
         const plunder = this.activeBlessingIds.has('gob_ult_thieves');
-        p.stolenMightTimer = 8.0;
+        const crownGreed = this.activeBlessingIds.has('gob_ult_thieves_alt');
+        p.manualPriorityTargetId = manual?.lockedEnemyId ?? null;
+        p.stolenMightTimer = crownGreed ? 11.0 : 8.0;
+        if (crownGreed) {
+          p.poisonBladesTimer = Math.max(p.poisonBladesTimer, 5.0);
+        }
         p.kingThievesRemaining = plunder ? 7 : 6;
         p.kingThievesTimer = 0;
         p.invulnTimer = Math.max(p.invulnTimer, plunder ? 1.15 : 0.9);
@@ -6159,7 +8895,8 @@ export class GameEngine {
         }
 
         // 360-degree radial enchanted dagger fan
-        const daggerCount = 14;
+        const shrapnelFinale = this.activeBlessingIds.has('gob_ult_thousand_alt');
+        const daggerCount = shrapnelFinale ? 20 : 14;
         const daggerSpeed = 590;
         const daggerRaw = 24 * this.getPhysicalDamageMultiplier() * this.getPlagueOrSkillMultiplier();
         for (let i = 0; i < daggerCount; i++) {
@@ -6182,10 +8919,18 @@ export class GameEngine {
           });
         }
 
-        // Large sky-rain target zone centered on nearest enemy or ahead of Goblin
-        const focusTarget = this.findNearestEnemy(p.x, p.y, 280);
-        const zoneX = focusTarget ? focusTarget.x : p.x + Math.cos(p.aimAngle) * 75;
-        const zoneY = focusTarget ? focusTarget.y : p.y + Math.sin(p.aimAngle) * 75;
+        // Large sky-rain target zone centered on manually aimed spot or nearest enemy within 280px
+        const focusTarget = manual ? null : this.findNearestEnemy(p.x, p.y, 280);
+        const zoneX = manual
+          ? (manual.targetX ?? p.x + Math.cos(p.aimAngle) * 75)
+          : focusTarget
+          ? focusTarget.x
+          : p.x + Math.cos(p.aimAngle) * 75;
+        const zoneY = manual
+          ? (manual.targetY ?? p.y + Math.sin(p.aimAngle) * 75)
+          : focusTarget
+          ? focusTarget.y
+          : p.y + Math.sin(p.aimAngle) * 75;
         const rainRadius = tempest ? 238 : 190;
         const rainLife = tempest ? 4.0 : 2.4;
         this.daggerRains.push({
@@ -6198,6 +8943,20 @@ export class GameEngine {
           tickTimer: 0.08,
           damagePerVolley: 19 * this.getPhysicalDamageMultiplier() * this.getPlagueOrSkillMultiplier(),
         });
+        if (shrapnelFinale) {
+          this.traps.push({
+            id: allocEntityId(),
+            x: zoneX,
+            y: zoneY,
+            triggerRadius: 64,
+            blastRadius: 140,
+            damage: Math.round(
+              48 * this.getPhysicalDamageMultiplier() * this.getPlagueOrSkillMultiplier()
+            ),
+            armTimer: 0.25,
+            life: 16,
+          });
+        }
 
         this.shockwaves.push({
           x: zoneX,
@@ -6271,10 +9030,16 @@ export class GameEngine {
         }
         this.spawnPopup(p.x, p.y - 38, "MOUNTAIN'S HEART!", '#FB923C', 1.18);
 
+        const volcanicCore = this.activeBlessingIds.has('gnome_ult_mountain_alt');
+        if (volcanicCore) {
+          p.magneticTimer = Math.max(p.magneticTimer, 5.0);
+          p.magneticZapTick = 0.2;
+        }
+        const mtnSlamDmg = 34 * (volcanicCore ? 1.45 : 1.0) * this.getPhysicalDamageMultiplier();
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
           if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 165 + enemy.radius) {
-            const roll = this.rollPhysicalAttack(34 * this.getPhysicalDamageMultiplier(), 0.2);
+            const roll = this.rollPhysicalAttack(mtnSlamDmg, 0.2);
             this.damageEnemy(enemy, roll.damage, true, p.x, p.y, true, roll.isCrit);
             this.applyEnemyStun(enemy, 1.1);
           }
@@ -6295,6 +9060,11 @@ export class GameEngine {
         p.rampartTremorTick = 0.9;
         if (citadel) {
           p.normalCooldowns = [0, 0];
+        }
+        if (this.activeBlessingIds.has('gnome_ult_rampart_alt')) {
+          this.healPlayer(Math.round(p.maxHp * 0.2));
+          p.fortressTimer = Math.max(p.fortressTimer, 4.5);
+          p.fortressTremorTick = 0.3;
         }
 
         const ringRadius = 165;
@@ -6512,6 +9282,11 @@ export class GameEngine {
           flip: false,
           kind: 'GHOST_SPIRIT_RING',
         });
+        if (this.activeBlessingIds.has('ghost_ult_legion_alt')) {
+          p.soulDrainTimer = Math.max(p.soulDrainTimer, 3.2);
+          p.soulDrainTick = 0.1;
+          p.ultCharge = Math.min(100, p.ultCharge + 20);
+        }
         this.triggerRestlessSpirit();
         this.spawnPopup(p.x, p.y - 38, 'SPIRIT LEGION!', '#67E8F9', 1.18);
         break;
@@ -6531,9 +9306,17 @@ export class GameEngine {
           p.normalCooldowns = [0, 0];
         }
 
-        const focusTarget = this.findNearestEnemy(p.x, p.y, 290);
-        const rx = focusTarget ? focusTarget.x : p.x + Math.cos(p.aimAngle) * 84;
-        const ry = focusTarget ? focusTarget.y : p.y + Math.sin(p.aimAngle) * 84;
+        const focusTarget = manual ? null : this.findNearestEnemy(p.x, p.y, 290);
+        const rx = manual
+          ? (manual.targetX ?? p.x + Math.cos(p.aimAngle) * 84)
+          : focusTarget
+          ? focusTarget.x
+          : p.x + Math.cos(p.aimAngle) * 84;
+        const ry = manual
+          ? (manual.targetY ?? p.y + Math.sin(p.aimAngle) * 84)
+          : focusTarget
+          ? focusTarget.y
+          : p.y + Math.sin(p.aimAngle) * 84;
         const riftRadius = Math.round((horizon ? 212 : 192) * (1 + ranks.pathD * 0.04));
         const riftLife = 2.25;
 
@@ -6554,6 +9337,16 @@ export class GameEngine {
               this.getPlagueOrSkillMultiplier()
           ),
         });
+        if (this.activeBlessingIds.has('ghost_ult_passage_alt')) {
+          this.healPlayer(Math.round(p.maxHp * 0.15));
+          for (const enemy of this.world.enemies) {
+            if (!enemy || enemy.hp <= 0) continue;
+            if (Math.hypot(enemy.x - rx, enemy.y - ry) <= riftRadius + 30 + enemy.radius) {
+              enemy.slowTimer = Math.max(enemy.slowTimer, 2.5);
+              enemy.slowFactor = Math.min(enemy.slowFactor, 0.7);
+            }
+          }
+        }
 
         this.shockwaves.push({
           x: rx,
@@ -6565,6 +9358,188 @@ export class GameEngine {
         });
         this.triggerRestlessSpirit();
         this.spawnPopup(p.x, p.y - 38, "DEATH'S PASSAGE!", '#E879F9', 1.2);
+        break;
+      }
+
+      // === KOBOLD ULTIMATE SKILLS ===
+      case UltimateSkillId.DragonsBarrage: {
+        soundEngine.playArrow();
+        soundEngine.playBossSlam();
+        const ranks = this.getActiveUpgrades();
+        const wyrmfire = this.activeBlessingIds.has('kobold_ult_barrage');
+        const scorchAlt = this.activeBlessingIds.has('kobold_ult_barrage_alt');
+        this.hitstopTimer = 0.05;
+        this.shakeMag = 12;
+        p.squashX = 1.32;
+        p.squashY = 0.72;
+        p.tinkerHasteTimer = Math.max(p.tinkerHasteTimer, 3.5);
+        if (wyrmfire) {
+          p.normalCooldowns = [0, 0];
+        }
+
+        const focusTarget = manual ? null : this.findNearestEnemy(p.x, p.y, 295);
+        const zoneX = manual
+          ? (manual.targetX ?? p.x + Math.cos(p.aimAngle) * 90)
+          : focusTarget
+          ? focusTarget.x
+          : p.x + Math.cos(p.aimAngle) * 90;
+        const zoneY = manual
+          ? (manual.targetY ?? p.y + Math.sin(p.aimAngle) * 90)
+          : focusTarget
+          ? focusTarget.y
+          : p.y + Math.sin(p.aimAngle) * 90;
+
+        const barrageRadius = Math.round((wyrmfire ? 236 : 196) * (1 + ranks.pathD * 0.04));
+        const barrageLife = wyrmfire ? 4.4 : 3.4;
+
+        this.dragonsBarrages.push({
+          id: allocEntityId(),
+          x: zoneX,
+          y: zoneY,
+          radius: barrageRadius,
+          life: barrageLife,
+          maxLife: barrageLife,
+          tickTimer: 0.06,
+          damagePerVolley:
+            22 *
+            (scorchAlt ? 1.22 : 1.0) *
+            this.getPhysicalDamageMultiplier() *
+            this.getPlagueOrSkillMultiplier(),
+        });
+
+        this.shockwaves.push({
+          x: zoneX,
+          y: zoneY,
+          maxRadius: barrageRadius,
+          color: '#FB7185',
+          life: 0.38,
+          maxLife: 0.38,
+        });
+        this.spawnPopup(p.x, p.y - 38, "DRAGON'S BARRAGE!", '#FB7185', 1.18);
+        break;
+      }
+
+      case UltimateSkillId.MasterArtificer: {
+        soundEngine.playSummon();
+        soundEngine.playUiClick(840);
+        const ranks = this.getActiveUpgrades();
+        const grandGear = this.activeBlessingIds.has('kobold_ult_artificer');
+        this.hitstopTimer = 0.045;
+        this.shakeMag = 9;
+        p.squashX = 1.28;
+        p.squashY = 0.76;
+        // Mechanical Expertise Passive 1: deploying turrets surges Tinker Haste!
+        p.tinkerHasteTimer = Math.max(p.tinkerHasteTimer, 5.0);
+        if (grandGear) {
+          p.normalCooldowns = [0, 0];
+          this.healPlayer(12);
+        }
+
+        const turretCount = grandGear ? 4 : 3;
+        const turretLife = 13 + ranks.pathD * 1.4;
+        const turretDmg =
+          15 *
+          this.getPhysicalDamageMultiplier() *
+          this.getPlagueOrSkillMultiplier();
+
+        // Cap total simultaneous turrets cleanly so fresh squad deploys smoothly
+        if (this.turrets.length > 4) {
+          this.turrets.splice(0, this.turrets.length - 2);
+        }
+
+        for (let i = 0; i < turretCount; i++) {
+          const ang = p.aimAngle + (i / turretCount) * Math.PI * 2;
+          const pos = this.resolveWorldCollision(
+            p.x + Math.cos(ang) * 64,
+            p.y + Math.sin(ang) * 54,
+            14,
+            false
+          );
+          this.turrets.push({
+            id: allocEntityId(),
+            x: pos.x,
+            y: pos.y,
+            aimAngle: p.aimAngle,
+            fireCooldown: 0.1 + i * 0.08,
+            life: turretLife,
+            maxLife: turretLife,
+            damage: turretDmg,
+            recoilOffset: 0,
+            shotsFired: 0,
+          });
+          this.spawnBurst(pos.x, pos.y, '#FBBF24', 10, 90);
+        }
+
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 112,
+          arcSpread: Math.PI * 2,
+          color: '#F59E0B',
+          life: 0.4,
+          maxLife: 0.4,
+          flip: false,
+          kind: 'KOBOLD_ARSENAL_RING',
+        });
+        this.shockwaves.push({
+          x: p.x,
+          y: p.y,
+          maxRadius: 112,
+          color: '#FBBF24',
+          life: 0.34,
+          maxLife: 0.34,
+        });
+        this.spawnPopup(p.x, p.y - 38, 'MASTER ARTIFICER!', '#FBBF24', 1.18);
+        break;
+      }
+
+      case UltimateSkillId.KoboldsDeadlyArsenal: {
+        soundEngine.playUiClick(880);
+        soundEngine.playBossSlam();
+        const overdriveBless = this.activeBlessingIds.has('kobold_ult_arsenal');
+        const angle = manual ? manual.angle : p.aimAngle;
+        if (manual) {
+          p.manualAimHoldAngle = angle;
+          p.manualAimHoldTimer = 1.4;
+        }
+        this.hitstopTimer = 0.05;
+        this.shakeMag = 11;
+        p.invulnTimer = Math.max(p.invulnTimer, 0.75);
+        p.tinkerHasteTimer = Math.max(p.tinkerHasteTimer, 5.5);
+        p.squashX = 1.32;
+        p.squashY = 0.72;
+        if (overdriveBless) {
+          p.normalCooldowns = [0, 0];
+        }
+
+        p.arsenalTotal = overdriveBless ? 12 : 9;
+        p.arsenalRemaining = p.arsenalTotal;
+        p.arsenalStep = 0;
+        p.arsenalTimer = 0;
+        p.arsenalAngle = angle;
+
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle,
+          radius: 124,
+          arcSpread: Math.PI * 2,
+          color: '#FB7185',
+          life: 0.45,
+          maxLife: 0.45,
+          flip: false,
+          kind: 'KOBOLD_ARSENAL_RING',
+        });
+        this.shockwaves.push({
+          x: p.x,
+          y: p.y,
+          maxRadius: 124,
+          color: '#FBBF24',
+          life: 0.36,
+          maxLife: 0.36,
+        });
+        this.spawnPopup(p.x, p.y - 38, 'DEADLY ARSENAL!', '#FDE047', 1.2);
         break;
       }
     }
@@ -6589,12 +9564,20 @@ export class GameEngine {
       !isGhostApp &&
       (this.activeBlessingIds.has('zombie_skill_grave_call') ||
         this.activeBlessingIds.has('zombie_ult_kingdom'));
+    const volatileShamblers =
+      !isSkeletal && !isGhostApp && this.activeBlessingIds.has('zombie_skill_grave_call_alt');
+    const warcryWarriors = isSkeletal && this.activeBlessingIds.has('skel_ult_army_alt');
     const dreadBless = isGhostApp && this.activeBlessingIds.has('ghost_ult_nightmare');
-    const blessSpeed = endlessBless || dreadBless ? 1.22 : 1.0;
+    const blessSpeed =
+      (endlessBless || dreadBless ? 1.22 : 1.0) * (warcryWarriors ? 1.18 : 1.0);
     const hp = Math.round((isGhostApp ? 48 : isSkeletal ? 42 : 46) * masteryMult);
     const baseDmg = isGhostApp ? 17 : isSkeletal ? 15 : frenzied ? 13 : 11;
     const dmg = Math.round(
-      baseDmg * masteryMult * (endlessBless || dreadBless ? 1.18 : 1)
+      baseDmg *
+        masteryMult *
+        (endlessBless || dreadBless ? 1.18 : 1) *
+        (volatileShamblers ? 1.25 : 1) *
+        (warcryWarriors ? 1.2 : 1)
     );
 
     this.minions.push({
@@ -6809,6 +9792,15 @@ export class GameEngine {
       }
       if (e.possessedTimer > 0) {
         e.possessedTimer = Math.max(0, e.possessedTimer - dt);
+      }
+      if (e.vulnerableTimer > 0) {
+        e.vulnerableTimer = Math.max(0, e.vulnerableTimer - dt);
+      }
+      if (e.hunterMarkTimer > 0) {
+        e.hunterMarkTimer = Math.max(0, e.hunterMarkTimer - dt);
+        if (e.hunterMarkTimer <= 0) {
+          e.hunterMarkStacks = 0;
+        }
       }
 
       if (e.infectionStacks > 0 || e.plagueTimer > 0) {
@@ -7280,13 +10272,16 @@ export class GameEngine {
 
     const ranks = this.getActiveUpgrades();
 
+    const dynamoMult = this.activeBlessingIds.has('relic_soul_dynamo') ? 1.3 : 1.0;
+
     // Goblin Passive 1: Nimble Reflexes (instinctive evasion + Shadow-Silk Cloak + Mirage Decoy + Windrunner!)
     if (p.characterId === CharacterId.Goblin) {
       const moving = Math.hypot(p.vx, p.vy) > 22;
       const baseEvade =
         0.25 +
         ranks.pathA * 0.03 +
-        (this.activeBlessingIds.has('gob_shadow_clone') ? 0.06 : 0);
+        (this.activeBlessingIds.has('gob_shadow_clone') ? 0.06 : 0) +
+        (this.activeBlessingIds.has('gob_shadow_veil') ? 0.05 : 0);
       const evadeChance = Math.min(
         0.88,
         baseEvade + (p.windrunnerTimer > 0 && moving ? 0.45 : 0)
@@ -7295,7 +10290,8 @@ export class GameEngine {
         soundEngine.playDash();
         p.invulnTimer = 0.28;
         p.reflexBurstTimer = 1.2;
-        const ultGain = 6 * (1 + ranks.pathE * 0.15);
+        const veilBonus = this.activeBlessingIds.has('gob_shadow_veil') ? 6 : 0;
+        const ultGain = (6 * (1 + ranks.pathE * 0.15) + veilBonus) * dynamoMult;
         p.ultCharge = Math.min(100, p.ultCharge + ultGain);
         this.afterimages.push({
           x: p.x,
@@ -7362,8 +10358,52 @@ export class GameEngine {
           maxLife: 0.36,
           archetype: 'GHOST',
         });
+        if (this.activeBlessingIds.has('ghost_spectral_shroud')) {
+          this.shockwaves.push({
+            x: p.x,
+            y: p.y,
+            maxRadius: 102,
+            color: '#67E8F9',
+            life: 0.28,
+            maxLife: 0.28,
+          });
+          const shroudDmg = Math.round(18 * this.getPlagueOrSkillMultiplier());
+          for (const enemy of [...this.world.enemies]) {
+            if (!enemy || enemy.hp <= 0) continue;
+            if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 102 + enemy.radius) {
+              this.damageEnemy(enemy, shroudDmg, false, p.x, p.y);
+              enemy.slowTimer = Math.max(enemy.slowTimer, 2.0);
+              enemy.slowFactor = Math.min(enemy.slowFactor, 0.72);
+            }
+          }
+        }
         this.triggerRestlessSpirit();
         this.spawnPopup(p.x, p.y - 28, 'PHASE!', '#67E8F9', 1.0);
+        this.emitHudSnapshot();
+        return;
+      }
+    }
+
+    // Kobold Evasive Tumble (Draconic Reflexes pathA + Tinker Haste agility!)
+    if (p.characterId === CharacterId.Kobold) {
+      const evadeChance = Math.min(
+        0.55,
+        0.12 + ranks.pathA * 0.025 + (p.tinkerHasteTimer > 0 ? 0.1 : 0)
+      );
+      if (Math.random() < evadeChance) {
+        soundEngine.playDash();
+        p.invulnTimer = 0.28;
+        p.tinkerHasteTimer = Math.max(p.tinkerHasteTimer, 2.0);
+        this.afterimages.push({
+          x: p.x,
+          y: p.y,
+          facingX: p.facingX,
+          color: '#FB7185',
+          life: 0.34,
+          maxLife: 0.34,
+          archetype: 'KOBOLD',
+        });
+        this.spawnPopup(p.x, p.y - 28, 'SIDESTEP!', '#FB7185', 1.0);
         this.emitHudSnapshot();
         return;
       }
@@ -7392,9 +10432,10 @@ export class GameEngine {
       dmg *= 1 - frameworkGuard;
     }
 
-    // Skeleton Passive 2: Unyielding Bones (existing stacks grant 12% resistance per stack)
+    // Skeleton Passive 2: Unyielding Bones (existing stacks grant 12% resistance per stack, or 17% with Grim Ossuary)
     if (isSkeleton && p.unyieldingStacks > 0) {
-      dmg *= Math.max(0.42, 1 - p.unyieldingStacks * 0.12);
+      const stackDr = this.activeBlessingIds.has('skel_grim_ossuary') ? 0.17 : 0.12;
+      dmg *= Math.max(0.32, 1 - p.unyieldingStacks * stackDr);
     }
 
     // Skeleton Normal Skill: Ribcage Shield (blocks 80% of hit & consumes 1 rib charge)
@@ -7406,6 +10447,9 @@ export class GameEngine {
       }
       dmg *= 0.2;
       ribBlocked = true;
+      if (this.activeBlessingIds.has('skel_skill_ribcage_shield_alt')) {
+        this.healPlayer(4);
+      }
       this.slashes.push({
         x: p.x,
         y: p.y,
@@ -7476,7 +10520,10 @@ export class GameEngine {
       dmg *= 0.35;
     }
 
-    // Zombie Relentless Rot pathE thickens Undying Flesh & Abomination armor
+    // Zombie Stitchwork Hide (+12% DR) + Relentless Rot pathE thickens Undying Flesh & Abomination armor
+    if (isZombie && this.activeBlessingIds.has('zombie_stitchwork_hide')) {
+      dmg *= 0.88;
+    }
     const zombieRotGuard = isZombie ? ranks.pathE * 0.05 : 0;
     if (p.undyingTimer > 0) {
       dmg *= Math.max(0.3, 0.55 - zombieRotGuard);
@@ -7497,11 +10544,13 @@ export class GameEngine {
       p.squashX = 1.06;
       p.squashY = 0.94;
     }
-    const hitUltGain =
+    const baseHitUlt =
       p.characterId === CharacterId.Goblin || isGnome
         ? 8 * (1 + ranks.pathE * 0.15)
         : 8;
-    p.ultCharge = Math.min(100, p.ultCharge + hitUltGain);
+    const stitchBonus =
+      isZombie && this.activeBlessingIds.has('zombie_stitchwork_hide') ? 7 : 0;
+    p.ultCharge = Math.min(100, p.ultCharge + (baseHitUlt + stitchBonus) * dynamoMult);
     this.shakeMag = Math.max(this.shakeMag, ribBlocked || fortressGuarded ? 3.5 : 7);
 
     // Update Gnome resolve ratio immediately after taking damage
@@ -7592,6 +10641,9 @@ export class GameEngine {
 
   private healPlayer(amount: number): void {
     if (amount <= 0) return;
+    if (this.activeBlessingIds.has('gnome_stoneborn_regen')) {
+      amount = Math.max(1, Math.round(amount * 1.25));
+    }
     const prev = this.player.hp;
     this.player.hp = Math.min(this.player.maxHp, this.player.hp + amount);
     if (this.player.isDowned && this.player.hp > 0) {
@@ -7678,31 +10730,46 @@ export class GameEngine {
           (pr.kind === 'PLAYER_BONE_SPEAR' ||
             pr.kind === 'PLAYER_DARK_WAVE' ||
             pr.kind === 'PLAYER_SPECTRAL_BOLT' ||
-            pr.kind === 'PLAYER_SPIRIT_ORB') &&
-          Math.random() < 0.58 &&
+            pr.kind === 'PLAYER_SPIRIT_ORB' ||
+            pr.kind === 'PLAYER_PIERCING_BOLT' ||
+            pr.kind === 'PLAYER_EXPLOSIVE_BOLT' ||
+            pr.kind === 'PLAYER_ELEMENTAL_BOLT') &&
+          Math.random() < 0.62 &&
           this.particles.length < 238
         ) {
           const isGhostProj =
             pr.kind === 'PLAYER_SPECTRAL_BOLT' || pr.kind === 'PLAYER_SPIRIT_ORB';
           const isWave = pr.kind === 'PLAYER_DARK_WAVE';
+          const isKoboldProj =
+            pr.kind === 'PLAYER_PIERCING_BOLT' ||
+            pr.kind === 'PLAYER_EXPLOSIVE_BOLT' ||
+            pr.kind === 'PLAYER_ELEMENTAL_BOLT';
           this.particles.push({
-            x: pr.x - Math.cos(pr.angle) * 10 + (Math.random() - 0.5) * (isWave ? 26 : 9),
-            y: pr.y - Math.sin(pr.angle) * 10 + (Math.random() - 0.5) * (isWave ? 26 : 9),
+            x: pr.x - Math.cos(pr.angle) * 10 + (Math.random() - 0.5) * (isWave ? 26 : 8),
+            y: pr.y - Math.sin(pr.angle) * 10 + (Math.random() - 0.5) * (isWave ? 26 : 8),
             vx: -Math.cos(pr.angle) * 55,
             vy: -Math.sin(pr.angle) * 55,
-            size: isGhostProj ? 3.5 : isWave ? 3.8 : 2.5,
+            size: isGhostProj ? 3.5 : isWave ? 3.8 : 2.6,
             color: isGhostProj
               ? Math.random() < 0.5
                 ? '#67E8F9'
                 : '#D8B4FE'
               : isWave
               ? '#C084FC'
+              : isKoboldProj
+              ? pr.color
               : '#7DD3FC',
             life: 0.2,
             maxLife: 0.2,
             gravity: 0,
             fade: true,
-            kind: isGhostProj ? 'ECTO_SPARK' : isWave ? 'SOUL_WISP' : 'SLASH_STREAK',
+            kind: isGhostProj
+              ? 'ECTO_SPARK'
+              : isWave
+              ? 'SOUL_WISP'
+              : pr.kind === 'PLAYER_EXPLOSIVE_BOLT'
+              ? 'RUNE_SPARK'
+              : 'SLASH_STREAK',
             rot: pr.angle + Math.PI,
             len: 13,
             thick: 1.9,
@@ -7721,27 +10788,211 @@ export class GameEngine {
         : this.isPointBlockedByWallOrProp(pr.x, pr.y);
 
       if (pr.life <= 0 || blocked) {
-        this.spawnBurst(pr.x, pr.y, pr.color, 5, 65);
+        if (pr.kind === 'PLAYER_EXPLOSIVE_BOLT') {
+          this.detonateExplosiveBolt(pr.x, pr.y, pr.damage, pr.blastRadius ?? 116);
+        } else {
+          this.spawnBurst(pr.x, pr.y, pr.color, 5, 65);
+        }
         this.projectiles.splice(i, 1);
         continue;
       }
 
       if (pr.fromPlayer) {
         let consumed = false;
+        const isKoboldBolt =
+          pr.kind === 'PLAYER_CROSSBOW_BOLT' ||
+          pr.kind === 'PLAYER_PIERCING_BOLT' ||
+          pr.kind === 'PLAYER_EXPLOSIVE_BOLT' ||
+          pr.kind === 'PLAYER_ELEMENTAL_BOLT' ||
+          pr.kind === 'PLAYER_TURRET_BOLT';
+
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
           if (pr.hitEnemyIds?.has(enemy.id)) continue;
 
           if (Math.hypot(pr.x - enemy.x, pr.y - enemy.y) <= pr.radius + enemy.radius) {
             pr.hitEnemyIds?.add(enemy.id);
+
+            // Kobold Explosive Bolt detonates immediately on enemy impact!
+            if (pr.kind === 'PLAYER_EXPLOSIVE_BOLT') {
+              this.detonateExplosiveBolt(enemy.x, enemy.y, pr.damage, pr.blastRadius ?? 116);
+              consumed = true;
+              break;
+            }
+
+            if (isKoboldBolt) {
+              const extraCrit =
+                pr.kind === 'PLAYER_PIERCING_BOLT'
+                  ? this.activeBlessingIds.has('kobold_skill_piercing_bolt')
+                    ? 0.45
+                    : 0.25
+                  : pr.isFinisherBolt
+                  ? 0.3
+                  : pr.kind === 'PLAYER_TURRET_BOLT'
+                  ? 0.1
+                  : 0.08;
+              const stacksToAdd = pr.kind === 'PLAYER_PIERCING_BOLT' ? 2 : 1;
+              const roll = this.applyHuntersPrecisionAndRoll(
+                enemy,
+                pr.damage,
+                extraCrit,
+                false,
+                stacksToAdd
+              );
+              this.damageEnemy(
+                enemy,
+                roll.damage,
+                true,
+                pr.x,
+                pr.y,
+                Boolean(pr.isFinisherBolt || pr.kind === 'PLAYER_PIERCING_BOLT'),
+                roll.isCrit
+              );
+
+              if (pr.kind === 'PLAYER_PIERCING_BOLT') {
+                if (this.activeBlessingIds.has('kobold_skill_piercing_bolt_alt')) {
+                  enemy.vulnerableTimer = Math.max(enemy.vulnerableTimer, 3.5);
+                  const loadout = this.getActiveLoadout();
+                  const slotIdx = loadout.normalSkills.indexOf(NormalSkillId.PiercingBolt);
+                  if (slotIdx === 0 || slotIdx === 1) {
+                    this.player.normalCooldowns[slotIdx] = Math.max(
+                      0,
+                      this.player.normalCooldowns[slotIdx] - 0.5
+                    );
+                  }
+                }
+              }
+
+              if (pr.kind === 'PLAYER_ELEMENTAL_BOLT') {
+                if (pr.elementKind === 'FIRE') {
+                  enemy.infectionStacks = Math.min(4, enemy.infectionStacks + 2);
+                  enemy.plagueTimer = Math.max(enemy.plagueTimer, 3.4);
+                  if (enemy.infectionTimer <= 0) enemy.infectionTimer = 0.55;
+                } else if (pr.elementKind === 'FROST') {
+                  enemy.slowTimer = Math.max(enemy.slowTimer, 2.4);
+                  enemy.slowFactor = Math.min(enemy.slowFactor, 0.62);
+                } else if (pr.elementKind === 'LIGHTNING') {
+                  const chain = this.world.enemies.find(
+                    (o) =>
+                      o &&
+                      o.hp > 0 &&
+                      o.id !== enemy.id &&
+                      Math.hypot(o.x - enemy.x, o.y - enemy.y) <= 165
+                  );
+                  if (chain) {
+                    this.slashes.push({
+                      x: chain.x,
+                      y: chain.y,
+                      fromX: enemy.x,
+                      fromY: enemy.y,
+                      angle: Math.atan2(chain.y - enemy.y, chain.x - enemy.x),
+                      radius: 0,
+                      arcSpread: 0,
+                      color: '#FDE047',
+                      life: 0.2,
+                      maxLife: 0.2,
+                      flip: false,
+                      kind: 'GNOME_MAGNETIC_ARC',
+                    });
+                    this.damageEnemy(
+                      chain,
+                      Math.round(roll.damage * 0.55),
+                      false,
+                      enemy.x,
+                      enemy.y,
+                      false,
+                      false,
+                      true
+                    );
+                  }
+                }
+                this.slashes.push({
+                  x: enemy.x,
+                  y: enemy.y,
+                  angle: pr.angle,
+                  radius: 34,
+                  arcSpread: 0,
+                  color: pr.color,
+                  life: 0.22,
+                  maxLife: 0.22,
+                  flip: false,
+                  kind: 'KOBOLD_ELEMENTAL_BURST',
+                  isCrit: roll.isCrit,
+                });
+              } else {
+                this.slashes.push({
+                  x: enemy.x,
+                  y: enemy.y,
+                  angle: pr.angle,
+                  radius: roll.isCrit ? 30 : 24,
+                  arcSpread: 0,
+                  color: roll.isCrit ? '#FDE047' : pr.color,
+                  life: 0.16,
+                  maxLife: 0.16,
+                  flip: false,
+                  kind: 'SKELETON_IMPACT_FLASH',
+                  scale: roll.isCrit ? 1.28 : 0.95,
+                  isCrit: roll.isCrit,
+                });
+              }
+
+              // Kobold Statue Blessing: Serrated Broadheads — Critical bolts ricochet a splinter bolt!
+              if (
+                roll.isCrit &&
+                pr.kind === 'PLAYER_CROSSBOW_BOLT' &&
+                this.activeBlessingIds.has('kobold_serrated_broadheads') &&
+                (pr.hitEnemyIds?.size ?? 0) === 1
+              ) {
+                const ricochetTarget = this.world.enemies.find(
+                  (o) =>
+                    o &&
+                    o.hp > 0 &&
+                    o.id !== enemy.id &&
+                    Math.hypot(o.x - enemy.x, o.y - enemy.y) <= 230
+                );
+                if (ricochetTarget) {
+                  const ra = Math.atan2(ricochetTarget.y - enemy.y, ricochetTarget.x - enemy.x);
+                  this.projectiles.push({
+                    id: allocEntityId(),
+                    fromPlayer: true,
+                    x: enemy.x,
+                    y: enemy.y,
+                    vx: Math.cos(ra) * 760,
+                    vy: Math.sin(ra) * 760,
+                    radius: 5.5,
+                    damage: pr.damage * 0.6,
+                    life: 0.42,
+                    color: '#FDE047',
+                    kind: 'PLAYER_TURRET_BOLT',
+                    angle: ra,
+                    hitEnemyIds: new Set<number>([enemy.id]),
+                  });
+                }
+              }
+
+              this.spawnBurst(enemy.x, enemy.y, pr.color, 5, 78);
+              // Finisher bolts pierce up to 2 targets; PiercingBolt pierces infinitely
+              if (!pr.pierce || (pr.isFinisherBolt && (pr.hitEnemyIds?.size ?? 0) >= 2)) {
+                consumed = true;
+                break;
+              }
+              continue;
+            }
+
             const opp = this.getOpportunisticBonus(enemy, pr.x);
             const spearTwinBonus =
               pr.kind === 'PLAYER_BONE_SPEAR' &&
               this.activeBlessingIds.has('skel_skill_bone_spear')
                 ? 0.12
                 : 0;
+            const soulpiercerBonus =
+              pr.kind === 'PLAYER_SPECTRAL_BOLT' &&
+              this.activeBlessingIds.has('ghost_skill_spectral_bolt_alt')
+                ? 0.25
+                : 0;
             const bonusCrit =
-              (pr.kind === 'PLAYER_BONE_SPEAR' ? 0.15 + spearTwinBonus : 0.22) + opp.bonusCrit;
+              (pr.kind === 'PLAYER_BONE_SPEAR' ? 0.15 + spearTwinBonus : 0.22 + soulpiercerBonus) +
+              opp.bonusCrit;
             const roll = this.rollPhysicalAttack(
               pr.damage * opp.dmgMult,
               bonusCrit,
@@ -7754,6 +11005,20 @@ export class GameEngine {
             }
             if (pr.kind === 'PLAYER_SPECTRAL_BOLT' || pr.kind === 'PLAYER_SPIRIT_ORB') {
               this.applyGhostChillIfActive(enemy);
+              if (
+                pr.kind === 'PLAYER_SPECTRAL_BOLT' &&
+                this.activeBlessingIds.has('ghost_skill_spectral_bolt_alt') &&
+                pr.hitEnemyIds?.size === 1
+              ) {
+                const loadout = this.getActiveLoadout();
+                const slotIdx = loadout.normalSkills.indexOf(NormalSkillId.SpectralBolt);
+                if (slotIdx === 0 || slotIdx === 1) {
+                  this.player.normalCooldowns[slotIdx] = Math.max(
+                    0,
+                    this.player.normalCooldowns[slotIdx] - 0.7
+                  );
+                }
+              }
               this.slashes.push({
                 x: enemy.x,
                 y: enemy.y,
@@ -7769,6 +11034,12 @@ export class GameEngine {
                 isCrit: roll.isCrit,
               });
             } else if (pr.kind === 'PLAYER_BONE_SPEAR' || pr.kind === 'PLAYER_DARK_WAVE') {
+              if (
+                pr.kind === 'PLAYER_BONE_SPEAR' &&
+                this.activeBlessingIds.has('skel_skill_bone_spear_alt')
+              ) {
+                this.applyEnemyStun(enemy, 0.6);
+              }
               this.slashes.push({
                 x: enemy.x,
                 y: enemy.y,
@@ -7905,6 +11176,9 @@ export class GameEngine {
           const maxUnyielding = this.activeBlessingIds.has('skel_fortified_ribs') ? 4 : 3;
           this.player.unyieldingStacks = Math.min(maxUnyielding, this.player.unyieldingStacks + 1);
           this.player.unyieldingTimer = 5.0;
+        }
+        if (this.activeBlessingIds.has('skel_skill_ribcage_shield_alt')) {
+          this.healPlayer(4);
         }
         this.slashes.push({
           x: this.player.x,
@@ -8080,6 +11354,9 @@ export class GameEngine {
         this.damageEnemy(enemy, roll.damage, true, trap.x, trap.y, true, roll.isCrit);
         enemy.slowTimer = Math.max(enemy.slowTimer, 2.2);
         enemy.slowFactor = Math.min(enemy.slowFactor, 0.72);
+        if (this.activeBlessingIds.has('gob_skill_explosive_trap_alt')) {
+          this.applyEnemyStun(enemy, 0.5);
+        }
         this.applyGoblinPoisonIfActive(enemy);
       }
     }
@@ -8099,6 +11376,282 @@ export class GameEngine {
     }
 
     this.hitDestructibleProps(trap.x, trap.y, trap.blastRadius);
+  }
+
+  private detonateExplosiveBolt(
+    x: number,
+    y: number,
+    rawDamage: number,
+    blastRadius: number
+  ): void {
+    soundEngine.playBossSlam();
+    this.shakeMag = Math.max(this.shakeMag, 9.0);
+    this.hitstopTimer = Math.max(this.hitstopTimer, 0.024);
+
+    this.slashes.push({
+      x,
+      y,
+      angle: Math.random() * Math.PI * 2,
+      radius: blastRadius,
+      arcSpread: Math.PI * 2,
+      color: '#FB923C',
+      life: 0.36,
+      maxLife: 0.36,
+      flip: false,
+      kind: 'KOBOLD_EXPLOSIVE_BLAST',
+      isCrit: true,
+    });
+    this.shockwaves.push({
+      x,
+      y,
+      maxRadius: blastRadius,
+      color: '#FDE047',
+      life: 0.3,
+      maxLife: 0.3,
+    });
+
+    for (let i = 0; i < 14; i++) {
+      if (this.particles.length > 240) break;
+      const a = (i / 14) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
+      const isBrass = i % 2 === 0;
+      const spd = (isBrass ? 190 : 140) + Math.random() * 100;
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(a) * spd,
+        vy: Math.sin(a) * spd,
+        size: isBrass ? 4.0 : 8.5,
+        color: isBrass ? (i % 4 === 0 ? '#FDE047' : '#FB923C') : '#292524',
+        life: 0.3,
+        maxLife: 0.3,
+        gravity: 0,
+        fade: true,
+        kind: isBrass ? 'BRASS_SHRAPNEL' : 'SHADOW_PUFF',
+        rot: a,
+        vRot: (Math.random() - 0.5) * 20,
+        len: 6.5,
+        thick: 2.8,
+        drag: 4.5,
+      });
+    }
+
+    const clusterAlt = this.activeBlessingIds.has('kobold_skill_explosive_bolt_alt');
+    for (const enemy of [...this.world.enemies]) {
+      if (!enemy || enemy.hp <= 0) continue;
+      if (Math.hypot(enemy.x - x, enemy.y - y) <= blastRadius + enemy.radius) {
+        const roll = this.applyHuntersPrecisionAndRoll(enemy, rawDamage, 0.22, false, 2);
+        this.damageEnemy(enemy, roll.damage, true, x, y, true, roll.isCrit);
+        if (clusterAlt) {
+          this.applyEnemyStun(enemy, 0.55);
+          enemy.vulnerableTimer = Math.max(enemy.vulnerableTimer, 2.5);
+        }
+      }
+    }
+
+    if (clusterAlt) {
+      for (let k = 0; k < 4; k++) {
+        const ka = (k / 4) * Math.PI * 2 + 0.4;
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x,
+          y,
+          vx: Math.cos(ka) * 580,
+          vy: Math.sin(ka) * 580,
+          radius: 6,
+          damage: rawDamage * 0.38,
+          life: 0.34,
+          color: '#FDE047',
+          kind: 'PLAYER_CROSSBOW_BOLT',
+          angle: ka,
+          hitEnemyIds: new Set<number>(),
+        });
+      }
+    }
+
+    this.hitDestructibleProps(x, y, blastRadius);
+  }
+
+  private updateSnareTraps(dt: number): void {
+    for (let i = this.snareTraps.length - 1; i >= 0; i--) {
+      const snare = this.snareTraps[i];
+      snare.life -= dt;
+      if (snare.armTimer > 0) {
+        snare.armTimer -= dt;
+      }
+      if (snare.life <= 0) {
+        this.snareTraps.splice(i, 1);
+        continue;
+      }
+      if (snare.armTimer <= 0) {
+        let triggered = false;
+        for (const enemy of this.world.enemies) {
+          if (
+            enemy.hp > 0 &&
+            Math.hypot(enemy.x - snare.x, enemy.y - snare.y) <= snare.triggerRadius + enemy.radius
+          ) {
+            triggered = true;
+            break;
+          }
+        }
+        if (triggered) {
+          this.snareTraps.splice(i, 1);
+          this.triggerSnareTrap(snare);
+        }
+      }
+    }
+  }
+
+  private triggerSnareTrap(snare: SnareTrapEntity): void {
+    soundEngine.playBoneBreak();
+    soundEngine.playUiClick(760);
+    this.shakeMag = Math.max(this.shakeMag, 6.5);
+
+    this.slashes.push({
+      x: snare.x,
+      y: snare.y,
+      angle: 0,
+      radius: snare.captureRadius,
+      arcSpread: Math.PI * 2,
+      color: '#F59E0B',
+      life: 0.38,
+      maxLife: 0.38,
+      flip: false,
+      kind: 'KOBOLD_SNARE_SNAP',
+    });
+    this.shockwaves.push({
+      x: snare.x,
+      y: snare.y,
+      maxRadius: snare.captureRadius,
+      color: '#FB7185',
+      life: 0.28,
+      maxLife: 0.28,
+    });
+    this.spawnBurst(snare.x, snare.y, '#FBBF24', 10, 95);
+
+    const bleedAlt = this.activeBlessingIds.has('kobold_skill_snare_trap_alt');
+    for (const enemy of [...this.world.enemies]) {
+      if (!enemy || enemy.hp <= 0) continue;
+      if (Math.hypot(enemy.x - snare.x, enemy.y - snare.y) <= snare.captureRadius + enemy.radius) {
+        enemy.rootTimer = Math.max(enemy.rootTimer, snare.rootDuration);
+        enemy.vulnerableTimer = Math.max(enemy.vulnerableTimer, snare.vulnerableDuration);
+        const roll = this.applyHuntersPrecisionAndRoll(enemy, snare.damage, 0.25, false, 2);
+        this.damageEnemy(enemy, roll.damage, true, snare.x, snare.y, false, roll.isCrit);
+        if (bleedAlt) {
+          enemy.infectionStacks = Math.min(4, enemy.infectionStacks + 2);
+          enemy.plagueTimer = Math.max(enemy.plagueTimer, 3.6);
+          if (enemy.infectionTimer <= 0) enemy.infectionTimer = 0.55;
+        }
+        this.spawnPopup(enemy.x, enemy.y - 34, 'SNARED!', '#FBBF24', 0.92);
+      }
+    }
+  }
+
+  private updateTurrets(dt: number): void {
+    const mechRate = 1.18;
+    const ordnanceAlt = this.activeBlessingIds.has('kobold_ult_artificer_alt');
+    for (let i = this.turrets.length - 1; i >= 0; i--) {
+      const t = this.turrets[i];
+      t.life -= dt;
+      t.recoilOffset += (0 - t.recoilOffset) * Math.min(1, dt * 16);
+      t.fireCooldown -= dt;
+
+      if (t.life <= 0) {
+        this.spawnBurst(t.x, t.y, '#F59E0B', 8, 80);
+        this.turrets.splice(i, 1);
+        continue;
+      }
+
+      const target = this.findNearestEnemy(t.x, t.y, 355);
+      if (target) {
+        const desired = Math.atan2(target.y - t.y, target.x - t.x);
+        const diff = Math.atan2(Math.sin(desired - t.aimAngle), Math.cos(desired - t.aimAngle));
+        t.aimAngle += Math.max(-12 * dt, Math.min(12 * dt, diff));
+
+        if (t.fireCooldown <= 0) {
+          t.shotsFired++;
+          t.fireCooldown = 0.44 / mechRate;
+          t.recoilOffset = -4.5;
+          soundEngine.playArrow();
+
+          const mx = t.x + Math.cos(t.aimAngle) * 16;
+          const my = t.y - 6 + Math.sin(t.aimAngle) * 16;
+          const fireExplosive = ordnanceAlt && t.shotsFired % 4 === 0;
+
+          this.slashes.push({
+            x: mx,
+            y: my,
+            angle: t.aimAngle,
+            radius: fireExplosive ? 24 : 18,
+            arcSpread: 0.75,
+            color: fireExplosive ? '#FB923C' : '#FBBF24',
+            life: 0.12,
+            maxLife: 0.12,
+            flip: false,
+            kind: 'KOBOLD_MUZZLE_FLASH',
+            scale: 0.8,
+          });
+
+          this.projectiles.push({
+            id: allocEntityId(),
+            fromPlayer: true,
+            x: mx,
+            y: my,
+            vx: Math.cos(t.aimAngle) * 760,
+            vy: Math.sin(t.aimAngle) * 760,
+            radius: fireExplosive ? 7.5 : 5.5,
+            damage: fireExplosive ? t.damage * 1.45 : t.damage,
+            life: 0.56,
+            color: fireExplosive ? '#FB923C' : '#FBBF24',
+            kind: fireExplosive ? 'PLAYER_EXPLOSIVE_BOLT' : 'PLAYER_TURRET_BOLT',
+            angle: t.aimAngle,
+            blastRadius: fireExplosive ? 82 : undefined,
+            hitEnemyIds: new Set<number>(),
+          });
+        }
+      }
+    }
+  }
+
+  private updateDragonsBarrages(dt: number): void {
+    const scorchAlt = this.activeBlessingIds.has('kobold_ult_barrage_alt');
+    for (let i = this.dragonsBarrages.length - 1; i >= 0; i--) {
+      const zone = this.dragonsBarrages[i];
+      zone.life -= dt;
+      zone.tickTimer -= dt;
+      if (zone.life <= 0) {
+        this.dragonsBarrages.splice(i, 1);
+        continue;
+      }
+      if (zone.tickTimer <= 0) {
+        zone.tickTimer = 0.24;
+        soundEngine.playArrow();
+        for (let s = 0; s < 4; s++) {
+          const a = Math.random() * Math.PI * 2;
+          const r = Math.random() * (zone.radius * 0.88);
+          this.spawnBurst(
+            zone.x + Math.cos(a) * r,
+            zone.y + Math.sin(a) * r,
+            s % 2 === 0 ? '#FB7185' : '#FDE047',
+            4,
+            80
+          );
+        }
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (Math.hypot(enemy.x - zone.x, enemy.y - zone.y) <= zone.radius + enemy.radius) {
+            const roll = this.applyHuntersPrecisionAndRoll(enemy, zone.damagePerVolley, 0.25, false, 1);
+            this.damageEnemy(enemy, roll.damage, true, zone.x, zone.y, false, roll.isCrit);
+            if (scorchAlt) {
+              enemy.slowTimer = Math.max(enemy.slowTimer, 1.5);
+              enemy.slowFactor = Math.min(enemy.slowFactor, 0.72);
+              enemy.vulnerableTimer = Math.max(enemy.vulnerableTimer, 1.5);
+            }
+          }
+        }
+        this.hitDestructibleProps(zone.x, zone.y, zone.radius);
+      }
+    }
   }
 
   private updateDaggerRains(dt: number): void {
@@ -8363,7 +11916,10 @@ export class GameEngine {
       enemy.infectionTimer = 0.6;
     }
     enemy.slowTimer = Math.max(enemy.slowTimer, 1.8);
-    enemy.slowFactor = Math.min(enemy.slowFactor, 0.82);
+    enemy.slowFactor = Math.min(
+      enemy.slowFactor,
+      this.activeBlessingIds.has('gob_skill_poisoned_blades_alt') ? 0.64 : 0.82
+    );
   }
 
   private applyInfectiousTouch(enemy: EnemyEntity, stacksToAdd: number): void {
@@ -8655,7 +12211,66 @@ export class GameEngine {
   ): void {
     if (enemy.hp <= 0) return;
 
-    const actual = Math.max(1, damage);
+    let scaledDamage = damage;
+    if (!isSplinterSplash && !fromNetwork) {
+      if (
+        this.activeBlessingIds.has('relic_gravebell_toll') &&
+        (enemy.kind === EnemyKind.SkeletonBoss || enemy.hp < enemy.maxHp * 0.4)
+      ) {
+        scaledDamage *= 1.22;
+      }
+      if (
+        this.activeBlessingIds.has('zombie_corpse_glutton') &&
+        enemy.hp < enemy.maxHp * 0.35
+      ) {
+        scaledDamage *= 1.24;
+      }
+      if (
+        this.activeBlessingIds.has('skel_marrow_piercer') &&
+        (enemy.kind === EnemyKind.SkeletonBoss || enemy.hp > enemy.maxHp * 0.7)
+      ) {
+        scaledDamage *= 1.22;
+      }
+      if (
+        this.activeBlessingIds.has('gob_festering_toxins') &&
+        (enemy.infectionStacks > 0 || enemy.plagueTimer > 0 || enemy.slowTimer > 0)
+      ) {
+        scaledDamage *= 1.18;
+      }
+      if (
+        this.activeBlessingIds.has('gnome_seismic_momentum') &&
+        (enemy.stunTimer > 0 || enemy.rootTimer > 0)
+      ) {
+        scaledDamage *= 1.22;
+      }
+      if (
+        this.activeBlessingIds.has('ghost_frostbite_haunt') &&
+        (enemy.slowTimer > 0 || enemy.fearTimer > 0)
+      ) {
+        scaledDamage *= 1.22;
+      }
+      if (enemy.vulnerableTimer > 0) {
+        scaledDamage *= 1.28;
+      }
+      if (
+        this.activeBlessingIds.has('kobold_trappers_ambush') &&
+        (enemy.rootTimer > 0 || enemy.stunTimer > 0 || enemy.vulnerableTimer > 0)
+      ) {
+        scaledDamage *= 1.24;
+      }
+      if (
+        isDirectHit &&
+        !isCrit &&
+        this.activeBlessingIds.has('gob_executioner_guile') &&
+        enemy.hp < enemy.maxHp * 0.3
+      ) {
+        isCrit = true;
+        const critMult = CHARACTER_ROSTER[this.player.characterId].critMultiplier;
+        scaledDamage *= critMult;
+      }
+    }
+
+    const actual = Math.max(1, Math.round(scaledDamage));
     enemy.hp -= actual;
     enemy.hitFlashTimer = 0.08;
     enemy.squashX = isCrit ? 1.28 : 1.2;
@@ -8669,12 +12284,20 @@ export class GameEngine {
     if (isDirectHit) {
       soundEngine.playHit(heavyKnockback || isCrit);
       const ranks = this.getActiveUpgrades();
+      const dynamo = this.activeBlessingIds.has('relic_soul_dynamo') ? 1.3 : 1.0;
       const ultGainMult =
-        this.player.characterId === CharacterId.Goblin ? 1 + ranks.pathE * 0.15 : 1.0;
+        (this.player.characterId === CharacterId.Goblin ? 1 + ranks.pathE * 0.15 : 1.0) * dynamo;
       this.player.ultCharge = Math.min(
         100,
         this.player.ultCharge + (isCrit ? 6.5 : 4.5) * ultGainMult
       );
+      if (isCrit && this.activeBlessingIds.has('skel_marrow_piercer')) {
+        this.player.normalCooldowns[0] = Math.max(0, this.player.normalCooldowns[0] - 0.3);
+        this.player.normalCooldowns[1] = Math.max(0, this.player.normalCooldowns[1] - 0.3);
+      }
+      if (isCrit && this.activeBlessingIds.has('gnome_shatterstone_grip') && enemy.hp > 0) {
+        this.applyEnemyStun(enemy, 0.35);
+      }
       const kDist = Math.max(1, Math.hypot(enemy.x - sourceX, enemy.y - sourceY));
       const force = enemy.kind === EnemyKind.SkeletonBoss ? 40 : heavyKnockback || isCrit ? 185 : 85;
       if (enemy.kind !== EnemyKind.TrainingDummy) {
@@ -8739,6 +12362,8 @@ export class GameEngine {
     this.corpseBloomCounter++;
     this.spawnBurst(enemy.x, enemy.y, '#EAE4D7', 12, 130);
 
+    const dynamo = this.activeBlessingIds.has('relic_soul_dynamo') ? 1.3 : 1.0;
+
     // Goblin Statue Blessing: Quicksilver Step — slaying an enemy cuts Normal Skill cooldowns by 0.6s!
     if (
       this.player.characterId === CharacterId.Goblin &&
@@ -8746,6 +12371,65 @@ export class GameEngine {
     ) {
       this.player.normalCooldowns[0] = Math.max(0, this.player.normalCooldowns[0] - 0.6);
       this.player.normalCooldowns[1] = Math.max(0, this.player.normalCooldowns[1] - 0.6);
+    }
+    if (this.activeBlessingIds.has('gob_gilded_cutthroat')) {
+      this.spawnOrb('GOLD_COIN', enemy.x, enemy.y, 3);
+    }
+    if (this.activeBlessingIds.has('skel_grim_ossuary')) {
+      this.player.ultCharge = Math.min(100, this.player.ultCharge + 7 * dynamo);
+    }
+    if (this.activeBlessingIds.has('skel_deathrattler_tempo')) {
+      this.player.deathrattlerTimer = 3.5;
+    }
+    if (
+      this.activeBlessingIds.has('zombie_ult_abomination_alt') &&
+      this.player.abominationTimer > 0 &&
+      this.player.abomBonusExtended < 3.6
+    ) {
+      this.player.abominationTimer += 0.6;
+      this.player.abomBonusExtended += 0.6;
+    }
+    if (this.activeBlessingIds.has('ghost_phantom_harvester')) {
+      this.healPlayer(3);
+      this.player.ultCharge = Math.min(100, this.player.ultCharge + 6 * dynamo);
+      const nearest = this.findNearestEnemy(enemy.x, enemy.y, 420);
+      const orbAng = nearest
+        ? Math.atan2(nearest.y - enemy.y, nearest.x - enemy.x)
+        : this.player.aimAngle;
+      this.projectiles.push({
+        id: allocEntityId(),
+        fromPlayer: true,
+        x: enemy.x,
+        y: enemy.y,
+        vx: Math.cos(orbAng) * 520,
+        vy: Math.sin(orbAng) * 520,
+        radius: 10,
+        damage: 15 * this.getPhysicalDamageMultiplier() * this.getPlagueOrSkillMultiplier(),
+        life: 1.8,
+        color: '#67E8F9',
+        kind: 'PLAYER_SPIRIT_ORB',
+        angle: orbAng,
+        pierce: false,
+        hitEnemyIds: new Set<number>(),
+      });
+    }
+    if (
+      this.activeBlessingIds.has('kobold_dragonscale_quiver') &&
+      enemy.hunterMarkStacks > 0
+    ) {
+      this.healPlayer(3);
+    }
+    if (this.activeBlessingIds.has('kobold_scavenger_springs')) {
+      this.player.ultCharge = Math.min(100, this.player.ultCharge + 6 * dynamo);
+      this.player.normalCooldowns[0] = Math.max(0, this.player.normalCooldowns[0] - 0.5);
+      this.player.normalCooldowns[1] = Math.max(0, this.player.normalCooldowns[1] - 0.5);
+    }
+
+    if (
+      this.activeBlessingIds.has('zombie_corpse_glutton') &&
+      (enemy.infectionStacks > 0 || enemy.plagueTimer > 0)
+    ) {
+      this.healPlayer(4);
     }
 
     if (enemy.infectionStacks > 0) {
@@ -8860,7 +12544,9 @@ export class GameEngine {
         soundEngine.playPickup();
         if (orb.kind === 'ESSENCE_HEAL') {
           this.healPlayer(orb.value);
-          const bonusUlt = this.activeBlessingIds.has('zombie_feast_of_rot') ? 17 : 13;
+          const dynamo = this.activeBlessingIds.has('relic_soul_dynamo') ? 1.3 : 1.0;
+          const bonusUlt =
+            (this.activeBlessingIds.has('zombie_feast_of_rot') ? 17 : 13) * dynamo;
           this.player.ultCharge = Math.min(100, this.player.ultCharge + bonusUlt);
         } else if (orb.kind === 'SOUL_SHARD') {
           this.runShardsEarned += orb.value;
@@ -8953,6 +12639,9 @@ export class GameEngine {
         activeRoom.locked = false;
         activeRoom.cleared = true;
         soundEngine.playHeal();
+        if (this.activeBlessingIds.has('relic_lantern_vitality')) {
+          this.healPlayer(Math.round(this.player.maxHp * 0.12));
+        }
 
         const cx = activeRoom.x + activeRoom.w / 2;
         const cy = activeRoom.y + activeRoom.h / 2;
@@ -9070,7 +12759,10 @@ export class GameEngine {
             const seed = Math.floor(Math.random() * 1000000);
             this.networkManager?.sendAdvanceFloor(nextFloor, seed);
             this.loadDungeonFloor(nextFloor, seed);
-          } else if (this.world.floorNumber > 7) {
+          } else if (
+            this.world.floorNumber > 7 ||
+            this.activeBlessingIds.size >= MAX_RUN_BLESSINGS
+          ) {
             this.loadDungeonFloor(nextFloor);
           } else {
             this.offerBlessingsAndAdvanceFloor(nextFloor, 'STAGE_CLEAR');
@@ -9092,7 +12784,7 @@ export class GameEngine {
         }
       } else if (prop.kind === 'SHRINE_ALTAR' && !prop.opened && dist <= 82) {
         prompt =
-          this.world.floorNumber > 7
+          this.world.floorNumber > 7 || this.activeBlessingIds.size >= MAX_RUN_BLESSINGS
             ? 'Pray at Lantern Statue (+25% HP)'
             : 'Pray at Lantern Statue';
         if (pressedInteract) {
@@ -9138,12 +12830,17 @@ export class GameEngine {
         ? '#FB923C'
         : this.player.characterId === CharacterId.Ghost
         ? '#C084FC'
+        : this.player.characterId === CharacterId.Kobold
+        ? '#FB7185'
         : '#4ADE80';
     this.spawnBurst(prop.x, prop.y - 20, burstColor, 14, 95);
 
-    if (this.world.floorNumber > 7) {
+    if (this.world.floorNumber > 7 || this.activeBlessingIds.size >= MAX_RUN_BLESSINGS) {
       this.spawnPopup(prop.x, prop.y - 28, 'Vitality Restored (+25% HP)', burstColor, 1.05);
-      this.roomBannerText = 'Lantern Statue · Vitality Restored (Blessings End After Stage 3-1)';
+      this.roomBannerText =
+        this.activeBlessingIds.size >= MAX_RUN_BLESSINGS
+          ? `Lantern Statue · Vitality Restored (Max ${MAX_RUN_BLESSINGS} Blessings Reached)`
+          : 'Lantern Statue · Vitality Restored (Blessings End After Stage 3-1)';
       this.roomBannerTimer = 3.2;
       this.emitHudSnapshot();
       return;
@@ -9167,7 +12864,7 @@ export class GameEngine {
     nextFloor: number | null,
     source: 'STATUE' | 'STAGE_CLEAR' = 'STAGE_CLEAR'
   ): void {
-    if (this.world.floorNumber > 7) {
+    if (this.world.floorNumber > 7 || this.activeBlessingIds.size >= MAX_RUN_BLESSINGS) {
       if (nextFloor !== null) {
         this.loadDungeonFloor(nextFloor);
       }
@@ -9584,6 +13281,10 @@ export class GameEngine {
       soulDrainTimer: +this.player.soulDrainTimer.toFixed(1),
       possessionTimer: +this.player.possessionTimer.toFixed(1),
       nightmareTimer: +this.player.nightmareTimer.toFixed(1),
+      tinkerHasteTimer: +this.player.tinkerHasteTimer.toFixed(1),
+      rapidReloadActive: this.player.rapidReloadRemaining > 0,
+      arsenalActive: this.player.arsenalRemaining > 0,
+      activeTurrets: this.turrets.length,
       ultCharge: Math.floor(this.player.ultCharge),
       ultCooldown: +this.player.ultCooldown.toFixed(1),
       ultMaxCooldown: this.player.ultMaxCooldown,
@@ -9683,6 +13384,9 @@ export class GameEngine {
       props: this.world.props,
       poisonClouds: this.poisonClouds,
       traps: this.traps,
+      snareTraps: this.snareTraps,
+      turrets: this.turrets,
+      dragonsBarrages: this.dragonsBarrages,
       afterimages: this.afterimages,
       daggerRains: this.daggerRains,
       earthenGrasps: this.earthenGrasps,
@@ -9709,6 +13413,14 @@ export class GameEngine {
             knobX: this.panKnobX,
             knobY: this.panKnobY,
           }
+        : null,
+      skillAimTelegraph: this.activeSkillAim
+        ? this.computeSkillTelegraph(
+            this.activeSkillAim.slot,
+            this.activeSkillAim.angle,
+            this.activeSkillAim.magnitude,
+            this.activeSkillAim.isCancelling
+          )
         : null,
     });
   }

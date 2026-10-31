@@ -1,4 +1,4 @@
-import { CharacterId, EnemyKind } from '../types/game';
+import { CharacterId, DifficultyLevel, EnemyKind } from '../types/game';
 
 export type MultiplayerMode = 'ONLINE_COOP' | 'LAN_COOP' | 'ONLINE_PVP' | 'LAN_PVP';
 
@@ -21,6 +21,19 @@ export interface RoomInfo {
   inGame: boolean;
   seed: number;
   floorNumber: number;
+  difficulty: DifficultyLevel;
+}
+
+export interface EnemyStatusPayload {
+  stunDuration?: number;
+  slowDuration?: number;
+  slowFactor?: number;
+  rootDuration?: number;
+  fearDuration?: number;
+  infectionStacksToAdd?: number;
+  plagueDuration?: number;
+  vulnerableDuration?: number;
+  hunterMarkStacks?: number;
 }
 
 export interface EnemySyncState {
@@ -45,9 +58,45 @@ export interface EnemySyncState {
   telegraphAngle: number;
   hitFlashTimer: number;
   stunTimer: number;
+  slowTimer?: number;
+  rootTimer?: number;
+  fearTimer?: number;
+  vulnerableTimer?: number;
   plagueTimer: number;
   infectionStacks: number;
   roomId: number;
+  bossPhase?: 1 | 2;
+}
+
+export interface EnemyProjectileSyncState {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  damage: number;
+  kind: 'BONE_ARROW' | 'BOSS_BOLT';
+  color: string;
+  angle: number;
+}
+
+export interface RoomProgressSyncState {
+  id: number;
+  discovered: boolean;
+  locked: boolean;
+  cleared: boolean;
+  wavesRemaining: number;
+}
+
+export interface SpawnedPropSyncState {
+  id: number;
+  kind: 'CHEST' | 'PORTAL_ARCH';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  opened?: boolean;
 }
 
 export interface PlayerTransformSync {
@@ -68,6 +117,7 @@ export interface PlayerTransformSync {
   leapAirProgress: number;
   isAttacking: boolean;
   comboStep: number;
+  comboFlip?: boolean;
   isDowned?: boolean;
   bleedoutTimer?: number;
   reviveProgress?: number;
@@ -79,10 +129,17 @@ export interface PlayerTransformSync {
     boneStorm: boolean;
     colossus: boolean;
     windrunner: boolean;
+    poisonBlades?: boolean;
+    stolenMight?: boolean;
     fortress: boolean;
+    magnetic?: boolean;
     mountainHeart: boolean;
     restless: boolean;
+    soulDrain?: boolean;
     nightmare: boolean;
+    tinkerHaste?: boolean;
+    rapidReload?: boolean;
+    arsenal?: boolean;
   };
 }
 
@@ -93,6 +150,7 @@ export type ClientMessage =
       characterId: CharacterId;
       mode: MultiplayerMode;
       maxPlayers?: number;
+      difficulty?: DifficultyLevel;
     }
   | {
       type: 'C2S_JOIN_ROOM';
@@ -112,7 +170,20 @@ export type ClientMessage =
       characterId: CharacterId;
     }
   | {
+      type: 'C2S_SET_DIFFICULTY';
+      difficulty: DifficultyLevel;
+    }
+  | {
+      type: 'C2S_PROMOTE_LEADER';
+      targetPlayerId: string;
+    }
+  | {
       type: 'C2S_START_GAME';
+      difficulty?: DifficultyLevel;
+    }
+  | {
+      type: 'C2S_START_DUNGEON_RUN';
+      difficulty: DifficultyLevel;
     }
   | {
       type: 'C2S_UPDATE_TRANSFORM';
@@ -120,12 +191,20 @@ export type ClientMessage =
     }
   | {
       type: 'C2S_DAMAGE_ENEMY';
+      eventId: string;
       enemyId: number;
       damage: number;
       isCrit?: boolean;
       hitX: number;
       hitY: number;
       attackerId: string;
+      statusEffects?: EnemyStatusPayload;
+    }
+  | {
+      type: 'C2S_PLAYER_HEAL';
+      eventId: string;
+      amount: number;
+      maxHp?: number;
     }
   | {
       type: 'C2S_CAST_SKILL';
@@ -134,12 +213,12 @@ export type ClientMessage =
       y: number;
       angle: number;
       slot: 'BASIC' | 'NORMAL_0' | 'NORMAL_1' | 'ULTIMATE';
+      targetX?: number;
+      targetY?: number;
     }
   | {
-      type: 'C2S_SYNC_ENEMIES';
-      roomId: number;
-      wavesRemaining: number;
-      enemies: EnemySyncState[];
+      type: 'C2S_INTERACT_PROP';
+      propId: number;
     }
   | {
       type: 'C2S_REVIVE_PLAYER';
@@ -149,7 +228,13 @@ export type ClientMessage =
   | {
       type: 'C2S_ADVANCE_FLOOR';
       floorNumber: number;
-      seed: number;
+      seed?: number;
+    }
+  | {
+      type: 'C2S_CLAIM_VICTORY';
+    }
+  | {
+      type: 'C2S_RETURN_PARTY_TO_GUILD';
     }
   | {
       type: 'C2S_PING';
@@ -178,28 +263,61 @@ export type ServerMessage =
   | {
       type: 'S2C_PLAYER_LEFT';
       playerId: string;
+      playerName?: string;
       newHostId?: string;
+      newHostName?: string;
     }
   | {
       type: 'S2C_HOST_CHANGED';
       newHostId: string;
+      newHostName?: string;
     }
   | {
       type: 'S2C_GAME_STARTED';
       seed: number;
       floorNumber: number;
+      difficulty: DifficultyLevel;
     }
   | {
       type: 'S2C_SYNC_WORLD';
       players: PlayerTransformSync[];
       enemies?: EnemySyncState[];
+      enemyProjectiles?: EnemyProjectileSyncState[];
+      roomsState?: RoomProgressSyncState[];
+      spawnedProps?: SpawnedPropSyncState[];
+      brokenPropIds?: number[];
       activeRoomId?: number;
       wavesRemaining?: number;
+      currentWave?: number;
+      totalWaves?: number;
+    }
+  | {
+      type: 'S2C_WAVE_EVENT';
+      roomId: number;
+      bannerText: string;
+      currentWave: number;
+      totalWaves: number;
+      isBoss?: boolean;
+      isCleared?: boolean;
+    }
+  | {
+      type: 'S2C_PARTY_ROOM_PULL';
+      roomId: number;
+      x: number;
+      y: number;
+    }
+  | {
+      type: 'S2C_ENEMY_ATTACK_FX';
+      kind: 'WARRIOR_SLASH' | 'ARCHER_SHOT' | 'BOSS_CLEAVE' | 'BOSS_VOLLEY' | 'BOSS_SUMMON' | 'BOSS_DASH';
+      x: number;
+      y: number;
+      angle: number;
     }
   | {
       type: 'S2C_ENEMY_DAMAGED';
       enemyId: number;
       newHp: number;
+      maxHp: number;
       damageDealt: number;
       isCrit?: boolean;
       hitX: number;
@@ -212,6 +330,22 @@ export type ServerMessage =
       killerId: string;
       dropX: number;
       dropY: number;
+      kind?: EnemyKind;
+    }
+  | {
+      type: 'S2C_PLAYER_DAMAGED';
+      targetPlayerId: string;
+      damage: number;
+      newHp: number;
+      maxHp: number;
+      evaded?: boolean;
+      ribBlocked?: boolean;
+      isProjectile?: boolean;
+    }
+  | {
+      type: 'S2C_PLAYER_DOWNED';
+      playerId: string;
+      playerName: string;
     }
   | {
       type: 'S2C_REMOTE_SKILL';
@@ -221,20 +355,40 @@ export type ServerMessage =
       y: number;
       angle: number;
       slot: 'BASIC' | 'NORMAL_0' | 'NORMAL_1' | 'ULTIMATE';
+      targetX?: number;
+      targetY?: number;
+    }
+  | {
+      type: 'S2C_PROP_OPENED';
+      propId: number;
+      kind: 'CHEST' | 'SHRINE_ALTAR' | 'DESTRUCTIBLE';
+      x: number;
+      y: number;
+      openerId: string;
     }
   | {
       type: 'S2C_PLAYER_REVIVED';
       revivedPlayerId: string;
       reviverPlayerId: string;
       reviveHp: number;
+      maxHp?: number;
     }
   | {
       type: 'S2C_FLOOR_SYNC';
       floorNumber: number;
       seed: number;
+      difficulty: DifficultyLevel;
+    }
+  | {
+      type: 'S2C_PARTY_VICTORY';
+      difficulty: DifficultyLevel;
+      floorNumber: number;
     }
   | {
       type: 'S2C_PARTY_WIPE';
+    }
+  | {
+      type: 'S2C_RETURN_TO_GUILD';
     }
   | {
       type: 'S2C_PONG';

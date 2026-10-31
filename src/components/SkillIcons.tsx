@@ -410,6 +410,67 @@ export const NormalSkillIcon: React.FC<{ id: NormalSkillId; className?: string }
           <circle cx="14" cy="11" r="1.4" fill="#67E8F9" />
         </svg>
       );
+
+    // Kobold Normal Skills
+    case NormalSkillId.PiercingBolt:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <path d="M3 12H19" stroke="#FB7185" strokeWidth="2.3" strokeLinecap="round" />
+          <path
+            d="M15 7.5L21 12L15 16.5L16.8 12L15 7.5Z"
+            fill="#FB7185"
+            fillOpacity="0.35"
+            stroke="#FFE4E6"
+            strokeWidth="1.7"
+            strokeLinejoin="round"
+          />
+          <path d="M9 7V17M12.5 8.5V15.5" stroke="#FBBF24" strokeWidth="1.7" strokeLinecap="round" />
+        </svg>
+      );
+    case NormalSkillId.RapidReload:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <path d="M5 8H16M13.5 5.5L17 8L13.5 10.5" stroke="#FBBF24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M7 12.5H19M16.5 10L20 12.5L16.5 15" stroke="#FB7185" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M4 17H15M12.5 14.5L16 17L12.5 19.5" stroke="#FDE047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case NormalSkillId.ExplosiveBolt:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <path d="M3 16L12 11" stroke="#FB923C" strokeWidth="2.3" strokeLinecap="round" />
+          <path
+            d="M15 5L16.8 8.8L21 9.5L17.8 12.4L18.6 16.5L15 14.4L11.4 16.5L12.2 12.4L9 9.5L13.2 8.8L15 5Z"
+            fill="#F97316"
+            fillOpacity="0.35"
+            stroke="#FDE047"
+            strokeWidth="1.8"
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
+    case NormalSkillId.SnareTrap:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <ellipse cx="12" cy="14" rx="8" ry="4.5" fill="#FBBF24" fillOpacity="0.2" stroke="#FBBF24" strokeWidth="2" />
+          <path
+            d="M6.5 13L8.5 10.5L10.5 13L12 10L13.5 13L15.5 10.5L17.5 13"
+            stroke="#FB7185"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <circle cx="12" cy="14.5" r="1.8" fill="#FDE047" />
+        </svg>
+      );
+    case NormalSkillId.MultiShot:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <path d="M4 12L19 6M16 4.8L19.5 5.8L17.8 9" stroke="#FDA4AF" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M4 12H20M17 9.5L20.5 12L17 14.5" stroke="#FB7185" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M4 12L19 18M17.8 15L19.5 18.2L16 19.2" stroke="#FBBF24" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
   }
 };
 
@@ -613,6 +674,37 @@ export const UltimateSkillIcon: React.FC<{ id: UltimateSkillId; className?: stri
           <path d="M12 4V10M8 6L10.5 9.5M16 6L13.5 9.5" stroke="#E879F9" strokeWidth="2" strokeLinecap="round" />
         </svg>
       );
+
+    // Kobold Ultimates
+    case UltimateSkillId.DragonsBarrage:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <ellipse cx="12" cy="18.5" rx="8" ry="2.8" fill="#FB7185" fillOpacity="0.25" stroke="#FB7185" strokeWidth="1.8" />
+          <path
+            d="M7 4V14M7 14L5 11.5M7 14L9 11.5M12 3V16M12 16L10 13.5M12 16L14 13.5M17 4V14M17 14L15 11.5M17 14L19 11.5"
+            stroke="#FDE047"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
+    case UltimateSkillId.MasterArtificer:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <path d="M6 19L10 13H14L18 19" stroke="#FBBF24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M5 9.5H19M15.5 6L20 9.5L15.5 13" stroke="#FB7185" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="12" cy="11" r="2.6" fill="#FDE047" stroke="#78350F" strokeWidth="1.4" />
+        </svg>
+      );
+    case UltimateSkillId.KoboldsDeadlyArsenal:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <path d="M4 8H18M15 5.5L19 8L15 10.5" stroke="#FB923C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M4 12H20M17 9.5L21 12L17 14.5" stroke="#38BDF8" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M4 16H18M15 13.5L19 16L15 18.5" stroke="#A855F7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
   }
 };
 
@@ -741,6 +833,27 @@ export const PassiveSkillIcon: React.FC<{ id: PassiveSkillId; className?: string
             strokeWidth="2"
           />
           <circle cx="12" cy="14" r="2.2" fill="#C084FC" />
+        </svg>
+      );
+    case PassiveSkillId.MechanicalExpertise:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <circle cx="12" cy="12" r="5" fill="#FBBF24" fillOpacity="0.22" stroke="#FBBF24" strokeWidth="2" />
+          <path
+            d="M12 3.5V6.2M12 17.8V20.5M3.5 12H6.2M17.8 12H20.5M6 6L8 8M16 16L18 18M18 6L16 8M8 16L6 18"
+            stroke="#FDE047"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          <circle cx="12" cy="12" r="2" fill="#FB7185" />
+        </svg>
+      );
+    case PassiveSkillId.HuntersPrecision:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className}>
+          <circle cx="12" cy="12" r="7.5" stroke="#FB7185" strokeWidth="2" />
+          <path d="M12 2.5V6.5M12 17.5V21.5M2.5 12H6.5M17.5 12H21.5" stroke="#FDA4AF" strokeWidth="2" strokeLinecap="round" />
+          <circle cx="12" cy="12" r="2.4" fill="#FDE047" />
         </svg>
       );
   }

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Crosshair,
   Crown,
@@ -7,12 +7,14 @@ import {
   Maximize2,
   Minimize2,
   Pause,
+  Settings,
   Skull,
   SlidersHorizontal,
   Swords,
   Users,
   Volume2,
   VolumeX,
+  X,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import {
@@ -26,7 +28,10 @@ import {
   EquippedLoadout,
   GamePhase,
   HudSnapshot,
+  ManualSkillAimInput,
+  SkillSlotKey,
 } from '../types/game';
+import { clientDeltaToLandscape } from '../utils/orientation';
 import { MinimapOverlay } from './MinimapOverlay';
 import {
   NormalSkillIcon,
@@ -41,9 +46,12 @@ interface HudOverlayProps {
   totalSavedShards: number;
   selectedDifficulty?: DifficultyLevel;
   muted: boolean;
+  joystickScale?: number;
+  skillButtonScale?: number;
   isFullscreen: boolean;
   onToggleMute: () => void;
   onToggleFullscreen: () => void;
+  onOpenSettings?: () => void;
   onPause: () => void;
   onOpenLoadout: (charId?: CharacterId) => void;
   onOpenMultiplayer?: () => void;
@@ -54,43 +62,113 @@ interface HudOverlayProps {
   onAttackHeldChange: (held: boolean) => void;
   onInteract: () => void;
   onTriggerSkill: (slot: 'BASIC' | 'NORMAL_0' | 'NORMAL_1' | 'ULTIMATE') => void;
+  onSkillAimChange?: (aim: ManualSkillAimInput | null) => void;
+  onReleaseSkill?: (
+    slot: SkillSlotKey,
+    manualAim?: { angle: number; magnitude: number }
+  ) => void;
 }
 
 export const HudOverlay: React.FC<HudOverlayProps> = ({
   hud,
   loadout,
   totalSavedShards,
-  selectedDifficulty,
+  selectedDifficulty: _selectedDifficulty,
   muted,
+  joystickScale = 1,
+  skillButtonScale = 1,
   isFullscreen,
   onToggleMute,
   onToggleFullscreen,
+  onOpenSettings,
   onPause,
   onOpenLoadout,
   onOpenMultiplayer,
-  onSelectDifficulty,
+  onSelectDifficulty: _onSelectDifficulty,
   onJoystickMove,
   onMapPanJoystick,
   onResetMapPan,
   onAttackHeldChange,
   onInteract,
   onTriggerSkill,
+  onSkillAimChange,
+  onReleaseSkill,
 }) => {
   const attackPointerId = useRef<number | null>(null);
   const [attackPressed, setAttackPressed] = useState(false);
+
+  const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [aimingState, setAimingState] = useState<{
+    slot: SkillSlotKey;
+    isCancelling: boolean;
+  } | null>(null);
+  const [cancelVersion, setCancelVersion] = useState(0);
+
+  const checkOverCancelZone = useCallback((clientX: number, clientY: number): boolean => {
+    const el = cancelBtnRef.current;
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const pad = 12;
+    return (
+      clientX >= rect.left - pad &&
+      clientX <= rect.right + pad &&
+      clientY >= rect.top - pad &&
+      clientY <= rect.bottom + pad
+    );
+  }, []);
+
+  const handleSkillAimMove = useCallback(
+    (aim: ManualSkillAimInput) => {
+      setAimingState((prev) => {
+        if (prev && prev.slot === aim.slot && prev.isCancelling === aim.isCancelling) {
+          return prev;
+        }
+        return { slot: aim.slot, isCancelling: aim.isCancelling };
+      });
+      onSkillAimChange?.(aim);
+    },
+    [onSkillAimChange]
+  );
+
+  const handleSkillAimCancel = useCallback(() => {
+    setAimingState(null);
+    onSkillAimChange?.(null);
+  }, [onSkillAimChange]);
+
+  const handleSkillRelease = useCallback(
+    (slot: SkillSlotKey, manualAim?: { angle: number; magnitude: number }) => {
+      setAimingState(null);
+      onSkillAimChange?.(null);
+      if (onReleaseSkill) {
+        onReleaseSkill(slot, manualAim);
+      } else {
+        onTriggerSkill(slot);
+      }
+    },
+    [onReleaseSkill, onSkillAimChange, onTriggerSkill]
+  );
 
   const isGuild = hud.floorNumber === 0;
   const isSkeleton = hud.activeCharacter === CharacterId.Skeleton;
   const isGoblin = hud.activeCharacter === CharacterId.Goblin;
   const isGnome = hud.activeCharacter === CharacterId.Gnome;
   const isGhost = hud.activeCharacter === CharacterId.Ghost;
+  const isKobold = hud.activeCharacter === CharacterId.Kobold;
   const profile = CHARACTER_ROSTER[hud.activeCharacter] ?? CHARACTER_ROSTER[CharacterId.Zombie];
 
   const hpRatio = Math.max(0, Math.min(1, hud.hp / Math.max(1, hud.maxHp)));
   const xpRatio = Math.max(0, Math.min(1, hud.runXp / Math.max(1, hud.runXpNext)));
 
   const healthStatusLabel =
-    hud.nightmareTimer > 0
+    hud.arsenalActive
+      ? 'ARSENAL'
+      : hud.rapidReloadActive
+      ? 'RAPID'
+      : hud.tinkerHasteTimer > 0
+      ? `TINKER ${hud.tinkerHasteTimer.toFixed(1)}s`
+      : hud.activeTurrets > 0
+      ? `TURRET x${hud.activeTurrets}`
+      : hud.nightmareTimer > 0
       ? `NIGHTMARE ${hud.nightmareTimer.toFixed(0)}s`
       : hud.possessionTimer > 0
       ? `POSSESS ${hud.possessionTimer.toFixed(1)}s`
@@ -161,6 +239,10 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
   };
 
   const hasBuffActive =
+    hud.arsenalActive ||
+    hud.rapidReloadActive ||
+    hud.tinkerHasteTimer > 0 ||
+    hud.activeTurrets > 0 ||
     hud.abominationTimer > 0 ||
     hud.undyingTimer > 0 ||
     hud.colossusTimer > 0 ||
@@ -187,26 +269,26 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
         <div className="flex flex-col items-start gap-1 pointer-events-auto">
           <div className="flex items-start gap-2">
           {isGuild ? (
-            <div className="bg-[#16131E]/90 border border-[#302A40] rounded-xl px-3 py-1.5 shadow-lg min-w-[160px]">
-              <div className="flex items-center justify-between gap-2 text-[11px] mb-1">
+            <div className="bg-[#16131E]/90 border border-[#302A40] rounded-xl px-2.5 py-1 shadow-lg min-w-[140px]">
+              <div className="flex items-center justify-between gap-2 text-[10px] mb-0.5">
                 <span className="font-semibold text-[#F5F0E6]">
                   HP <span className="font-mono-num">{hud.hp}/{hud.maxHp}</span>
                 </span>
-                <span className="font-mono-num text-[10px] font-semibold text-[#86EFAC]">
+                <span className="font-mono-num text-[9.5px] font-semibold text-[#86EFAC]">
                   {healthStatusLabel}
                 </span>
               </div>
-              <div className="w-full h-2 bg-[#0E0C14] rounded overflow-hidden border border-[#282336]">
+              <div className="w-full h-1.5 bg-[#0E0C14] rounded overflow-hidden border border-[#282336]">
                 <div
                   className="h-full bg-[#4ADE80] transition-transform duration-150 origin-left"
                   style={{ transform: `scaleX(${hpRatio})` }}
                 />
               </div>
-              <div className="flex items-center justify-between gap-2 mt-1 text-[11px] text-[#BDB6CC] font-mono-num">
+              <div className="flex items-center justify-between gap-2 mt-0.5 text-[10px] text-[#BDB6CC] font-mono-num">
                 <span>Lv {hud.runLevel}</span>
                 <span>·</span>
                 <span className="flex items-center gap-1 text-[#7DD3FC]">
-                  <SoulShardIcon className="w-3 h-3" />
+                  <SoulShardIcon className="w-2.5 h-2.5" />
                   {totalSavedShards}
                 </span>
               </div>
@@ -230,6 +312,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                         ? 'text-[#FDBA74]'
                         : isGhost
                         ? 'text-[#E9D5FF]'
+                        : isKobold
+                        ? 'text-[#FDE047]'
                         : 'text-[#7DD3FC]'
                       : hpRatio <= 0.3
                       ? 'text-[#F87171]'
@@ -241,6 +325,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                       ? 'text-[#FB923C]'
                       : isGhost
                       ? 'text-[#D8B4FE]'
+                      : isKobold
+                      ? 'text-[#FDA4AF]'
                       : 'text-[#86EFAC]'
                   }`}
                 >
@@ -263,6 +349,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                         ? 'bg-[#FB923C]'
                         : isGhost
                         ? 'bg-[#C084FC]'
+                        : isKobold
+                        ? 'bg-[#FB7185]'
                         : 'bg-[#4ADE80]'
                     }`}
                     style={{ transform: `scaleX(${hpRatio})` }}
@@ -309,7 +397,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                   soundEngine.playUiClick(580);
                   onOpenLoadout(hud.activeCharacter);
                 }}
-                className={`min-h-[44px] px-3 rounded-xl bg-[#201B2D]/90 active:scale-95 border text-xs font-semibold text-[#F5F0E6] flex items-center gap-1.5 shadow-lg whitespace-nowrap shrink-0 ${
+                className={`min-h-[40px] px-2.5 rounded-xl bg-[#201B2D]/90 active:scale-95 border text-xs font-semibold text-[#F5F0E6] flex items-center gap-1.5 shadow-lg whitespace-nowrap shrink-0 ${
                   isSkeleton
                     ? 'border-[#38BDF8]/70'
                     : isGoblin
@@ -318,11 +406,13 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                     ? 'border-[#FB923C]/70'
                     : isGhost
                     ? 'border-[#C084FC]/70'
+                    : isKobold
+                    ? 'border-[#FB7185]/70'
                     : 'border-[#4ADE80]/70'
                 }`}
               >
                 <SlidersHorizontal
-                  className={`w-4 h-4 ${
+                  className={`w-3.5 h-3.5 ${
                     isSkeleton
                       ? 'text-[#38BDF8]'
                       : isGoblin
@@ -331,10 +421,12 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                       ? 'text-[#FB923C]'
                       : isGhost
                       ? 'text-[#D8B4FE]'
+                      : isKobold
+                      ? 'text-[#FB7185]'
                       : 'text-[#4ADE80]'
                   }`}
                 />
-                <span>Heroes &amp; Skills</span>
+                <span>Heroes</span>
               </button>
 
               <button
@@ -343,38 +435,34 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                   soundEngine.playUiClick(580);
                   onOpenMultiplayer?.();
                 }}
-                className="min-h-[44px] px-3 rounded-xl bg-[#201B2D]/90 active:scale-95 border border-[#38BDF8]/60 text-xs font-semibold text-[#F5F0E6] flex items-center gap-1.5 shadow-lg whitespace-nowrap shrink-0"
+                className="min-h-[40px] px-2.5 rounded-xl bg-[#201B2D]/90 active:scale-95 border border-[#38BDF8]/60 text-xs font-semibold text-[#F5F0E6] flex items-center gap-1.5 shadow-lg whitespace-nowrap shrink-0"
               >
-                <Users className="w-4 h-4 text-[#38BDF8]" />
-                <span>Multiplayer</span>
+                <Users className="w-3.5 h-3.5 text-[#38BDF8]" />
+                <span>{hud.multiplayerInfo ? `Party · ${hud.multiplayerInfo.roomCode}` : 'Multiplayer'}</span>
               </button>
             </div>
           )}
           </div>
 
-          {/* Party Member Health Indicators */}
+          {/* Compact 2-Column Party Member Health Strip */}
           {hud.multiplayerInfo?.partyMembers && hud.multiplayerInfo.partyMembers.length > 1 && (
-            <div className="flex flex-col gap-1 w-[148px]">
+            <div className="grid grid-cols-2 gap-1 max-w-[244px]">
               {hud.multiplayerInfo.partyMembers
                 .filter((m) => !m.isSelf)
                 .map((member) => {
-                  const mChar =
-                    CHARACTER_ROSTER[member.characterId] ?? CHARACTER_ROSTER[CharacterId.Zombie];
                   const mRatio = Math.max(0, Math.min(1, member.hp / Math.max(1, member.maxHp)));
                   return (
                     <div
                       key={member.id}
-                      className="bg-[#14101E]/90 backdrop-blur-xs border border-[#2D2340] rounded-lg px-2 py-1 shadow-md w-full"
+                      className="bg-[#14101E]/90 backdrop-blur-xs border border-[#2D2340] rounded-md px-1.5 py-0.5 shadow-sm w-[118px]"
                     >
-                      <div className="flex items-center justify-between text-[9px] leading-tight mb-0.5">
+                      <div className="flex items-center justify-between gap-1 text-[8.5px] leading-tight mb-0.5">
                         <div className="flex items-center gap-1 min-w-0">
-                          <img
-                            src={mChar.portraitUrl}
-                            alt={mChar.name}
-                            className="w-3.5 h-3.5 rounded object-cover border"
-                            style={{ borderColor: member.color }}
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{ backgroundColor: member.color }}
                           />
-                          <span className="font-bold text-[#E5DFD4] truncate max-w-[62px]">
+                          <span className="font-bold text-[#E5DFD4] truncate">
                             {member.name}
                           </span>
                           {member.isHost && (
@@ -382,20 +470,18 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                           )}
                         </div>
                         {member.isDowned ? (
-                          <span className="text-[8px] font-bold text-red-400 bg-red-950/80 px-1 rounded animate-pulse">
-                            DOWNED
+                          <span className="text-[8px] font-bold text-red-400 shrink-0">
+                            DOWN
                           </span>
                         ) : (
-                          <span className="font-mono-num text-[8px] text-[#A69FB4]">
-                            {member.hp}/{member.maxHp}
+                          <span className="font-mono-num text-[8px] text-[#A69FB4] shrink-0">
+                            {member.hp}
                           </span>
                         )}
                       </div>
-                      <div className="w-full h-1 bg-[#0A080F] rounded-xs overflow-hidden border border-[#231C30]">
+                      <div className="w-full h-1 bg-[#0A080F] rounded-xs overflow-hidden">
                         <div
-                          className={`h-full transition-transform duration-150 origin-left ${
-                            member.isDowned ? 'bg-[#EF4444]' : 'bg-[#4ADE80]'
-                          }`}
+                          className="h-full transition-transform duration-150 origin-left"
                           style={{
                             transform: `scaleX(${member.isDowned ? 1 : mRatio})`,
                             backgroundColor: member.isDowned ? '#EF4444' : member.color,
@@ -410,15 +496,25 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
         </div>
 
         {/* Top-Center: Boss Health Bar, Room Banner, Multiplayer Info, or Re-Center Camera Button */}
-        <div className="flex-1 max-w-xs sm:max-w-sm mx-auto flex flex-col items-center gap-1.5 px-1">
+        <div className="flex-1 max-w-xs sm:max-w-sm mx-auto flex flex-col items-center gap-1 px-1 min-w-0">
           {hud.multiplayerInfo && (
-            <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#181324]/95 border border-[#483761] text-[10px] text-[#A69FB4] shadow-md">
-              <span className="w-2 h-2 rounded-full bg-[#4ADE80] animate-pulse" />
-              <span className="font-mono-num font-bold text-[#FBBF24]">[{hud.multiplayerInfo.roomCode}]</span>
-              <span className="text-[#E2E8F0] font-semibold">{hud.multiplayerInfo.mode.replace('_', ' ')}</span>
-              <span className="text-[#38BDF8] font-bold">({hud.multiplayerInfo.playerCount}P)</span>
-              <span>{hud.multiplayerInfo.ping}ms</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenMultiplayer) {
+                  soundEngine.playUiClick(540);
+                  onOpenMultiplayer();
+                }
+              }}
+              className="pointer-events-auto flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[#181324]/90 border border-[#3E3054] text-[10px] text-[#A69FB4] whitespace-nowrap active:scale-95"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-[#4ADE80] shrink-0" />
+              <span className="font-mono-num font-bold text-[#FBBF24]">{hud.multiplayerInfo.roomCode}</span>
+              <span aria-hidden="true">·</span>
+              <span className="text-[#E2E8F0] font-medium">{hud.multiplayerInfo.playerCount}P</span>
+              <span aria-hidden="true">·</span>
+              <span className="font-mono-num tabular-nums">{hud.multiplayerInfo.ping}ms</span>
+            </button>
           )}
 
           {hud.bossInfo ? (
@@ -464,60 +560,104 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
           )}
         </div>
 
-        {/* Top-Right: Utility Controls + Transparent Overlay Minimap */}
-        <div className="flex items-start gap-2 pointer-events-auto">
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playUiClick(520);
-                onToggleFullscreen();
-              }}
-              aria-label={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
-              className="min-w-[44px] min-h-[44px] rounded-xl bg-[#16131E]/75 border border-white/15 text-[#D6D0C4] active:scale-95 flex items-center justify-center"
-            >
-              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            </button>
-
-            <button
-              type="button"
-              onClick={onToggleMute}
-              aria-label={muted ? 'Unmute audio' : 'Mute audio'}
-              className="min-w-[44px] min-h-[44px] rounded-xl bg-[#16131E]/75 border border-white/15 text-[#D6D0C4] active:scale-95 flex items-center justify-center"
-            >
-              {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-            </button>
-
-            {hud.phase !== GamePhase.GuildPicking && (
+        {/* Top-Right: Utility Controls + Transparent Overlay Minimap (or Cancel Skill X Button while manually targeting) */}
+        <div className="relative flex items-start gap-2 pointer-events-auto">
+          <div
+            className={`flex items-start gap-2 transition-opacity duration-100 ${
+              aimingState ? 'opacity-15 pointer-events-none' : 'opacity-100'
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => {
-                  soundEngine.playUiClick(460);
-                  onPause();
+                  soundEngine.playUiClick(520);
+                  onToggleFullscreen();
                 }}
-                aria-label="Pause game"
+                aria-label={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
                 className="min-w-[44px] min-h-[44px] rounded-xl bg-[#16131E]/75 border border-white/15 text-[#D6D0C4] active:scale-95 flex items-center justify-center"
               >
-                <Pause className="w-4 h-4" />
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </button>
+
+              <button
+                type="button"
+                onClick={onToggleMute}
+                aria-label={muted ? 'Unmute audio' : 'Mute audio'}
+                className="min-w-[44px] min-h-[44px] rounded-xl bg-[#16131E]/75 border border-white/15 text-[#D6D0C4] active:scale-95 flex items-center justify-center"
+              >
+                {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              </button>
+
+              {onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick(500);
+                    onOpenSettings();
+                  }}
+                  aria-label="Open settings"
+                  className="min-w-[44px] min-h-[44px] rounded-xl bg-[#16131E]/75 border border-white/15 text-[#D6D0C4] active:scale-95 flex items-center justify-center"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              )}
+
+              {hud.phase !== GamePhase.GuildPicking && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick(460);
+                    onPause();
+                  }}
+                  aria-label="Pause game"
+                  className="min-w-[44px] min-h-[44px] rounded-xl bg-[#16131E]/75 border border-white/15 text-[#D6D0C4] active:scale-95 flex items-center justify-center"
+                >
+                  <Pause className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {hud.phase !== GamePhase.GuildPicking && hud.minimap.length > 0 && (
+              <MinimapOverlay
+                rooms={hud.minimap}
+                mapPan={hud.mapPan}
+                onPanJoystick={onMapPanJoystick}
+                onResetPan={onResetMapPan}
+              />
             )}
           </div>
 
-          {hud.phase !== GamePhase.GuildPicking && hud.minimap.length > 0 && (
-            <MinimapOverlay
-              rooms={hud.minimap}
-              mapPan={hud.mapPan}
-              onPanJoystick={onMapPanJoystick}
-              onResetPan={onResetMapPan}
-            />
-          )}
+          {/* Upper-Right Skill Cancel (X) Button during Manual Targeting */}
+          <button
+            ref={cancelBtnRef}
+            type="button"
+            aria-label="Cancel skill targeting"
+            onPointerDown={(e) => {
+              if (!aimingState) return;
+              e.stopPropagation();
+              soundEngine.playUiClick(320);
+              setCancelVersion((v) => v + 1);
+              handleSkillAimCancel();
+            }}
+            className={`absolute top-0 right-0 z-50 min-w-[56px] min-h-[56px] px-3 py-1.5 rounded-2xl border-2 shadow-2xl flex flex-col items-center justify-center gap-0.5 transition-all duration-100 ${
+              aimingState
+                ? aimingState.isCancelling
+                  ? 'opacity-100 pointer-events-auto scale-110 bg-[#DC2626] border-[#FEE2E2] text-white'
+                  : 'opacity-100 pointer-events-auto scale-100 bg-[#261118]/95 border-[#EF4444]/85 text-[#FCA5A5]'
+                : 'opacity-0 pointer-events-none scale-90 bg-[#261118]/90 border-[#EF4444]/50 text-[#FCA5A5]'
+            }`}
+          >
+            <X className="w-5 h-5 stroke-[2.6]" />
+            <span className="text-[10px] font-bold leading-none">Cancel</span>
+          </button>
         </div>
       </div>
 
       {/* Bottom Ergonomic Mobile Thumb Zones */}
       {hud.phase === GamePhase.GuildPicking ? (
-        <div className="mx-auto mb-1 pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-2xl bg-[#16131E]/95 border border-[#342E44] shadow-xl">
-          <span className="text-xs text-[#F5F0E6] hidden md:inline">
+        <div className="mx-auto mb-1 pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 px-3 py-2 rounded-2xl bg-[#16131E]/95 border border-[#342E44] shadow-xl max-w-full">
+          <span className="text-xs text-[#F5F0E6] hidden lg:inline">
             Tap a hero in the Guild House or pick:
           </span>
           <button
@@ -526,7 +666,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
               soundEngine.playUiClick(590);
               onOpenLoadout(CharacterId.Zombie);
             }}
-            className="min-h-[44px] px-3.5 rounded-xl bg-[#4ADE80] text-[#0E1912] text-xs font-bold active:scale-95 whitespace-nowrap shrink-0"
+            className="min-h-[42px] px-3 rounded-xl bg-[#4ADE80] text-[#0E1912] text-xs font-bold active:scale-95 whitespace-nowrap shrink-0"
           >
             Zombie
           </button>
@@ -536,7 +676,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
               soundEngine.playUiClick(620);
               onOpenLoadout(CharacterId.Skeleton);
             }}
-            className="min-h-[44px] px-3.5 rounded-xl bg-[#38BDF8] text-[#0B1724] text-xs font-bold active:scale-95 whitespace-nowrap shrink-0"
+            className="min-h-[42px] px-3 rounded-xl bg-[#38BDF8] text-[#0B1724] text-xs font-bold active:scale-95 whitespace-nowrap shrink-0"
           >
             Skeleton
           </button>
@@ -546,7 +686,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
               soundEngine.playUiClick(650);
               onOpenLoadout(CharacterId.Goblin);
             }}
-            className="min-h-[44px] px-3.5 rounded-xl bg-[#F59E0B] text-[#170F04] text-xs font-bold active:scale-95 whitespace-nowrap shrink-0"
+            className="min-h-[42px] px-3 rounded-xl bg-[#F59E0B] text-[#170F04] text-xs font-bold active:scale-95 whitespace-nowrap shrink-0"
           >
             Goblin
           </button>
@@ -556,7 +696,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
               soundEngine.playUiClick(670);
               onOpenLoadout(CharacterId.Gnome);
             }}
-            className="min-h-[44px] px-3.5 rounded-xl bg-[#FB923C] text-[#1C0F06] text-xs font-bold active:scale-95 whitespace-nowrap shrink-0"
+            className="min-h-[42px] px-3 rounded-xl bg-[#FB923C] text-[#1C0F06] text-xs font-bold active:scale-95 whitespace-nowrap shrink-0"
           >
             Gnome
           </button>
@@ -566,15 +706,25 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
               soundEngine.playUiClick(700);
               onOpenLoadout(CharacterId.Ghost);
             }}
-            className="min-h-[44px] px-3.5 rounded-xl bg-[#C084FC] text-[#180B26] text-xs font-bold active:scale-95 whitespace-nowrap shrink-0"
+            className="min-h-[42px] px-3 rounded-xl bg-[#C084FC] text-[#180B26] text-xs font-bold active:scale-95 whitespace-nowrap shrink-0"
           >
             Ghost
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playUiClick(720);
+              onOpenLoadout(CharacterId.Kobold);
+            }}
+            className="min-h-[42px] px-3 rounded-xl bg-[#FB7185] text-[#1F0810] text-xs font-bold active:scale-95 whitespace-nowrap shrink-0"
+          >
+            Kobold
           </button>
         </div>
       ) : (
         <div className="flex items-end justify-between w-full">
           {/* Left Thumb Zone: Analog Virtual Joystick */}
-          <VirtualJoystick onMove={onJoystickMove} />
+          <VirtualJoystick onMove={onJoystickMove} scale={joystickScale} />
 
           {/* Center-Bottom Contextual Touch Interact Button */}
           {hud.interactPrompt && (
@@ -596,6 +746,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                     ? 'bg-[#FB923C] text-[#1C0F06]'
                     : isGhost
                     ? 'bg-[#C084FC] text-[#180B26]'
+                    : isKobold
+                    ? 'bg-[#FB7185] text-[#1F0810]'
                     : 'bg-[#4ADE80] text-[#0E1912]'
                 }`}
               >
@@ -610,50 +762,74 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
           )}
 
           {/* Right Thumb Zone: Soul Knight Radial Combat Cluster */}
-          <div className="relative w-48 h-40 sm:w-52 sm:h-44 shrink-0 pointer-events-none">
-            {/* Normal Skill 1 (Left of Attack arc) */}
-            <MobileSkillCircle
+          <div
+            style={{
+              transform: `scale(${skillButtonScale})`,
+              transformOrigin: 'bottom right',
+            }}
+            className="relative w-48 h-40 sm:w-52 sm:h-44 shrink-0 pointer-events-none will-change-transform"
+          >
+            {/* Normal Skill 1 (Left of Attack arc — Tap to auto-cast, Drag to aim/target) */}
+            <DraggableSkillButton
+              slot="NORMAL_0"
+              scale={skillButtonScale}
               className="bottom-1 right-[88px] sm:right-[96px] w-14 h-14"
               name={skill0.name}
-              cooldown={hud.normalCooldowns[0]}
+              ready={hud.normalCooldowns[0] <= 0}
+              statusLabel={
+                hud.normalCooldowns[0] > 0 ? `${hud.normalCooldowns[0].toFixed(1)}s` : null
+              }
               activeCharacter={hud.activeCharacter}
-              onTap={() => onTriggerSkill('NORMAL_0')}
               icon={<NormalSkillIcon id={skill0.id} className="w-6 h-6" />}
+              cancelVersion={cancelVersion}
+              checkOverCancelZone={checkOverCancelZone}
+              onAimMove={handleSkillAimMove}
+              onAimCancel={handleSkillAimCancel}
+              onReleaseCast={handleSkillRelease}
             />
 
-            {/* Normal Skill 2 (Diagonal upper-left of Attack arc) */}
-            <MobileSkillCircle
+            {/* Normal Skill 2 (Diagonal upper-left of Attack arc — Tap to auto-cast, Drag to aim/target) */}
+            <DraggableSkillButton
+              slot="NORMAL_1"
+              scale={skillButtonScale}
               className="bottom-[66px] sm:bottom-[72px] right-[72px] sm:right-[78px] w-14 h-14"
               name={skill1.name}
-              cooldown={hud.normalCooldowns[1]}
+              ready={hud.normalCooldowns[1] <= 0}
+              statusLabel={
+                hud.normalCooldowns[1] > 0 ? `${hud.normalCooldowns[1].toFixed(1)}s` : null
+              }
               activeCharacter={hud.activeCharacter}
-              onTap={() => onTriggerSkill('NORMAL_1')}
               icon={<NormalSkillIcon id={skill1.id} className="w-6 h-6" />}
+              cancelVersion={cancelVersion}
+              checkOverCancelZone={checkOverCancelZone}
+              onAimMove={handleSkillAimMove}
+              onAimCancel={handleSkillAimCancel}
+              onReleaseCast={handleSkillRelease}
             />
 
-            {/* Ultimate Skill (Above Attack arc) */}
-            <button
-              type="button"
-              aria-label={`Ultimate: ${ult.name}`}
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                onTriggerSkill('ULTIMATE');
-              }}
-              className={`pointer-events-auto touch-none absolute bottom-[86px] sm:bottom-[92px] right-1 w-15 h-15 rounded-full border-2 shadow-xl flex flex-col items-center justify-center transition-transform active:scale-90 ${
-                ultReady
-                  ? 'bg-[#2C2314]/95 border-[#FBBF24]'
-                  : 'bg-[#1A1624]/90 border-[#39324D] opacity-85'
-              }`}
-            >
-              <UltimateSkillIcon id={ult.id} className="w-6 h-6" />
-              <span className="text-[10px] font-mono-num font-bold text-[#FDE68A] leading-none mt-0.5">
-                {hud.ultCooldown > 0
+            {/* Ultimate Skill (Above Attack arc — Tap to auto-cast, Drag to aim/target) */}
+            <DraggableSkillButton
+              slot="ULTIMATE"
+              isUltimate
+              scale={skillButtonScale}
+              className="bottom-[86px] sm:bottom-[92px] right-1 w-15 h-15"
+              name={`Ultimate: ${ult.name}`}
+              ready={ultReady}
+              statusLabel={
+                hud.ultCooldown > 0
                   ? `${Math.ceil(hud.ultCooldown)}s`
                   : ultReady
                   ? 'MAX'
-                  : `${hud.ultCharge}%`}
-              </span>
-            </button>
+                  : `${hud.ultCharge}%`
+              }
+              activeCharacter={hud.activeCharacter}
+              icon={<UltimateSkillIcon id={ult.id} className="w-6 h-6" />}
+              cancelVersion={cancelVersion}
+              checkOverCancelZone={checkOverCancelZone}
+              onAimMove={handleSkillAimMove}
+              onAimCancel={handleSkillAimCancel}
+              onReleaseCast={handleSkillRelease}
+            />
 
             {/* Primary Weapon Attack Button (Hold or Tap) */}
             <button
@@ -673,6 +849,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                     ? 'scale-92 bg-[#FB923C] border-[#FFEDD5] text-[#1C0F06]'
                     : isGhost
                     ? 'scale-92 bg-[#C084FC] border-[#F3E8FF] text-[#180B26]'
+                    : isKobold
+                    ? 'scale-92 bg-[#FB7185] border-[#FFE4E6] text-[#1F0810]'
                     : 'scale-92 bg-[#4ADE80] border-[#DCFCE7] text-[#0E1912]'
                   : isSkeleton
                   ? 'bg-[#182436]/95 border-[#38BDF8] text-[#F5F0E6]'
@@ -682,6 +860,8 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                   ? 'bg-[#2B1D17]/95 border-[#FB923C] text-[#F5F0E6]'
                   : isGhost
                   ? 'bg-[#241834]/95 border-[#C084FC] text-[#F5F0E6]'
+                  : isKobold
+                  ? 'bg-[#2A151E]/95 border-[#FB7185] text-[#F5F0E6]'
                   : 'bg-[#212D28]/95 border-[#4ADE80] text-[#F5F0E6]'
               }`}
             >
@@ -706,6 +886,23 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                   />
                   <circle cx="24.5" cy="7.5" r="2" fill="#67E8F9" />
                   <circle cx="26.5" cy="12.5" r="1.6" fill="#E9D5FF" />
+                </svg>
+              ) : isKobold ? (
+                <svg viewBox="0 0 24 24" fill="none" className="w-7 h-7">
+                  <path
+                    d="M4 20L18.5 5.5M14.5 5H19V9.5"
+                    stroke="currentColor"
+                    strokeWidth="2.3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M7.5 8.5C11 6.5 17.5 13 15.5 16.5"
+                    stroke="#FBBF24"
+                    strokeWidth="2.1"
+                    strokeLinecap="round"
+                  />
+                  <path d="M7.5 8.5L11.5 12.5L15.5 16.5" stroke="currentColor" strokeOpacity="0.55" strokeWidth="1.4" />
                 </svg>
               ) : (
                 <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-7 h-7">
@@ -761,43 +958,260 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
   );
 };
 
-const MobileSkillCircle: React.FC<{
+const DRAG_DEADZONE_PX = 10;
+const MAX_SKILL_PAD_RADIUS = 56;
+const MAX_SKILL_KNOB_OFFSET = 26;
+
+const DraggableSkillButton: React.FC<{
+  slot: SkillSlotKey;
+  isUltimate?: boolean;
+  scale?: number;
   className: string;
   name: string;
-  cooldown: number;
+  ready: boolean;
+  statusLabel: string | null;
   activeCharacter: CharacterId;
   icon: React.ReactNode;
-  onTap: () => void;
-}> = ({ className, name, cooldown, activeCharacter, icon, onTap }) => {
-  const ready = cooldown <= 0;
-  const readyTheme =
-    activeCharacter === CharacterId.Skeleton
-      ? 'bg-[#182436]/95 border-[#38BDF8]'
-      : activeCharacter === CharacterId.Goblin
-      ? 'bg-[#2B2013]/95 border-[#F59E0B]'
-      : activeCharacter === CharacterId.Gnome
-      ? 'bg-[#2B1D17]/95 border-[#FB923C]'
-      : activeCharacter === CharacterId.Ghost
-      ? 'bg-[#241834]/95 border-[#C084FC]'
-      : 'bg-[#1D2824]/95 border-[#4ADE80]';
+  cancelVersion: number;
+  checkOverCancelZone: (clientX: number, clientY: number) => boolean;
+  onAimMove: (aim: ManualSkillAimInput) => void;
+  onAimCancel: () => void;
+  onReleaseCast: (slot: SkillSlotKey, manualAim?: { angle: number; magnitude: number }) => void;
+}> = ({
+  slot,
+  isUltimate = false,
+  scale = 1,
+  className,
+  name,
+  ready,
+  statusLabel,
+  activeCharacter,
+  icon,
+  cancelVersion,
+  checkOverCancelZone,
+  onAimMove,
+  onAimCancel,
+  onReleaseCast,
+}) => {
+  const activePointerId = useRef<number | null>(null);
+  const startClientPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const isDraggingRef = useRef(false);
+  const isCancellingRef = useRef(false);
+  const lastAngleRef = useRef(0);
+  const lastMagRef = useRef(0);
+  const knobRef = useRef<HTMLDivElement | null>(null);
+
+  const [isPressed, setIsPressed] = useState(false);
+  const [isDraggingUi, setIsDraggingUi] = useState(false);
+  const [isCancellingUi, setIsCancellingUi] = useState(false);
+
+  const resetGesture = useCallback(() => {
+    activePointerId.current = null;
+    isDraggingRef.current = false;
+    isCancellingRef.current = false;
+    setIsPressed(false);
+    setIsDraggingUi(false);
+    setIsCancellingUi(false);
+    if (knobRef.current) {
+      knobRef.current.style.transform = 'translate3d(0px, 0px, 0px)';
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activePointerId.current !== null) {
+      resetGesture();
+    }
+  }, [cancelVersion, resetGesture]);
+
+  useEffect(() => {
+    const onBlur = () => {
+      if (activePointerId.current !== null) {
+        resetGesture();
+        onAimCancel();
+      }
+    };
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [onAimCancel, resetGesture]);
+
+  const readyTheme = isUltimate
+    ? 'bg-[#2C2314]/95 border-[#FBBF24]'
+    : activeCharacter === CharacterId.Skeleton
+    ? 'bg-[#182436]/95 border-[#38BDF8]'
+    : activeCharacter === CharacterId.Goblin
+    ? 'bg-[#2B2013]/95 border-[#F59E0B]'
+    : activeCharacter === CharacterId.Gnome
+    ? 'bg-[#2B1D17]/95 border-[#FB923C]'
+    : activeCharacter === CharacterId.Ghost
+    ? 'bg-[#241834]/95 border-[#C084FC]'
+    : activeCharacter === CharacterId.Kobold
+    ? 'bg-[#2A151E]/95 border-[#FB7185]'
+    : 'bg-[#1D2824]/95 border-[#4ADE80]';
+
+  const disabledTheme = isUltimate
+    ? 'bg-[#1A1624]/90 border-[#39324D] opacity-85'
+    : 'bg-[#181522]/90 border-[#322B44] opacity-75';
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (activePointerId.current !== null) return;
+    e.stopPropagation();
+
+    if (!ready) {
+      // Preserve buffered quick-cast if skill is within fractions of a second of coming off cooldown
+      onReleaseCast(slot);
+      return;
+    }
+
+    activePointerId.current = e.pointerId;
+    startClientPos.current = { x: e.clientX, y: e.clientY };
+    isDraggingRef.current = false;
+    isCancellingRef.current = false;
+    lastMagRef.current = 0;
+    setIsPressed(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.pointerId !== activePointerId.current) return;
+    e.stopPropagation();
+
+    const { dx, dy } = clientDeltaToLandscape(
+      e.clientX - startClientPos.current.x,
+      e.clientY - startClientPos.current.y
+    );
+    const dist = Math.hypot(dx, dy);
+    const effectivePadRadius = MAX_SKILL_PAD_RADIUS * scale;
+
+    if (!isDraggingRef.current && dist >= DRAG_DEADZONE_PX) {
+      isDraggingRef.current = true;
+      setIsDraggingUi(true);
+    }
+
+    if (isDraggingRef.current) {
+      if (dist > 2) {
+        lastAngleRef.current = Math.atan2(dy, dx);
+      }
+      const magnitude = Math.min(
+        1,
+        Math.max(0, (dist - DRAG_DEADZONE_PX * 0.8) / Math.max(12, effectivePadRadius - DRAG_DEADZONE_PX * 0.8))
+      );
+      lastMagRef.current = magnitude;
+
+      if (knobRef.current) {
+        const clampedKnob = Math.min(dist / scale, MAX_SKILL_KNOB_OFFSET);
+        const kx = Math.cos(lastAngleRef.current) * clampedKnob;
+        const ky = Math.sin(lastAngleRef.current) * clampedKnob;
+        knobRef.current.style.transform = `translate3d(${kx.toFixed(1)}px, ${ky.toFixed(1)}px, 0px)`;
+      }
+
+      const overCancel = checkOverCancelZone(e.clientX, e.clientY);
+      if (overCancel !== isCancellingRef.current) {
+        isCancellingRef.current = overCancel;
+        setIsCancellingUi(overCancel);
+      }
+
+      onAimMove({
+        slot,
+        angle: lastAngleRef.current,
+        magnitude,
+        isCancelling: overCancel,
+      });
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.pointerId !== activePointerId.current) return;
+    e.stopPropagation();
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+
+    const wasDragging = isDraggingRef.current;
+    const overCancel =
+      wasDragging && (isCancellingRef.current || checkOverCancelZone(e.clientX, e.clientY));
+    const angle = lastAngleRef.current;
+    const magnitude = lastMagRef.current;
+
+    resetGesture();
+
+    if (overCancel) {
+      soundEngine.playUiClick(320);
+      onAimCancel();
+      return;
+    }
+
+    if (wasDragging) {
+      onReleaseCast(slot, { angle, magnitude });
+    } else {
+      onReleaseCast(slot);
+    }
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.pointerId !== activePointerId.current) return;
+    e.stopPropagation();
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    resetGesture();
+    onAimCancel();
+  };
+
   return (
     <button
       type="button"
       aria-label={name}
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        onTap();
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onLostPointerCapture={() => {
+        if (activePointerId.current !== null) {
+          resetGesture();
+          onAimCancel();
+        }
       }}
-      className={`pointer-events-auto touch-none absolute rounded-full border-2 shadow-xl flex flex-col items-center justify-center transition-transform active:scale-90 ${className} ${
-        ready ? readyTheme : 'bg-[#181522]/90 border-[#322B44] opacity-75'
-      }`}
+      className={`pointer-events-auto touch-none select-none absolute rounded-full border-2 shadow-xl flex flex-col items-center justify-center transition-transform ${className} ${
+        !ready
+          ? disabledTheme
+          : isCancellingUi
+          ? 'bg-[#38141C]/95 border-[#EF4444]'
+          : readyTheme
+      } ${isPressed && !isDraggingUi ? 'scale-92' : ''}`}
     >
-      {icon}
-      {!ready && (
-        <span className="text-[10px] font-mono-num font-bold text-[#F5F0E6] leading-none mt-0.5">
-          {cooldown.toFixed(1)}s
-        </span>
+      {/* Outer aiming pad ring shown while dragging */}
+      {isDraggingUi && (
+        <span
+          aria-hidden="true"
+          className={`pointer-events-none absolute -inset-3.5 rounded-full border border-dashed ${
+            isCancellingUi
+              ? 'border-[#EF4444]/80 bg-[#EF4444]/10'
+              : 'border-white/35 bg-white/5'
+          }`}
+        />
       )}
+
+      <div
+        ref={knobRef}
+        className={`pointer-events-none flex flex-col items-center justify-center will-change-transform ${
+          isDraggingUi
+            ? 'w-11 h-11 rounded-full bg-white/15 border border-white/50 shadow-md'
+            : ''
+        }`}
+      >
+        {icon}
+        {statusLabel && !isDraggingUi && (
+          <span
+            className={`text-[10px] font-mono-num font-bold leading-none mt-0.5 ${
+              isUltimate ? 'text-[#FDE68A]' : 'text-[#F5F0E6]'
+            }`}
+          >
+            {statusLabel}
+          </span>
+        )}
+      </div>
     </button>
   );
 };

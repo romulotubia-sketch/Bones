@@ -31,6 +31,7 @@ import {
 import { GhostAttackPreview } from './GhostAttackPreview';
 import { GnomeAttackPreview } from './GnomeAttackPreview';
 import { GoblinAttackPreview } from './GoblinAttackPreview';
+import { KoboldAttackPreview } from './KoboldAttackPreview';
 import { SkeletonAttackPreview } from './SkeletonAttackPreview';
 import { ZombieAttackPreview } from './ZombieAttackPreview';
 
@@ -62,6 +63,7 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
   const isGoblin = activeCharId === CharacterId.Goblin;
   const isGnome = activeCharId === CharacterId.Gnome;
   const isGhost = activeCharId === CharacterId.Ghost;
+  const isKobold = activeCharId === CharacterId.Kobold;
   const accentTextClass = isSkeleton
     ? 'text-[#7DD3FC]'
     : isGoblin
@@ -70,6 +72,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
     ? 'text-[#FDBA74]'
     : isGhost
     ? 'text-[#E9D5FF]'
+    : isKobold
+    ? 'text-[#FDA4AF]'
     : 'text-[#86EFAC]';
   const accentBrightTextClass = isSkeleton
     ? 'text-[#38BDF8]'
@@ -79,6 +83,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
     ? 'text-[#FB923C]'
     : isGhost
     ? 'text-[#C084FC]'
+    : isKobold
+    ? 'text-[#FB7185]'
     : 'text-[#4ADE80]';
   const primaryBtnClass = isSkeleton
     ? 'bg-[#38BDF8] text-[#0B1724]'
@@ -88,6 +94,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
     ? 'bg-[#FB923C] text-[#1C0F06]'
     : isGhost
     ? 'bg-[#C084FC] text-[#180B26]'
+    : isKobold
+    ? 'bg-[#FB7185] text-[#1F0810]'
     : 'bg-[#4ADE80] text-[#0E1912]';
   const equippedCardClass = isSkeleton
     ? 'bg-[#192536] border-[#38BDF8]'
@@ -97,6 +105,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
     ? 'bg-[#2B1D17] border-[#FB923C]'
     : isGhost
     ? 'bg-[#251A36] border-[#C084FC]'
+    : isKobold
+    ? 'bg-[#2B1620] border-[#FB7185]'
     : 'bg-[#1D2824] border-[#4ADE80]';
 
   const characterLoadout = saveData.loadouts[activeCharId] ?? profile.defaultLoadout;
@@ -160,10 +170,12 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
     ? profile.baseHp + charRanks.pathA * 26
     : isGhost
     ? profile.baseHp + charRanks.pathA * 9
+    : isKobold
+    ? profile.baseHp + charRanks.pathA * 13
     : profile.baseHp + charRanks.pathA * 24;
   const moveSpeedPreview = Math.round(
     profile.baseSpeed *
-      (isSkeleton || isGoblin
+      (isSkeleton || isGoblin || isKobold
         ? 1 + charRanks.pathE * 0.05
         : isGnome
         ? 1 + charRanks.pathE * 0.04
@@ -179,6 +191,7 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
   const gnomeArmorPct = Math.round(22 + charRanks.pathA * 2.5);
   const ghostEvadePct = Math.round(24 + charRanks.pathA * 2.5);
   const ghostMagicPct = charRanks.pathB * 14;
+  const koboldMarkBonusPct = 35 + charRanks.pathC * 12;
 
   return (
     <div
@@ -194,7 +207,7 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
         <div className="flex items-center justify-between gap-2 px-3.5 py-2 border-b border-[#2B2638] bg-[#1C1826] shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             {/* Character Switcher Tabs */}
-            <div className="flex items-center gap-1 p-1 rounded-xl bg-[#110E17] border border-[#2B2638] shrink-0">
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-[#110E17] border border-[#2B2638] overflow-x-auto max-w-full">
               {CHARACTER_LIST.map((char) => {
                 const selected = char.id === activeCharId;
                 const tabActiveClass =
@@ -206,13 +219,15 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
                     ? 'bg-[#FB923C] text-[#1C0F06]'
                     : char.id === CharacterId.Ghost
                     ? 'bg-[#C084FC] text-[#180B26]'
+                    : char.id === CharacterId.Kobold
+                    ? 'bg-[#FB7185] text-[#1F0810]'
                     : 'bg-[#4ADE80] text-[#0E1912]';
                 return (
                   <button
                     key={char.id}
                     type="button"
                     onClick={() => handleSwitchCharacter(char.id)}
-                    className={`min-h-[38px] px-3 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+                    className={`min-h-[36px] px-2.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                       selected ? tabActiveClass : 'text-[#ABA3BC] active:bg-[#241F31]'
                     }`}
                   >
@@ -262,6 +277,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
                     ? 'border-[#FB923C]/70'
                     : isGhost
                     ? 'border-[#C084FC]/70'
+                    : isKobold
+                    ? 'border-[#FB7185]/70'
                     : 'border-[#4ADE80]/70'
                 }`}
               >
@@ -333,6 +350,12 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
                       <span>Phase {ghostEvadePct}%</span>
                       <span className="text-[#5D5470]">·</span>
                       <span>Magic +{ghostMagicPct}%</span>
+                    </>
+                  ) : isKobold ? (
+                    <>
+                      <span>Crit {critPctPreview}%</span>
+                      <span className="text-[#5D5470]">·</span>
+                      <span>Mark +{koboldMarkBonusPct}%</span>
                     </>
                   ) : (
                     <>
@@ -416,7 +439,7 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
             </div>
 
             {/* Zombie Basic Attack 60fps Animation Preview */}
-            {!isSkeleton && !isGoblin && !isGnome && !isGhost && (
+            {!isSkeleton && !isGoblin && !isGnome && !isGhost && !isKobold && (
               <div className="pt-3 border-t border-[#282336] space-y-1.5">
                 <div className="flex items-center justify-between">
                   <div className="text-[11px] font-semibold text-[#86EFAC] flex items-center gap-1.5">
@@ -548,6 +571,34 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
                       <div>Reach: 78 · 94 on 3rd + Spirit Orb</div>
                       <div>Restless Surge: +32% Magic DMG</div>
                       <div>All 8 Skills: 60fps Spectral FX</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Kobold Basic Attack & Crossbow Artifice 60fps Animation Preview */}
+            {isKobold && (
+              <div className="pt-3 border-t border-[#282336] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold text-[#FDA4AF] flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#FB7185]" />
+                    <span>Basic Attack · Repeating Crossbow (60fps FX)</span>
+                  </div>
+                  <span className="text-[10px] text-[#FDE047] font-mono-num">Ranged 3-Shot</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-[#27131B] border border-[#61273A] space-y-2">
+                  <p className="text-[11px] text-[#EED5DC] leading-snug">
+                    Fires high-velocity crossbow bolts from a safe distance, stacking Hunter’s Precision weakspot marks; every 3rd shot launches an armor-cracking Critical Bolt.
+                  </p>
+                  <div className="flex items-center gap-2.5 pt-0.5">
+                    <div className="relative w-24 h-16 bg-[#17090F] rounded-lg border border-[#7D2E46] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                      <KoboldAttackPreview />
+                    </div>
+                    <div className="text-[10px] text-[#FDA4AF] space-y-0.5 font-mono-num leading-tight">
+                      <div>Ranged Reach: 400px Crossbow Bolts</div>
+                      <div>3rd Bolt: +24% DMG &amp; +25% Crit</div>
+                      <div>All 8 Skills: 60fps Bolt &amp; Trap FX</div>
                     </div>
                   </div>
                 </div>

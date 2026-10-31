@@ -3,12 +3,13 @@ import { clientDeltaToLandscape } from '../utils/orientation';
 
 interface VirtualJoystickProps {
   onMove: (nx: number, ny: number) => void;
+  scale?: number;
 }
 
 const MAX_KNOB_RADIUS = 42;
 const DEADZONE = 0.08;
 
-export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({ onMove }) => {
+export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({ onMove, scale = 1 }) => {
   const activePointerId = useRef<number | null>(null);
   const startClientPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const knobRef = useRef<HTMLDivElement | null>(null);
@@ -38,18 +39,20 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({ onMove }) => {
       clientY - startClientPos.current.y
     );
 
+    const effectiveMaxRadius = MAX_KNOB_RADIUS * scale;
     const dist = Math.hypot(dx, dy);
-    const clampedDist = Math.min(dist, MAX_KNOB_RADIUS);
+    const clampedDist = Math.min(dist, effectiveMaxRadius);
     const angle = dist > 0.0001 ? Math.atan2(dy, dx) : 0;
 
-    const kx = Math.cos(angle) * clampedDist;
-    const ky = Math.sin(angle) * clampedDist;
+    const localDist = clampedDist / scale;
+    const kx = Math.cos(angle) * localDist;
+    const ky = Math.sin(angle) * localDist;
 
     if (knobRef.current) {
       knobRef.current.style.transform = `translate3d(${kx.toFixed(1)}px, ${ky.toFixed(1)}px, 0px)`;
     }
 
-    const rawMag = clampedDist / MAX_KNOB_RADIUS;
+    const rawMag = clampedDist / effectiveMaxRadius;
     if (rawMag < DEADZONE) {
       onMove(0, 0);
       return;
@@ -93,7 +96,11 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({ onMove }) => {
       onPointerUp={handlePointerUpOrCancel}
       onPointerCancel={handlePointerUpOrCancel}
       onLostPointerCapture={resetStick}
-      className="pointer-events-auto touch-none select-none w-36 h-36 sm:w-40 sm:h-40 flex items-center justify-center relative cursor-pointer"
+      style={{
+        transform: `scale(${scale})`,
+        transformOrigin: 'bottom left',
+      }}
+      className="pointer-events-auto touch-none select-none w-36 h-36 sm:w-40 sm:h-40 flex items-center justify-center relative cursor-pointer will-change-transform"
     >
       {/* Outer tactile ring */}
       <div
