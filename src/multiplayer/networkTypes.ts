@@ -496,6 +496,13 @@ export type ServerMessage =
       destroyedTeam: PvpTeam;
     }
   | {
+      type: 'S2C_PVP_MATCH_ENDED';
+      winningTeam: PvpTeam;
+      blueScore: number;
+      redScore: number;
+      matchDuration: number;
+    }
+  | {
       type: 'S2C_PVP_PLAYER_ELIMINATED';
       victimId: string;
       victimName: string;

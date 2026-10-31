@@ -65,7 +65,10 @@ import {
   spawnRoomWave,
   STAGE_THEMES,
 } from './dungeonGenerator';
+import { buildPvpArenaWorld } from './pvpArenaGenerator';
 import { NetworkManager, WorldSyncPayload } from '../multiplayer/NetworkManager';
+import { PvpMatchSyncState, PvpTeam } from '../multiplayer/networkTypes';
+import { PvpMatchHudInfo, PvpTeamId } from '../types/game';
 import { RemoteRenderPlayer, renderGameWorld } from './renderer';
 
 export interface EngineCallbacks {
@@ -320,6 +323,8 @@ export class GameEngine {
   private networkSyncAccum = 0;
   private coopCurrentWave = 0;
   private coopTotalWaves = 0;
+  private pvpMatchState: PvpMatchSyncState | null = null;
+  private pvpEventCounter = 0;
 
   private currentRoomId = 0;
   private roomBannerText: string | null = null;
@@ -434,6 +439,29 @@ export class GameEngine {
     return mode === 'ONLINE_COOP' || mode === 'LAN_COOP';
   }
 
+  public isPvpMatch(): boolean {
+    const mode = this.networkManager?.getRoom()?.mode;
+    return (
+      mode === 'ONLINE_PVP' ||
+      mode === 'LAN_PVP' ||
+      this.world?.floorNumber === 99 ||
+      this.pvpMatchState !== null
+    );
+  }
+
+  public getMyPvpTeam(): PvpTeamId {
+    const localId = this.networkManager?.getLocalPlayerId();
+    if (!localId) return 'BLUE';
+    const syncPlayer = this.pvpMatchState?.players.find((p) => p.id === localId);
+    if (syncPlayer) return syncPlayer.team;
+    const roomPlayer = this.networkManager?.getRoom()?.players.find((p) => p.id === localId);
+    return (roomPlayer?.team as PvpTeamId) ?? 'BLUE';
+  }
+
+  private allocPvpEventId(): string {
+    return `pvp_ev_${this.pvpEventCounter++}_${Date.now()}`;
+  }
+
   public setNetworkManager(manager: NetworkManager | null): void {
     if (this.networkUnsubscribe) {
       this.networkUnsubscribe();
@@ -444,6 +472,7 @@ export class GameEngine {
       this.remotePlayers.clear();
       this.coopCurrentWave = 0;
       this.coopTotalWaves = 0;
+      this.pvpMatchState = null;
       this.emitHudSnapshot();
       return;
     }
@@ -461,7 +490,9 @@ export class GameEngine {
       },
       onGameStart: (seed: number, floorNumber: number, difficulty: DifficultyLevel) => {
         this.setDifficulty(difficulty);
-        if (floorNumber === 0) {
+        if (floorNumber === 99 || this.isPvpMatch()) {
+          this.startPvpMatch(seed, difficulty);
+        } else if (floorNumber === 0) {
           this.enterGuildRoam();
         } else {
           this.startGraveyardRun(difficulty, seed, true);
@@ -472,6 +503,7 @@ export class GameEngine {
         const activeIds = new Set<string>();
         const room = manager.getRoom();
         const isPvp = room?.mode === 'ONLINE_PVP' || room?.mode === 'LAN_PVP';
+        const myTeam = this.getMyPvpTeam();
 
         for (const p of payload.players) {
           if (p.id === localId) {
@@ -493,6 +525,9 @@ export class GameEngine {
           const color = roomPlayer?.color || '#38BDF8';
           const charId = roomPlayer?.characterId || CharacterId.Zombie;
           const isMemberHost = Boolean(roomPlayer?.isHost);
+          const pvpMember = this.pvpMatchState?.players.find((pp) => pp.id === p.id);
+          const pvpTeam = pvpMember?.team ?? (roomPlayer?.team as PvpTeamId) ?? (isPvp ? 'RED' : undefined);
+          const isRival = isPvp ? pvpTeam !== myTeam : false;
 
           const existing = this.remotePlayers.get(p.id);
           if (existing) {
@@ -508,6 +543,9 @@ export class GameEngine {
             existing.walkPhase = p.walkPhase;
             existing.hp = p.hp;
             existing.maxHp = p.maxHp;
+            existing.isRival = isRival;
+            existing.team = pvpTeam;
+            existing.invulnTimer = pvpMember?.invulnTimer ?? 0;
             existing.hitFlashTimer = Math.max(existing.hitFlashTimer, p.hitFlashTimer);
             existing.squashX = p.squashX;
             existing.squashY = p.squashY;
@@ -558,7 +596,9 @@ export class GameEngine {
               comboFlip: p.comboFlip,
               hp: p.hp,
               maxHp: p.maxHp,
-              isRival: isPvp,
+              isRival,
+              team: pvpTeam,
+              invulnTimer: pvpMember?.invulnTimer ?? 0,
               isDowned: Boolean(p.isDowned),
               bleedoutTimer: p.bleedoutTimer ?? 0,
               reviveProgress: p.reviveProgress ?? 0,
@@ -1007,6 +1047,10 @@ export class GameEngine {
       },
       onFloorSync: (floorNumber, seed, difficulty) => {
         this.setDifficulty(difficulty);
+        if (floorNumber === 99 || this.isPvpMatch()) {
+          this.startPvpMatch(seed, difficulty);
+          return;
+        }
         if (floorNumber === 1 && this.world.isGuild) {
           this.startGraveyardRun(difficulty, seed, true);
           return;
@@ -1050,6 +1094,162 @@ export class GameEngine {
         if (playerName) {
           this.showBanner(`${playerName} disconnected from the party`);
         }
+        this.emitHudSnapshot();
+      },
+      onPvpSync: (state: PvpMatchSyncState) => {
+        this.pvpMatchState = state;
+        const localId = manager.getLocalPlayerId();
+        const localState = state.players.find((p) => p.id === localId);
+        if (localState) {
+          if (localState.invulnTimer > 0) {
+            this.player.invulnTimer = Math.max(this.player.invulnTimer, localState.invulnTimer);
+          }
+          if (localState.respawnTimer > 0) {
+            this.player.hp = 0;
+          }
+        }
+        this.emitHudSnapshot();
+      },
+      onPvpBaseDamaged: (team, newHp, maxHp, damage, attackerId, hitX, hitY) => {
+        soundEngine.playHit(true);
+        this.shakeMag = Math.max(this.shakeMag, 6.0);
+        this.spawnPopup(
+          hitX,
+          hitY - 40,
+          `-${damage} BASE!`,
+          team === 'BLUE' ? '#38BDF8' : '#F43F5E',
+          1.25
+        );
+        this.spawnBurst(hitX, hitY, team === 'BLUE' ? '#38BDF8' : '#F43F5E', 14, 110);
+        if (this.pvpMatchState) {
+          if (team === 'BLUE') this.pvpMatchState.blueBase.hp = newHp;
+          else this.pvpMatchState.redBase.hp = newHp;
+        }
+        this.emitHudSnapshot();
+      },
+      onPvpBaseDestroyed: (winningTeam, destroyedTeam) => {
+        soundEngine.playBossSlam();
+        this.shakeMag = 18;
+        const baseX = destroyedTeam === 'BLUE' ? -740 : 740;
+        this.spawnBurst(baseX, 0, '#F59E0B', 32, 220);
+        this.shockwaves.push({
+          x: baseX,
+          y: 0,
+          maxRadius: 260,
+          color: '#F59E0B',
+          life: 0.8,
+          maxLife: 0.8,
+        });
+        const myTeam = this.getMyPvpTeam();
+        if (winningTeam === myTeam) {
+          this.showBanner('🏆 VICTORY! Enemy Base Destroyed!');
+        } else {
+          this.showBanner('💀 DEFEAT! Your Base Has Fallen!');
+        }
+        this.emitHudSnapshot();
+      },
+      onPvpPlayerEliminated: (victimId, victimName, victimTeam, killerId, killerName, killerTeam, respawnDelay) => {
+        soundEngine.playBoneBreak();
+        const localId = manager.getLocalPlayerId();
+        if (victimId === localId) {
+          this.player.hp = 0;
+          this.player.invulnTimer = 0;
+          this.spawnBurst(this.player.x, this.player.y, '#EF4444', 18, 120);
+          this.showBanner(`Slain by ${killerName}! Respawning in ${respawnDelay}s...`);
+        } else {
+          this.showBanner(`${killerName} (${killerTeam}) eliminated ${victimName} (${victimTeam})!`);
+        }
+        this.emitHudSnapshot();
+      },
+      onPvpPlayerRespawned: (playerId, x, y, hp, maxHp) => {
+        soundEngine.playHeal();
+        const localId = manager.getLocalPlayerId();
+        if (playerId === localId) {
+          this.player.x = x;
+          this.player.y = y;
+          this.player.hp = hp;
+          this.player.maxHp = maxHp;
+          this.player.invulnTimer = 3.5;
+          this.cameraX = x;
+          this.cameraY = y;
+          this.spawnBurst(x, y, '#38BDF8', 22, 130);
+          this.showBanner('Back in the fight! Respawn protection active!');
+        } else {
+          const remote = this.remotePlayers.get(playerId);
+          if (remote) {
+            remote.x = x;
+            remote.y = y;
+            remote.targetX = x;
+            remote.targetY = y;
+            remote.hp = hp;
+            remote.maxHp = maxHp;
+            remote.invulnTimer = 3.5;
+          }
+          this.spawnBurst(x, y, '#38BDF8', 16, 100);
+        }
+        this.emitHudSnapshot();
+      },
+      onPvpMinionAttackFx: (minionId, team, kind, x, y, targetX, targetY) => {
+        const ang = Math.atan2(targetY - y, targetX - x);
+        const color = team === 'BLUE' ? '#60A5FA' : '#F87171';
+        if (kind === 'RANGED') {
+          soundEngine.playArrow();
+          this.projectiles.push({
+            id: allocEntityId(),
+            fromPlayer: false,
+            isVisualOnly: true,
+            x,
+            y,
+            vx: Math.cos(ang) * 440,
+            vy: Math.sin(ang) * 440,
+            radius: 6,
+            damage: 0,
+            life: 0.65,
+            color,
+            kind: 'PLAYER_CROSSBOW_BOLT',
+            angle: ang,
+          });
+        } else {
+          soundEngine.playSlash(0);
+          this.slashes.push({
+            x: x + Math.cos(ang) * 14,
+            y: y + Math.sin(ang) * 14,
+            angle: ang,
+            radius: 34,
+            arcSpread: 1.2,
+            color,
+            life: 0.16,
+            maxLife: 0.16,
+            flip: false,
+          });
+        }
+      },
+      onPvpMinionDamaged: (minionId, newHp, maxHp, damage, isCrit, hitX, hitY, attackerId) => {
+        const localId = manager.getLocalPlayerId();
+        if (attackerId !== localId) {
+          soundEngine.playHit(Boolean(isCrit));
+          this.spawnPopup(
+            hitX ?? 0,
+            (hitY ?? 0) - 20,
+            `-${damage}`,
+            isCrit ? '#FEF08A' : '#F87171',
+            0.95
+          );
+        }
+      },
+      onPvpMinionDefeated: (minionId, killerId, dropX, dropY) => {
+        this.spawnBurst(dropX, dropY, '#94A3B8', 8, 70);
+      },
+      onPvpMatchEnded: (winningTeam, blueScore, redScore, matchDuration) => {
+        soundEngine.playBossSlam();
+        this.shakeMag = 14;
+        if (this.pvpMatchState) {
+          this.pvpMatchState.isMatchEnded = true;
+          this.pvpMatchState.winnerTeam = winningTeam;
+        }
+        const myTeam = this.getMyPvpTeam();
+        const won = winningTeam === myTeam;
+        this.showBanner(won ? '🏆 VICTORY! Base Brawl Won!' : '💀 DEFEAT! Base Brawl Lost!');
         this.emitHudSnapshot();
       },
     });
@@ -1690,6 +1890,148 @@ export class GameEngine {
     const runSeed = seed ?? Math.floor(Math.random() * 1000000);
     this.loadDungeonFloor(1, runSeed);
     soundEngine.playSummon();
+  }
+
+  public startPvpMatch(seed = 1, difficulty = DifficultyLevel.Easy): void {
+    this.currentDifficulty = difficulty;
+    this.activeBlessingIds.clear();
+    this.runLevel = 1;
+    this.runXp = 0;
+    this.runXpNext = 1000;
+    this.runCoins = 0;
+    this.runShardsEarned = 0;
+    this.runKills = 0;
+    this.runDamageDealt = 0;
+    this.corpseBloomCounter = 0;
+    this.pendingNextFloor = null;
+    this.coopCurrentWave = 0;
+    this.coopTotalWaves = 0;
+
+    this.player.isDowned = false;
+    this.player.bleedoutTimer = 0;
+    this.player.reviveProgress = 0;
+    this.player.characterId = this.saveData.selectedCharacter;
+    this.recomputePlayerStats(true);
+    this.player.ultCharge = 40;
+    this.player.normalCooldowns = [0, 0];
+    this.player.ultCooldown = 0;
+
+    this.clearTransientEntities();
+    this.world = buildPvpArenaWorld(seed);
+
+    const myTeam = this.getMyPvpTeam();
+    if (myTeam === 'RED') {
+      this.player.x = 870;
+      this.player.y = 0;
+      this.player.facingX = -1;
+    } else {
+      this.player.x = -870;
+      this.player.y = 0;
+      this.player.facingX = 1;
+    }
+    this.cameraX = this.player.x;
+    this.cameraY = this.player.y;
+    this.player.invulnTimer = 3.5;
+    this.phase = GamePhase.Dungeon;
+    this.showBanner('⚔️ BASE BRAWL ⚔️ Push the lane & destroy enemy base!');
+    soundEngine.playSummon();
+    this.emitHudSnapshot();
+  }
+
+  public checkPvpCombatHits(
+    hitX: number,
+    hitY: number,
+    radius: number,
+    rawDamage: number,
+    isCrit = false,
+    canHitBase = true
+  ): boolean {
+    if (!this.isPvpMatch() || !this.pvpMatchState || !this.networkManager) return false;
+    let hitSomething = false;
+    const myTeam = this.getMyPvpTeam();
+    const opposingTeam: PvpTeam = myTeam === 'BLUE' ? 'RED' : 'BLUE';
+
+    // 1. Minions: Hit opposing minions within radius
+    for (const minion of this.pvpMatchState.minions) {
+      if (minion.team === opposingTeam && minion.hp > 0) {
+        const d = Math.hypot(minion.x - hitX, minion.y - hitY);
+        if (d <= radius + 18) {
+          hitSomething = true;
+          this.networkManager.sendDamageMinion(
+            minion.id,
+            rawDamage,
+            isCrit,
+            minion.x,
+            minion.y
+          );
+          soundEngine.playHit(isCrit);
+          this.spawnPopup(
+            minion.x,
+            minion.y - 20,
+            isCrit ? `CRIT! ${Math.round(rawDamage)}` : `${Math.round(rawDamage)}`,
+            isCrit ? '#FEF08A' : '#F87171',
+            isCrit ? 1.15 : 0.95
+          );
+          this.spawnBurst(minion.x, minion.y, isCrit ? '#FEF08A' : '#F87171', 5, 65);
+        }
+      }
+    }
+
+    // 2. Rival Players: Hit opposing players within radius
+    for (const remote of this.remotePlayers.values()) {
+      if (remote.isRival && !remote.isDowned && (remote.invulnTimer ?? 0) <= 0 && remote.hp > 0) {
+        const d = Math.hypot(remote.x - hitX, remote.y - hitY);
+        if (d <= radius + remote.radius) {
+          hitSomething = true;
+          this.networkManager.sendDamagePvpPlayer(
+            remote.id,
+            rawDamage,
+            isCrit,
+            remote.x,
+            remote.y
+          );
+          soundEngine.playHit(isCrit);
+          this.spawnPopup(
+            remote.x,
+            remote.y - 28,
+            isCrit ? `CRIT! ${Math.round(rawDamage)}` : `${Math.round(rawDamage)}`,
+            isCrit ? '#FBBF24' : '#F43F5E',
+            isCrit ? 1.25 : 1.05
+          );
+          this.spawnBurst(remote.x, remote.y, '#F43F5E', 8, 90);
+        }
+      }
+    }
+
+    // 3. Opposing Base Structure
+    if (canHitBase) {
+      const opposingBase = opposingTeam === 'BLUE' ? this.pvpMatchState.blueBase : this.pvpMatchState.redBase;
+      if (opposingBase && !opposingBase.isDestroyed && opposingBase.hp > 0) {
+        const baseDist = Math.hypot(opposingBase.x - hitX, opposingBase.y - hitY);
+        if (baseDist <= radius + 75) {
+          hitSomething = true;
+          this.networkManager.sendDamageBase(
+            opposingTeam,
+            rawDamage,
+            isCrit,
+            hitX,
+            hitY
+          );
+          soundEngine.playHit(true);
+          this.shakeMag = Math.max(this.shakeMag, 4.0);
+          this.spawnPopup(
+            opposingBase.x,
+            opposingBase.y - 36,
+            `BASE HIT! -${Math.round(rawDamage)}`,
+            '#F59E0B',
+            1.2
+          );
+          this.spawnBurst(hitX, hitY, '#F59E0B', 10, 85);
+        }
+      }
+    }
+
+    return hitSomething;
   }
 
   public applyBlessingChoice(blessingId: string): void {
@@ -4702,6 +5044,10 @@ export class GameEngine {
 
   private performBasicAttack(): void {
     const p = this.player;
+    if (this.isPvpMatch() && p.invulnTimer > 0) {
+      this.spawnPopup(p.x, p.y - 28, 'SHIELDED!', '#38BDF8', 0.85);
+      return;
+    }
     const profile = this.getActiveProfile();
     const ranks = this.getActiveUpgrades();
     const isSkel = profile.id === CharacterId.Skeleton;
@@ -5504,6 +5850,10 @@ export class GameEngine {
   }
 
   private castNormalSkill(slotIndex: 0 | 1): void {
+    if (this.isPvpMatch() && this.player.invulnTimer > 0) {
+      this.spawnPopup(this.player.x, this.player.y - 28, 'SHIELDED!', '#38BDF8', 0.85);
+      return;
+    }
     const loadout = this.getActiveLoadout();
     const skillId = loadout.normalSkills[slotIndex];
     const manual = this.currentCastManualAim;
@@ -8349,6 +8699,10 @@ export class GameEngine {
 
   private castUltimateSkill(): void {
     const p = this.player;
+    if (this.isPvpMatch() && p.invulnTimer > 0) {
+      this.spawnPopup(p.x, p.y - 28, 'SHIELDED!', '#38BDF8', 0.85);
+      return;
+    }
     const loadout = this.getActiveLoadout();
     const ultId = loadout.ultimateSkill;
     const manual = this.currentCastManualAim;
@@ -10800,6 +11154,26 @@ export class GameEngine {
       }
 
       if (pr.fromPlayer) {
+        if (this.isPvpMatch() && !pr.isVisualOnly) {
+          const hitPvp = this.checkPvpCombatHits(
+            pr.x,
+            pr.y,
+            pr.radius + 14,
+            pr.damage,
+            Boolean(pr.isFinisherBolt),
+            true
+          );
+          if (hitPvp) {
+            if (pr.kind === 'PLAYER_EXPLOSIVE_BOLT') {
+              this.detonateExplosiveBolt(pr.x, pr.y, pr.damage, pr.blastRadius ?? 116);
+            }
+            if (!pr.pierce) {
+              this.projectiles.splice(i, 1);
+              continue;
+            }
+          }
+        }
+
         let consumed = false;
         const isKoboldBolt =
           pr.kind === 'PLAYER_CROSSBOW_BOLT' ||
@@ -11343,6 +11717,8 @@ export class GameEngine {
         thick: 2.8,
         drag: isShrapnel ? 4.8 : 3.4,
       });
+    if (this.isPvpMatch()) {
+      this.checkPvpCombatHits(trap.x, trap.y, trap.blastRadius, trap.damage, false, true);
     }
 
     for (const enemy of [...this.world.enemies]) {
@@ -11438,6 +11814,10 @@ export class GameEngine {
         thick: 2.8,
         drag: 4.5,
       });
+    }
+
+    if (this.isPvpMatch()) {
+      this.checkPvpCombatHits(x, y, blastRadius, rawDamage, false, true);
     }
 
     const clusterAlt = this.activeBlessingIds.has('kobold_skill_explosive_bolt_alt');
@@ -11952,6 +12332,15 @@ export class GameEngine {
   ): void {
     let hitAny = false;
     let landedCrit = false;
+
+    if (this.isPvpMatch()) {
+      const pvpCenterDist = reach * 0.65;
+      const hitX = ox + Math.cos(angle) * pvpCenterDist;
+      const hitY = oy + Math.sin(angle) * pvpCenterDist;
+      const hitPvp = this.checkPvpCombatHits(hitX, hitY, reach * 0.75, rawDamage, false, true);
+      if (hitPvp) hitAny = true;
+    }
+
     for (const enemy of [...this.world.enemies]) {
       if (enemy.hp <= 0) continue;
       if (this.isEnemyInArc(enemy, ox, oy, angle, reach, halfSpread)) {

@@ -4,6 +4,8 @@ import { allocEntityId, GeneratedWorld } from './dungeonGenerator';
 export function buildPvpArenaWorld(seed = 1): GeneratedWorld {
   const laneRoom: DungeonRoom = {
     id: 1,
+    gridX: 0,
+    gridY: 0,
     kind: RoomKind.Combat,
     x: -960,
     y: -190,
@@ -13,7 +15,7 @@ export function buildPvpArenaWorld(seed = 1): GeneratedWorld {
     locked: false,
     cleared: true,
     wavesRemaining: 0,
-    isEntry: false,
+    connections: [],
   };
 
   const props: RoomProp[] = [

@@ -855,6 +855,9 @@ export function renderGameWorld(input: WorldRenderInput): void {
     popups,
     panJoystick,
     skillAimTelegraph,
+    pvpMatchState,
+    myPvpTeam,
+    myPvpInvulnTimer,
   } = input;
 
   // 1. Deep void backdrop
@@ -1032,6 +1035,23 @@ export function renderGameWorld(input: WorldRenderInput): void {
     });
   }
 
+  if (pvpMatchState) {
+    drawList.push({
+      sortY: pvpMatchState.blueBase.y,
+      draw: () => drawPvpBase(ctx, pvpMatchState.blueBase, 'BLUE', time),
+    });
+    drawList.push({
+      sortY: pvpMatchState.redBase.y,
+      draw: () => drawPvpBase(ctx, pvpMatchState.redBase, 'RED', time),
+    });
+    for (const minion of pvpMatchState.minions) {
+      drawList.push({
+        sortY: minion.y,
+        draw: () => drawPvpMinion(ctx, minion, time),
+      });
+    }
+  }
+
   if (isGuild) {
     for (let idx = 0; idx < guildCompanions.length; idx++) {
       const comp = guildCompanions[idx];
@@ -1147,6 +1167,23 @@ export function renderGameWorld(input: WorldRenderInput): void {
         ctx.fillText(labelText, player.x, nameY);
         ctx.restore();
       }
+
+      if (myPvpInvulnTimer && myPvpInvulnTimer > 0) {
+        ctx.save();
+        const sColor = myPvpTeam === 'BLUE' ? '#38BDF8' : '#F43F5E';
+        ctx.strokeStyle = sColor;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = sColor;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y - 10, 26, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.font = '700 8.5px "Plus Jakarta Sans", system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText('SHIELDED', player.x, player.y - 42);
+        ctx.restore();
+      }
     },
   });
 
@@ -1248,6 +1285,22 @@ export function renderGameWorld(input: WorldRenderInput): void {
             ctx.fillRect(remote.x - barW / 2, barY, barW, barH);
             ctx.fillStyle = hpRatio > 0.45 ? '#4ADE80' : hpRatio > 0.2 ? '#FBBF24' : '#EF4444';
             ctx.fillRect(remote.x - barW / 2, barY, barW * hpRatio, barH);
+          }
+          if (remote.invulnTimer && remote.invulnTimer > 0) {
+            ctx.save();
+            const sColor = remote.team === 'BLUE' || remote.color === '#38BDF8' ? '#38BDF8' : '#F43F5E';
+            ctx.strokeStyle = sColor;
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = sColor;
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(remote.x, remote.y - 10, 26, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.font = '700 8.5px "Plus Jakarta Sans", system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillText('SHIELDED', remote.x, remote.y - 42);
+            ctx.restore();
           }
           ctx.restore();
         },
