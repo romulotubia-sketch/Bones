@@ -55,7 +55,7 @@ export interface NetworkCallbacks {
 
 export class NetworkManager {
   private ws: WebSocket | null = null;
-  private callbacks: NetworkCallbacks = {};
+  private listenerList: NetworkCallbacks[] = [];
   private localPlayerId: string | null = null;
   private currentRoom: RoomInfo | null = null;
   private isConnecting = false;
@@ -69,11 +69,34 @@ export class NetworkManager {
   private serverHost: string | null = null;
 
   constructor(callbacks?: NetworkCallbacks) {
-    if (callbacks) this.callbacks = callbacks;
+    if (callbacks) this.listenerList.push(callbacks);
   }
 
-  public setCallbacks(callbacks: NetworkCallbacks): void {
-    this.callbacks = { ...this.callbacks, ...callbacks };
+  public setCallbacks(callbacks: NetworkCallbacks): () => void {
+    this.listenerList.push(callbacks);
+    return () => {
+      this.listenerList = this.listenerList.filter((c) => c !== callbacks);
+    };
+  }
+
+  public addCallbacks(callbacks: NetworkCallbacks): () => void {
+    return this.setCallbacks(callbacks);
+  }
+
+  private trigger<K extends keyof NetworkCallbacks>(
+    key: K,
+    ...args: Parameters<NonNullable<NetworkCallbacks[K]>>
+  ): void {
+    for (const cb of [...this.listenerList]) {
+      const fn = cb[key];
+      if (typeof fn === 'function') {
+        try {
+          (fn as any)(...args);
+        } catch (err) {
+          console.error(`[NetworkManager] Error in ${String(key)} callback:`, err);
+        }
+      }
+    }
   }
 
   public getLocalPlayerId(): string | null {
@@ -121,7 +144,7 @@ export class NetworkManager {
         socket.onopen = () => {
           this.isConnecting = false;
           this.reconnectAttempts = 0;
-          this.callbacks.onConnectionChange?.(true);
+          this.trigger('onConnectionChange', true);
           this.startHeartbeat();
           resolve(true);
         };
@@ -132,7 +155,7 @@ export class NetworkManager {
 
         socket.onclose = () => {
           this.stopHeartbeat();
-          this.callbacks.onConnectionChange?.(false);
+          this.trigger('onConnectionChange', false);
           this.handleDisconnect();
           resolve(false);
         };
@@ -160,7 +183,7 @@ export class NetworkManager {
         }
       }, delay);
     } else {
-      this.callbacks.onError?.('Lost connection to multiplayer game server.');
+      this.trigger('onError', 'Lost connection to multiplayer game server.');
     }
   }
 
@@ -196,13 +219,13 @@ export class NetworkManager {
         case 'S2C_ROOM_JOINED': {
           this.currentRoom = msg.room;
           this.localPlayerId = msg.playerId;
-          this.callbacks.onRoomUpdate?.(this.currentRoom);
+          this.trigger('onRoomUpdate', this.currentRoom);
           break;
         }
 
         case 'S2C_ROOM_STATE': {
           this.currentRoom = msg.room;
-          this.callbacks.onRoomUpdate?.(this.currentRoom);
+          this.trigger('onRoomUpdate', this.currentRoom);
           break;
         }
 
@@ -211,7 +234,7 @@ export class NetworkManager {
             const exists = this.currentRoom.players.some((p) => p.id === msg.player.id);
             if (!exists) {
               this.currentRoom.players.push(msg.player);
-              this.callbacks.onRoomUpdate?.(this.currentRoom);
+              this.trigger('onRoomUpdate', this.currentRoom);
             }
           }
           break;
@@ -229,8 +252,8 @@ export class NetworkManager {
               );
               if (hostPlayer) hostPlayer.isHost = true;
             }
-            this.callbacks.onPlayerLeft?.(msg.playerId);
-            this.callbacks.onRoomUpdate?.(this.currentRoom);
+            this.trigger('onPlayerLeft', msg.playerId);
+            this.trigger('onRoomUpdate', this.currentRoom);
           }
           break;
         }
@@ -241,7 +264,7 @@ export class NetworkManager {
             for (const p of this.currentRoom.players) {
               p.isHost = p.id === msg.newHostId;
             }
-            this.callbacks.onRoomUpdate?.(this.currentRoom);
+            this.trigger('onRoomUpdate', this.currentRoom);
           }
           break;
         }
@@ -252,12 +275,13 @@ export class NetworkManager {
             this.currentRoom.seed = msg.seed;
             this.currentRoom.floorNumber = msg.floorNumber;
           }
-          this.callbacks.onGameStart?.(msg.seed, msg.floorNumber);
+          this.trigger('onGameStart', msg.seed, msg.floorNumber);
           break;
         }
 
         case 'S2C_SYNC_WORLD': {
-          this.callbacks.onWorldSync?.(
+          this.trigger(
+            'onWorldSync',
             msg.players,
             msg.enemies,
             msg.activeRoomId,
@@ -267,7 +291,8 @@ export class NetworkManager {
         }
 
         case 'S2C_ENEMY_DAMAGED': {
-          this.callbacks.onEnemyDamaged?.(
+          this.trigger(
+            'onEnemyDamaged',
             msg.enemyId,
             msg.damageDealt,
             msg.isCrit,
@@ -279,7 +304,8 @@ export class NetworkManager {
         }
 
         case 'S2C_ENEMY_DEFEATED': {
-          this.callbacks.onEnemyDefeated?.(
+          this.trigger(
+            'onEnemyDefeated',
             msg.enemyId,
             msg.killerId,
             msg.dropX,
@@ -289,7 +315,8 @@ export class NetworkManager {
         }
 
         case 'S2C_REMOTE_SKILL': {
-          this.callbacks.onRemoteSkill?.(
+          this.trigger(
+            'onRemoteSkill',
             msg.playerId,
             msg.skillId,
             msg.x,
@@ -301,7 +328,8 @@ export class NetworkManager {
         }
 
         case 'S2C_PLAYER_REVIVED': {
-          this.callbacks.onPlayerRevived?.(
+          this.trigger(
+            'onPlayerRevived',
             msg.revivedPlayerId,
             msg.reviverPlayerId,
             msg.reviveHp
@@ -314,12 +342,12 @@ export class NetworkManager {
             this.currentRoom.floorNumber = msg.floorNumber;
             this.currentRoom.seed = msg.seed;
           }
-          this.callbacks.onFloorSync?.(msg.floorNumber, msg.seed);
+          this.trigger('onFloorSync', msg.floorNumber, msg.seed);
           break;
         }
 
         case 'S2C_PARTY_WIPE': {
-          this.callbacks.onPartyWipe?.();
+          this.trigger('onPartyWipe');
           break;
         }
 
@@ -330,7 +358,7 @@ export class NetworkManager {
         }
 
         case 'S2C_ERROR': {
-          this.callbacks.onError?.(msg.message);
+          this.trigger('onError', msg.message);
           break;
         }
       }
@@ -348,6 +376,7 @@ export class NetworkManager {
     customHost?: string
   ): Promise<void> {
     await this.connect(customHost);
+
     this.send({
       type: 'C2S_CREATE_ROOM',
       playerName,
@@ -365,6 +394,7 @@ export class NetworkManager {
     customHost?: string
   ): Promise<void> {
     await this.connect(customHost);
+
     this.send({
       type: 'C2S_JOIN_ROOM',
       code: code.trim().toUpperCase(),
@@ -376,7 +406,7 @@ export class NetworkManager {
   public leaveRoom(): void {
     this.send({ type: 'C2S_LEAVE_ROOM' });
     this.currentRoom = null;
-    this.callbacks.onRoomUpdate?.(null);
+    this.trigger('onRoomUpdate', null);
   }
 
   public setReady(ready: boolean): void {

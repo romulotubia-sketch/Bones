@@ -439,8 +439,10 @@ export class GameEngine {
       onRoomUpdate: () => {
         this.emitHudSnapshot();
       },
-      onGameStart: (seed: number, floorNumber: number) => {
-        this.startGraveyardRun(undefined, seed);
+      onGameStart: (seed: number, _floorNumber: number) => {
+        const room = manager.getRoom();
+        const diff = room?.difficulty ?? this.saveData.selectedDifficulty ?? DifficultyLevel.Easy;
+        this.startGraveyardRun(diff, seed);
       },
       onWorldSync: (players: PlayerTransformSync[], enemies?: EnemySyncState[], activeRoomId?: number, wavesRemaining?: number) => {
         const localId = manager.getLocalPlayerId();
@@ -449,7 +451,8 @@ export class GameEngine {
         const isPvp = room?.mode === 'ONLINE_PVP' || room?.mode === 'LAN_PVP';
 
         for (const p of players) {
-          if (p.id === localId) continue;
+          if (!p.id || p.id === localId) continue;
+          if (!localId && room && room.hostId === p.id && manager.isHost()) continue;
           activeIds.add(p.id);
 
           const roomPlayer = room?.players.find((rp) => rp.id === p.id);
@@ -533,8 +536,8 @@ export class GameEngine {
           }
         }
 
-        for (const id of this.remotePlayers.keys()) {
-          if (!activeIds.has(id)) {
+        for (const id of Array.from(this.remotePlayers.keys())) {
+          if (!activeIds.has(id) || (localId && id === localId)) {
             this.remotePlayers.delete(id);
           }
         }
@@ -653,7 +656,11 @@ export class GameEngine {
         this.emitHudSnapshot();
       },
       onFloorSync: (floorNumber, seed) => {
-        this.loadDungeonFloor(floorNumber, seed);
+        if (floorNumber === 0) {
+          this.enterGuildRoam();
+        } else if (!this.networkManager?.isHost() || this.world.floorNumber !== floorNumber) {
+          this.loadDungeonFloor(floorNumber, seed);
+        }
       },
       onPartyWipe: () => {
         this.showBanner('Party Defeated!');
@@ -1128,16 +1135,22 @@ export class GameEngine {
     this.player.isDowned = false;
     this.player.bleedoutTimer = 0;
     this.player.reviveProgress = 0;
-    this.player.characterId = this.saveData.selectedCharacter;
+
+    const room = this.networkManager?.getRoom();
+    const myId = this.networkManager?.getLocalPlayerId();
+    const roomPlayer = room?.players.find((p) => p.id === myId);
+    if (roomPlayer?.characterId) {
+      this.player.characterId = roomPlayer.characterId;
+    } else {
+      this.player.characterId = this.saveData.selectedCharacter;
+    }
+
     this.recomputePlayerStats(true);
     this.player.ultCharge = 100;
     this.player.normalCooldowns = [0, 0];
     this.player.ultCooldown = 0;
 
     const runSeed = seed ?? Math.floor(Math.random() * 1000000);
-    if (this.isInCoop() && this.networkManager?.isHost()) {
-      this.networkManager.sendAdvanceFloor(1, runSeed);
-    }
     this.loadDungeonFloor(1, runSeed);
     soundEngine.playSummon();
   }
@@ -1811,20 +1824,134 @@ export class GameEngine {
 
   public loadDungeonFloor(floorNum: number, seed?: number): void {
     this.clearTransientEntities();
+    this.remotePlayers.clear();
     this.player.isDowned = false;
     this.player.bleedoutTimer = 0;
     this.player.reviveProgress = 0;
     this.world = buildGraveyardFloor(floorNum, this.getDifficultyConfig(), seed);
-    this.player.x = this.world.spawnX;
-    this.player.y = this.world.spawnY;
+
+    const room = this.networkManager?.getRoom();
+    if (room && this.isInCoop()) {
+      const myId = this.networkManager?.getLocalPlayerId();
+      const myIdx = Math.max(0, room.players.findIndex((p) => p.id === myId));
+      const offX = myIdx === 0 ? -28 : myIdx === 1 ? 28 : myIdx === 2 ? -28 : 28;
+      const offY = myIdx >= 2 ? 28 : 0;
+      const resolvedSpawn = this.resolveWorldCollision(
+        this.world.spawnX + offX,
+        this.world.spawnY + offY,
+        this.player.radius
+      );
+      this.player.x = resolvedSpawn.x;
+      this.player.y = resolvedSpawn.y;
+
+      // Prime remote party members safely around the entrance room so they never spawn in walls
+      room.players.forEach((rp, idx) => {
+        if (rp.id !== myId) {
+          const rOffX = idx === 0 ? -28 : idx === 1 ? 28 : idx === 2 ? -28 : 28;
+          const rOffY = idx >= 2 ? 28 : 0;
+          const rResolved = this.resolveWorldCollision(
+            this.world.spawnX + rOffX,
+            this.world.spawnY + rOffY,
+            17
+          );
+          this.remotePlayers.set(rp.id, {
+            id: rp.id,
+            name: rp.name,
+            color: rp.color || '#38BDF8',
+            characterId: rp.characterId || CharacterId.Zombie,
+            x: rResolved.x,
+            y: rResolved.y,
+            targetX: rResolved.x,
+            targetY: rResolved.y,
+            vx: 0,
+            vy: 0,
+            radius: 17,
+            aimAngle: 0,
+            facingX: 1,
+            walkPhase: 0,
+            hitFlashTimer: 0,
+            squashX: 1,
+            squashY: 1,
+            hp: 130,
+            maxHp: 130,
+            isRival: false,
+            isDowned: false,
+            bleedoutTimer: 0,
+            reviveProgress: 0,
+            undyingTimer: 0,
+            abominationTimer: 0,
+            ribcageTimer: 0,
+            ribcageCharges: 0,
+            boneStormTimer: 0,
+            colossusTimer: 0,
+            unyieldingStacks: 0,
+            windrunnerTimer: 0,
+            poisonBladesTimer: 0,
+            stolenMightTimer: 0,
+            fortressTimer: 0,
+            magneticTimer: 0,
+            mountainHeartTimer: 0,
+            leapAirProgress: 0,
+            resolveRatio: 0,
+            dashTimer: 0,
+            hoveredInGuild: false,
+          });
+        }
+      });
+    } else {
+      const resolved = this.resolveWorldCollision(this.world.spawnX, this.world.spawnY, this.player.radius);
+      this.player.x = resolved.x;
+      this.player.y = resolved.y;
+    }
+
     this.player.vx = 0;
     this.player.vy = 0;
+    this.mapPanX = 0;
+    this.mapPanY = 0;
     this.cameraX = this.player.x;
     this.cameraY = this.player.y;
     this.currentRoomId = 0;
     this.phase = GamePhase.Dungeon;
     this.showBanner(this.world.floorLabel);
     this.emitHudSnapshot();
+
+    // Broadcast immediate transform so party members see each other immediately
+    if (this.networkManager) {
+      this.networkManager.sendTransform({
+        x: +this.player.x.toFixed(1),
+        y: +this.player.y.toFixed(1),
+        vx: 0,
+        vy: 0,
+        aimAngle: 0,
+        facingX: this.player.facingX,
+        walkPhase: 0,
+        hp: Math.ceil(this.player.hp),
+        maxHp: this.player.maxHp,
+        hitFlashTimer: 0,
+        squashX: 1,
+        squashY: 1,
+        dashTimer: 0,
+        leapAirProgress: 0,
+        isAttacking: false,
+        comboStep: 0,
+        isDowned: false,
+        bleedoutTimer: 0,
+        reviveProgress: 0,
+        isRevivingPlayerId: null,
+        activeBuffs: {
+          undying: false,
+          abomination: false,
+          ribcageCharges: 0,
+          boneStorm: false,
+          colossus: false,
+          windrunner: false,
+          fortress: false,
+          mountainHeart: false,
+          restless: false,
+          nightmare: false,
+        },
+      });
+    }
   }
 
   private clearTransientEntities(): void {
@@ -9207,6 +9334,19 @@ export class GameEngine {
   }
 
   private updateEnemies(dt: number): void {
+    if (this.isInCoop() && !this.networkManager?.isHost()) {
+      // Non-host in co-op: smoothly interpolate visual state and decay timers while host manages authoritative AI
+      for (const e of this.world.enemies) {
+        if (!e || e.hp <= 0) continue;
+        e.squashX += (1 - e.squashX) * 10 * dt;
+        e.squashY += (1 - e.squashY) * 10 * dt;
+        if (e.hitFlashTimer > 0) e.hitFlashTimer -= dt;
+        e.x += e.vx * dt;
+        e.y += e.vy * dt;
+      }
+      return;
+    }
+
     const enemiesSnapshot = [...this.world.enemies];
     for (const e of enemiesSnapshot) {
       if (!e || e.hp <= 0) continue;
@@ -9655,7 +9795,18 @@ export class GameEngine {
 
   private pickEnemyTarget(enemy: EnemyEntity): { x: number; y: number } {
     let best: { x: number; y: number } = this.player;
-    let bestDist = Math.hypot(this.player.x - enemy.x, this.player.y - enemy.y);
+    let bestDist = this.player.isDowned ? Infinity : Math.hypot(this.player.x - enemy.x, this.player.y - enemy.y);
+
+    if (this.isInCoop()) {
+      for (const remote of this.remotePlayers.values()) {
+        if (remote.isDowned) continue;
+        const d = Math.hypot(remote.x - enemy.x, remote.y - enemy.y);
+        if (d < bestDist) {
+          bestDist = d;
+          best = remote;
+        }
+      }
+    }
 
     for (const m of this.minions) {
       const d = Math.hypot(m.x - enemy.x, m.y - enemy.y);

@@ -378,9 +378,14 @@ async function startServer() {
 
             room.inGame = true;
             room.seed = Math.floor(Math.random() * 1000000);
-            room.floorNumber = 0; // Sanctuary Guild Hall party start
+            room.floorNumber = 1; // Start at Floor 1 for dungeon crawler party run
             room.enemies.clear();
             room.recentDamageEvents.clear();
+            room.activeRoomId = 0;
+            room.wavesRemaining = 0;
+            for (const p of room.players.values()) {
+              p.latestTransform = undefined;
+            }
 
             // Setup 20Hz transform sync loop for this room
             if (room.syncInterval) clearInterval(room.syncInterval);
@@ -416,6 +421,11 @@ async function startServer() {
               type: 'S2C_GAME_STARTED',
               seed: room.seed,
               floorNumber: room.floorNumber,
+            });
+
+            broadcastToRoom(room, {
+              type: 'S2C_ROOM_STATE',
+              room: serializeRoom(room),
             });
             break;
           }
@@ -593,6 +603,9 @@ async function startServer() {
             room.seed = msg.seed;
             room.enemies.clear();
             room.recentDamageEvents.clear();
+            for (const p of room.players.values()) {
+              p.latestTransform = undefined;
+            }
             broadcastToRoom(room, {
               type: 'S2C_FLOOR_SYNC',
               floorNumber: msg.floorNumber,
@@ -609,6 +622,9 @@ async function startServer() {
             room.floorNumber = 0;
             room.enemies.clear();
             room.recentDamageEvents.clear();
+            for (const p of room.players.values()) {
+              p.latestTransform = undefined;
+            }
             broadcastToRoom(room, {
               type: 'S2C_FLOOR_SYNC',
               floorNumber: 0,

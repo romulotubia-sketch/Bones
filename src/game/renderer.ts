@@ -1168,11 +1168,6 @@ export function renderGameWorld(input: WorldRenderInput): void {
         draw: () => {
           // Draw colored indicator ring under feet
           ctx.save();
-          ctx.strokeStyle = remote.color || (remote.isRival ? '#EF4444' : '#38BDF8');
-          ctx.lineWidth = 2;
-          ctx.setLineDash([4, 4]);
-          // Draw colored indicator ring or downed beacon under feet
-          ctx.save();
           if (remote.isDowned) {
             const pulse = 0.7 + Math.sin(time * 6) * 0.3;
             ctx.strokeStyle = `rgba(239, 68, 68, ${pulse})`;
@@ -1201,6 +1196,7 @@ export function renderGameWorld(input: WorldRenderInput): void {
             ctx.beginPath();
             ctx.ellipse(remote.x, remote.y + 4, 18, 9, 0, 0, Math.PI * 2);
             ctx.stroke();
+            ctx.setLineDash([]);
           }
           ctx.restore();
 

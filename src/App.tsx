@@ -269,7 +269,7 @@ export default function App() {
   useEffect(() => {
     const net = networkManagerRef.current;
     if (!net) return;
-    net.setCallbacks({
+    return net.setCallbacks({
       onRoomUpdate: (room) => {
         setMultiplayerRoom(room ? { ...room } : null);
       },
@@ -614,13 +614,11 @@ export default function App() {
           room={multiplayerRoom}
           selectedCharacter={saveData.selectedCharacter}
           selectedDifficulty={saveData.selectedDifficulty}
+          onSelectCharacter={handleSelectCharacter}
           onSelectDifficulty={handleSelectDifficulty}
           onClose={() => setMultiplayerModalOpen(false)}
           onStartMultiplayerGame={() => {
             setMultiplayerModalOpen(false);
-            if (hud.phase === GamePhase.Title || hud.phase === GamePhase.GuildPicking) {
-              engineRef.current?.enterGuildRoam();
-            }
           }}
         />
       )}

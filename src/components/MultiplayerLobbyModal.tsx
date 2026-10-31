@@ -26,6 +26,7 @@ interface MultiplayerLobbyModalProps {
   room: RoomInfo | null;
   selectedCharacter: CharacterId;
   selectedDifficulty?: DifficultyLevel;
+  onSelectCharacter?: (char: CharacterId) => void;
   onSelectDifficulty?: (diff: DifficultyLevel) => void;
   onClose: () => void;
   onStartMultiplayerGame: () => void;
@@ -55,29 +56,11 @@ const MODES: {
     icon: Wifi,
     color: '#38BDF8',
   },
-  {
-    id: 'ONLINE_PVP',
-    name: 'Online Base Brawl',
-    shortLabel: 'Base Brawl',
-    desc: '1-lane battle with bases, minions, and PvP hero clashes (1v1 to 4v4).',
-    icon: Swords,
-    color: '#F43F5E',
-  },
-  {
-    id: 'LAN_PVP',
-    name: 'Local Wi-Fi Base Brawl',
-    shortLabel: 'Wi-Fi Brawl',
-    desc: 'Low-latency 1-lane base battle for 2–8 players on your Wi-Fi network.',
-    icon: Radio,
-    color: '#FBBF24',
-  },
 ];
 
-const MODE_LABELS: Record<MultiplayerMode, string> = {
+const MODE_LABELS: Record<string, string> = {
   ONLINE_COOP: 'Online Co-op',
   LAN_COOP: 'Wi-Fi Co-op',
-  ONLINE_PVP: 'Online Base Brawl',
-  LAN_PVP: 'Wi-Fi Base Brawl',
 };
 
 export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
@@ -85,6 +68,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
   room,
   selectedCharacter,
   selectedDifficulty = DifficultyLevel.Easy,
+  onSelectCharacter,
   onSelectDifficulty,
   onClose,
   onStartMultiplayerGame,
@@ -118,15 +102,12 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
   }, []);
 
   useEffect(() => {
-    networkManager.setCallbacks({
+    return networkManager.setCallbacks({
       onError: (msg) => {
         setErrorMessage(msg);
         setIsBusy(false);
       },
     });
-    return () => {
-      networkManager.setCallbacks({ onError: undefined });
-    };
   }, [networkManager]);
 
   const localId = networkManager.getLocalPlayerId();
@@ -211,6 +192,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
   const handleSelectChar = (char: CharacterId) => {
     setCharacterId(char);
     soundEngine.playUiClick(520);
+    onSelectCharacter?.(char);
     if (room) {
       networkManager.selectCharacter(char);
     }
@@ -218,15 +200,6 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
 
   const handleStartGame = () => {
     if (!isHost) return;
-    if (room?.mode.includes('PVP') && room.players.length >= 2) {
-      const blueCount = room.players.filter((p) => (p.team || 'BLUE') === 'BLUE').length;
-      const redCount = room.players.filter((p) => p.team === 'RED').length;
-      if (Math.abs(blueCount - redCount) > 1) {
-        setErrorMessage('Teams must be balanced before starting Base Brawl!');
-        soundEngine.playBoneBreak();
-        return;
-      }
-    }
     soundEngine.playSummon();
     networkManager.startGame(difficulty);
     onStartMultiplayerGame();
@@ -420,235 +393,84 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
               <div className="col-span-7 flex flex-col">
                 <div className="flex items-baseline justify-between mb-1.5">
                   <span className="text-[11px] font-semibold text-[#E5DFD4]">
-                    {room.mode.includes('PVP') ? 'Base Brawl Teams' : 'Party Adventurers'} ({room.players.length}/{room.maxPlayers})
+                    Party Adventurers ({room.players.length}/{room.maxPlayers})
                   </span>
                   <span className="text-[10px] text-[#A69FB4]">
                     Party Code <span className="font-mono-num text-[#FBBF24] font-semibold">{room.code}</span>
                   </span>
                 </div>
 
-                {room.mode.includes('PVP') ? (
-                  /* Dedicated 2-Team View for Base Brawl (Blue vs Red) */
-                  <div className="flex flex-col gap-2">
-                    {/* Blue Team */}
-                    <div className="p-2 rounded-xl bg-[#0F172A] border border-[#38BDF8]/40">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-[#38BDF8] animate-pulse" />
-                          <span className="text-[11px] font-bold text-[#38BDF8] tracking-wide">
-                            BLUE TEAM ({room.players.filter((p) => (p.team || 'BLUE') === 'BLUE').length}/{Math.floor(room.maxPlayers / 2)})
-                          </span>
-                        </div>
-                        {localPlayerInRoom?.team === 'RED' &&
-                          room.players.filter((p) => (p.team || 'BLUE') === 'BLUE').length < Math.floor(room.maxPlayers / 2) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                soundEngine.playUiClick(520);
-                                networkManager.sendSetTeam('BLUE');
-                              }}
-                              className="px-2 py-0.5 rounded-md bg-[#1E293B] text-[10px] font-bold text-[#38BDF8] border border-[#38BDF8]/40 hover:bg-[#38BDF8]/20 transition-colors"
-                            >
-                              Switch to Blue
-                            </button>
-                          )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {room.players
-                          .filter((p) => (p.team || 'BLUE') === 'BLUE')
-                          .map((p) => {
-                            const charDef = CHARACTER_ROSTER[p.characterId] || CHARACTER_ROSTER[CharacterId.Zombie];
-                            const isSelf = p.id === localId;
-                            return (
-                              <div
-                                key={p.id}
-                                className={`h-[48px] px-2 rounded-lg border flex items-center gap-2 ${
-                                  isSelf ? 'bg-[#1E293B] border-[#38BDF8]' : 'bg-[#131B2E] border-[#223250]'
-                                }`}
-                              >
-                                {renderHeroPortrait(
-                                  `slot-${p.id}-${p.characterId}`,
-                                  charDef.portraitUrl,
-                                  charDef.archetypeName,
-                                  '#38BDF8',
-                                  'w-8 h-8'
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-[11px] font-bold text-[#F3EFE6] truncate">
-                                      {p.name} {isSelf ? '(You)' : ''}
-                                    </span>
-                                    {p.isHost && <Crown className="w-3 h-3 text-[#FBBF24] shrink-0" />}
-                                  </div>
-                                  <div className="text-[9px] text-[#94A3B8] truncate">
-                                    {charDef.archetypeName} · {p.isReady ? 'Ready' : 'Waiting'}
-                                  </div>
-                                </div>
-                                {isHost && !isSelf && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      soundEngine.playUiClick(560);
-                                      networkManager.promoteLeader(p.id);
-                                    }}
-                                    title="Make Party Leader"
-                                    className="p-1 rounded bg-[#1E293B] text-[#FBBF24] border border-[#334155] shrink-0"
-                                  >
-                                    <Crown className="w-3 h-3" />
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                      </div>
-                    </div>
-
-                    {/* Red Team */}
-                    <div className="p-2 rounded-xl bg-[#2A1116] border border-[#F43F5E]/40">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-[#F43F5E] animate-pulse" />
-                          <span className="text-[11px] font-bold text-[#F43F5E] tracking-wide">
-                            RED TEAM ({room.players.filter((p) => p.team === 'RED').length}/{Math.floor(room.maxPlayers / 2)})
-                          </span>
-                        </div>
-                        {(!localPlayerInRoom?.team || localPlayerInRoom.team === 'BLUE') &&
-                          room.players.filter((p) => p.team === 'RED').length < Math.floor(room.maxPlayers / 2) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                soundEngine.playUiClick(520);
-                                networkManager.sendSetTeam('RED');
-                              }}
-                              className="px-2 py-0.5 rounded-md bg-[#3F141E] text-[10px] font-bold text-[#F43F5E] border border-[#F43F5E]/40 hover:bg-[#F43F5E]/20 transition-colors"
-                            >
-                              Switch to Red
-                            </button>
-                          )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {room.players
-                          .filter((p) => p.team === 'RED')
-                          .map((p) => {
-                            const charDef = CHARACTER_ROSTER[p.characterId] || CHARACTER_ROSTER[CharacterId.Zombie];
-                            const isSelf = p.id === localId;
-                            return (
-                              <div
-                                key={p.id}
-                                className={`h-[48px] px-2 rounded-lg border flex items-center gap-2 ${
-                                  isSelf ? 'bg-[#3F141E] border-[#F43F5E]' : 'bg-[#200D12] border-[#421B24]'
-                                }`}
-                              >
-                                {renderHeroPortrait(
-                                  `slot-${p.id}-${p.characterId}`,
-                                  charDef.portraitUrl,
-                                  charDef.archetypeName,
-                                  '#F43F5E',
-                                  'w-8 h-8'
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-[11px] font-bold text-[#F3EFE6] truncate">
-                                      {p.name} {isSelf ? '(You)' : ''}
-                                    </span>
-                                    {p.isHost && <Crown className="w-3 h-3 text-[#FBBF24] shrink-0" />}
-                                  </div>
-                                  <div className="text-[9px] text-[#FDA4AF] truncate">
-                                    {charDef.archetypeName} · {p.isReady ? 'Ready' : 'Waiting'}
-                                  </div>
-                                </div>
-                                {isHost && !isSelf && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      soundEngine.playUiClick(560);
-                                      networkManager.promoteLeader(p.id);
-                                    }}
-                                    title="Make Party Leader"
-                                    className="p-1 rounded bg-[#3F141E] text-[#FBBF24] border border-[#421B24] shrink-0"
-                                  >
-                                    <Crown className="w-3 h-3" />
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {room.players.map((p) => {
-                      const charDef =
-                        CHARACTER_ROSTER[p.characterId] || CHARACTER_ROSTER[CharacterId.Zombie];
-                      const isSelf = p.id === localId;
-                      return (
-                        <div
-                          key={p.id}
-                          className={`h-[56px] px-2.5 rounded-xl border flex items-center gap-2.5 ${
-                            isSelf
-                              ? 'bg-[#221B32] border-[#4ADE80]/55'
-                              : 'bg-[#1A1526] border-[#312844]'
-                          }`}
-                        >
-                          {renderHeroPortrait(
-                            `slot-${p.id}-${p.characterId}`,
-                            charDef.portraitUrl,
-                            charDef.archetypeName,
-                            p.color || charDef.accentColor,
-                            'w-9 h-9'
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs font-bold text-[#F3EFE6] truncate">
-                                {p.name}
-                                {isSelf ? ' (You)' : ''}
-                              </span>
-                              {p.isHost && (
-                                <Crown className="w-3 h-3 text-[#FBBF24] shrink-0" />
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 text-[10px] text-[#A69FB4] truncate mt-0.5">
-                              <span className="truncate">{charDef.archetypeName}</span>
-                              <span aria-hidden="true">·</span>
-                              <span
-                                className={`font-semibold whitespace-nowrap ${
-                                  p.isReady ? 'text-[#4ADE80]' : 'text-[#FBBF24]'
-                                }`}
-                              >
-                                {p.isReady ? 'Ready' : 'Choosing'}
-                              </span>
-                            </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {room.players.map((p) => {
+                    const charDef =
+                      CHARACTER_ROSTER[p.characterId] || CHARACTER_ROSTER[CharacterId.Zombie];
+                    const isSelf = p.id === localId;
+                    return (
+                      <div
+                        key={p.id}
+                        className={`h-[56px] px-2.5 rounded-xl border flex items-center gap-2.5 ${
+                          isSelf
+                            ? 'bg-[#221B32] border-[#4ADE80]/55'
+                            : 'bg-[#1A1526] border-[#312844]'
+                        }`}
+                      >
+                        {renderHeroPortrait(
+                          `slot-${p.id}-${p.characterId}`,
+                          charDef.portraitUrl,
+                          charDef.archetypeName,
+                          p.color || charDef.accentColor,
+                          'w-9 h-9'
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs font-bold text-[#F3EFE6] truncate">
+                              {p.name}
+                              {isSelf ? ' (You)' : ''}
+                            </span>
+                            {p.isHost && (
+                              <Crown className="w-3 h-3 text-[#FBBF24] shrink-0" />
+                            )}
                           </div>
-                          {isHost && !isSelf && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                soundEngine.playUiClick(560);
-                                networkManager.promoteLeader(p.id);
-                              }}
-                              title="Make Party Leader"
-                              className="p-1 rounded-md bg-[#2B213D] hover:bg-[#3D2F56] text-[#FBBF24] border border-[#523F6E] active:scale-90 transition-transform shrink-0"
+                          <div className="flex items-center gap-1 text-[10px] text-[#A69FB4] truncate mt-0.5">
+                            <span className="truncate">{charDef.archetypeName}</span>
+                            <span aria-hidden="true">·</span>
+                            <span
+                              className={`font-semibold whitespace-nowrap ${
+                                p.isReady ? 'text-[#4ADE80]' : 'text-[#FBBF24]'
+                              }`}
                             >
-                              <Crown className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                              {p.isReady ? 'Ready' : 'Choosing'}
+                            </span>
+                          </div>
                         </div>
-                      );
-                    })}
+                        {isHost && !isSelf && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playUiClick(560);
+                              networkManager.promoteLeader(p.id);
+                            }}
+                            title="Make Party Leader"
+                            className="p-1 rounded-md bg-[#2B213D] hover:bg-[#3D2F56] text-[#FBBF24] border border-[#523F6E] active:scale-90 transition-transform shrink-0"
+                          >
+                            <Crown className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
 
-                    {Array.from({ length: Math.max(0, room.maxPlayers - room.players.length) }).map(
-                      (_, i) => (
-                        <div
-                          key={`empty-${i}`}
-                          className="h-[56px] px-2.5 rounded-xl border border-dashed border-[#322846] bg-[#130F1C] flex items-center justify-center text-[11px] text-[#7A708D]"
-                        >
-                          Waiting for player...
-                        </div>
-                      )
-                    )}
-                  </div>
-                )}
+                  {Array.from({ length: Math.max(0, room.maxPlayers - room.players.length) }).map(
+                    (_, i) => (
+                      <div
+                        key={`empty-${i}`}
+                        className="h-[56px] px-2.5 rounded-xl border border-dashed border-[#322846] bg-[#130F1C] flex items-center justify-center text-[11px] text-[#7A708D]"
+                      >
+                        Waiting for player...
+                      </div>
+                    )
+                  )}
+                </div>
 
                 {/* Expedition Difficulty Sync Strip */}
                 <div className="flex items-center justify-between mt-2 px-2.5 py-1.5 rounded-xl bg-[#1A1526] border border-[#2E2540]">
@@ -767,37 +589,26 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
 
                   <div className="col-span-5">
                     <span className="block text-[10px] font-semibold text-[#A69FB4] mb-1">
-                      {selectedMode.includes('PVP') ? 'Brawl Setup' : 'Party Size'}
+                      Party Size
                     </span>
-                    <div className={`grid ${selectedMode.includes('PVP') ? 'grid-cols-4' : 'grid-cols-3'} gap-1`}>
-                      {(selectedMode.includes('PVP') ? [2, 4, 6, 8] : [2, 3, 4]).map((n) => {
-                        const label = selectedMode.includes('PVP')
-                          ? n === 2
-                            ? '1v1'
-                            : n === 4
-                            ? '2v2'
-                            : n === 6
-                            ? '3v3'
-                            : '4v4'
-                          : `${n}P`;
-                        return (
-                          <button
-                            key={n}
-                            type="button"
-                            onClick={() => {
-                              soundEngine.playUiClick(500);
-                              setMaxPlayers(n);
-                            }}
-                            className={`h-9 rounded-lg text-xs font-bold tabular-nums border active:scale-95 transition-colors whitespace-nowrap ${
-                              maxPlayers === n
-                                ? 'bg-[#4ADE80]/20 border-[#4ADE80] text-[#4ADE80]'
-                                : 'bg-[#1C1727] border-[#352B48] text-[#B8AFC6]'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
+                    <div className="grid grid-cols-3 gap-1">
+                      {[2, 3, 4].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playUiClick(500);
+                            setMaxPlayers(n);
+                          }}
+                          className={`h-9 rounded-lg text-xs font-bold tabular-nums border active:scale-95 transition-colors whitespace-nowrap ${
+                            maxPlayers === n
+                              ? 'bg-[#4ADE80]/20 border-[#4ADE80] text-[#4ADE80]'
+                              : 'bg-[#1C1727] border-[#352B48] text-[#B8AFC6]'
+                          }`}
+                        >
+                          {n} Players
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -1029,7 +840,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                   className="min-h-[40px] px-5 rounded-xl bg-[#4ADE80] hover:bg-[#3FC772] text-[#0F1E14] text-xs font-bold tracking-wide shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                 >
                   <Crown className="w-4 h-4 text-[#0F1E14]" />
-                  <span>{room.mode.includes('PVP') ? 'Start Base Brawl' : 'Start Party Game'}</span>
+                  <span>Start Dungeon Run</span>
                 </button>
               ) : (
                 <button
