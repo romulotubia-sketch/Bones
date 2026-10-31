@@ -11,8 +11,11 @@ import {
   X,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
-import { CHARACTER_LIST, CHARACTER_ROSTER } from '../data/zombieData';
-import { DIFFICULTY_CONFIGS } from '../data/difficultyData';
+import {
+  CHARACTER_LIST,
+  CHARACTER_ROSTER,
+  DIFFICULTY_CONFIGS,
+} from '../data/zombieData';
 import { NetworkManager } from '../multiplayer/NetworkManager';
 import { MultiplayerMode, RoomInfo } from '../multiplayer/networkTypes';
 import { CharacterId, DifficultyLevel } from '../types/game';

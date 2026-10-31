@@ -811,6 +811,36 @@ export interface HudSnapshot {
       color: string;
     }[];
   } | null;
+  pvpMatchInfo?: PvpMatchHudInfo | null;
+  myPvpTeam?: 'BLUE' | 'RED';
+}
+
+export interface PvpMatchHudInfo {
+  blueScore: number;
+  redScore: number;
+  matchTime: number;
+  blueBase: {
+    hp: number;
+    maxHp: number;
+  };
+  redBase: {
+    hp: number;
+    maxHp: number;
+  };
+  myRespawnTimer: number;
+  myInvulnTimer: number;
+  isMatchEnded: boolean;
+  winnerTeam?: 'BLUE' | 'RED';
+  myTeam?: 'BLUE' | 'RED';
+  players: Array<{
+    id: string;
+    name: string;
+    team: 'BLUE' | 'RED';
+    isSelf?: boolean;
+    kills: number;
+    deaths: number;
+    damage: number;
+  }>;
 }
 
 export type SkillSlotKey = 'NORMAL_0' | 'NORMAL_1' | 'ULTIMATE';

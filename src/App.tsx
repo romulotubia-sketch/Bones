@@ -104,6 +104,7 @@ const INITIAL_HUD: HudSnapshot = {
     gridOffsetY: 0,
     isPanned: false,
   },
+  pvpMatchInfo: null,
 };
 
 // Isolated memoized canvas host inside the Landscape Stage

@@ -1,9 +1,10 @@
-import { CharacterId } from '../types/game';
+import { CharacterId, DifficultyLevel } from '../types/game';
 import {
   ClientMessage,
   EnemySyncState,
   MultiplayerMode,
   PlayerTransformSync,
+  PvpTeam,
   RoomInfo,
   RoomPlayer,
   ServerMessage,
@@ -343,6 +344,7 @@ export class NetworkManager {
     characterId: CharacterId,
     mode: MultiplayerMode,
     maxPlayers = 4,
+    difficulty?: DifficultyLevel,
     customHost?: string
   ): Promise<void> {
     await this.connect(customHost);
@@ -352,6 +354,7 @@ export class NetworkManager {
       characterId,
       mode,
       maxPlayers,
+      difficulty,
     });
   }
 
@@ -380,12 +383,24 @@ export class NetworkManager {
     this.send({ type: 'C2S_SET_READY', ready });
   }
 
+  public sendSetTeam(team: PvpTeam): void {
+    this.send({ type: 'C2S_SET_TEAM', team });
+  }
+
+  public promoteLeader(targetPlayerId: string): void {
+    this.send({ type: 'C2S_PROMOTE_LEADER', targetPlayerId });
+  }
+
+  public setDifficulty(difficulty: DifficultyLevel): void {
+    this.send({ type: 'C2S_SET_DIFFICULTY', difficulty });
+  }
+
   public selectCharacter(characterId: CharacterId): void {
     this.send({ type: 'C2S_SELECT_CHARACTER', characterId });
   }
 
-  public startGame(): void {
-    this.send({ type: 'C2S_START_GAME' });
+  public startGame(difficulty?: DifficultyLevel): void {
+    this.send({ type: 'C2S_START_GAME', difficulty });
   }
 
   public sendTransform(transform: Omit<PlayerTransformSync, 'id'>): void {
@@ -457,6 +472,18 @@ export class NetworkManager {
       type: 'C2S_ADVANCE_FLOOR',
       floorNumber,
       seed,
+    });
+  }
+
+  public sendReturnPartyToGuild(): void {
+    this.send({
+      type: 'C2S_RETURN_TO_GUILD',
+    });
+  }
+
+  public sendRequestRematch(): void {
+    this.send({
+      type: 'C2S_REQUEST_REMATCH',
     });
   }
 

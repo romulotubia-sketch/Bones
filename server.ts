@@ -9,11 +9,12 @@ import type {
   EnemySyncState,
   MultiplayerMode,
   PlayerTransformSync,
+  PvpTeam,
   RoomInfo,
   RoomPlayer,
   ServerMessage,
 } from './src/multiplayer/networkTypes.ts';
-import type { CharacterId } from './src/types/game.ts';
+import type { CharacterId, DifficultyLevel } from './src/types/game.ts';
 import { registerDownloadRoutes } from './serverDownload.ts';
 
 const DEFAULT_CHARACTER: CharacterId = 'ZOMBIE' as CharacterId;
@@ -41,6 +42,7 @@ interface ServerRoom {
   inGame: boolean;
   seed: number;
   floorNumber: number;
+  difficulty?: DifficultyLevel;
   syncInterval: NodeJS.Timeout | null;
   enemies: Map<number, EnemySyncState>;
   recentDamageEvents: Map<string, number>;
@@ -79,6 +81,7 @@ function serializeRoom(room: ServerRoom): RoomInfo {
     inGame: room.inGame,
     seed: room.seed,
     floorNumber: room.floorNumber,
+    difficulty: room.difficulty,
   };
 }
 
@@ -183,6 +186,7 @@ async function startServer() {
             peer.player.isHost = true;
             peer.player.isReady = true;
             peer.player.color = PLAYER_COLORS[0];
+            peer.player.team = 'BLUE';
             peer.roomCode = code;
 
             const room: ServerRoom = {
@@ -194,6 +198,7 @@ async function startServer() {
               inGame: false,
               seed: Math.floor(Math.random() * 1000000),
               floorNumber: 0,
+              difficulty: msg.difficulty,
               syncInterval: null,
               enemies: new Map<number, EnemySyncState>(),
               recentDamageEvents: new Map<string, number>(),
@@ -244,11 +249,15 @@ async function startServer() {
               return;
             }
 
+            const blueCount = Array.from(room.players.values()).filter((p) => (p.player.team || 'BLUE') === 'BLUE').length;
+            const redCount = Array.from(room.players.values()).filter((p) => p.player.team === 'RED').length;
+
             peer.player.name = (msg.playerName || 'Adventurer').trim().slice(0, 14);
             peer.player.characterId = msg.characterId || DEFAULT_CHARACTER;
             peer.player.isHost = false;
             peer.player.isReady = false;
             peer.player.color = PLAYER_COLORS[room.players.size % PLAYER_COLORS.length];
+            peer.player.team = blueCount <= redCount ? 'BLUE' : 'RED';
             peer.roomCode = code;
 
             room.players.set(peer.id, peer);
@@ -292,6 +301,53 @@ async function startServer() {
             break;
           }
 
+          case 'C2S_SET_TEAM': {
+            if (!peer.roomCode) return;
+            const room = rooms.get(peer.roomCode);
+            if (!room) return;
+            peer.player.team = msg.team;
+            broadcastToRoom(room, {
+              type: 'S2C_ROOM_STATE',
+              room: serializeRoom(room),
+            });
+            break;
+          }
+
+          case 'C2S_PROMOTE_LEADER': {
+            if (!peer.roomCode) return;
+            const room = rooms.get(peer.roomCode);
+            if (!room) return;
+            if (room.hostId !== peer.id) return;
+            const targetPeer = room.players.get(msg.targetPlayerId);
+            if (!targetPeer) return;
+            room.hostId = targetPeer.id;
+            for (const p of room.players.values()) {
+              p.player.isHost = p.id === targetPeer.id;
+            }
+            broadcastToRoom(room, {
+              type: 'S2C_HOST_CHANGED',
+              newHostId: targetPeer.id,
+            });
+            broadcastToRoom(room, {
+              type: 'S2C_ROOM_STATE',
+              room: serializeRoom(room),
+            });
+            break;
+          }
+
+          case 'C2S_SET_DIFFICULTY': {
+            if (!peer.roomCode) return;
+            const room = rooms.get(peer.roomCode);
+            if (!room) return;
+            if (room.hostId !== peer.id) return;
+            room.difficulty = msg.difficulty;
+            broadcastToRoom(room, {
+              type: 'S2C_ROOM_STATE',
+              room: serializeRoom(room),
+            });
+            break;
+          }
+
           case 'C2S_SELECT_CHARACTER': {
             if (!peer.roomCode) return;
             const room = rooms.get(peer.roomCode);
@@ -314,6 +370,10 @@ async function startServer() {
                 message: 'Only the party leader can start the game.',
               });
               return;
+            }
+
+            if (msg.difficulty) {
+              room.difficulty = msg.difficulty;
             }
 
             room.inGame = true;
@@ -537,6 +597,43 @@ async function startServer() {
               type: 'S2C_FLOOR_SYNC',
               floorNumber: msg.floorNumber,
               seed: msg.seed,
+            });
+            break;
+          }
+
+          case 'C2S_RETURN_TO_GUILD': {
+            if (!peer.roomCode) return;
+            const room = rooms.get(peer.roomCode);
+            if (!room) return;
+            room.inGame = false;
+            room.floorNumber = 0;
+            room.enemies.clear();
+            room.recentDamageEvents.clear();
+            broadcastToRoom(room, {
+              type: 'S2C_FLOOR_SYNC',
+              floorNumber: 0,
+              seed: Math.floor(Math.random() * 1000000),
+            });
+            broadcastToRoom(room, {
+              type: 'S2C_ROOM_STATE',
+              room: serializeRoom(room),
+            });
+            break;
+          }
+
+          case 'C2S_REQUEST_REMATCH': {
+            if (!peer.roomCode) return;
+            const room = rooms.get(peer.roomCode);
+            if (!room) return;
+            room.inGame = true;
+            room.seed = Math.floor(Math.random() * 1000000);
+            room.floorNumber = 0;
+            room.enemies.clear();
+            room.recentDamageEvents.clear();
+            broadcastToRoom(room, {
+              type: 'S2C_GAME_STARTED',
+              seed: room.seed,
+              floorNumber: 0,
             });
             break;
           }
