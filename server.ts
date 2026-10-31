@@ -4,21 +4,19 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
-import { ServerCoopSession } from './serverCoopEngine.ts';
-import { ServerPvpSession } from './serverPvpEngine.ts';
-import { registerDownloadRoutes } from './serverDownload.ts';
 import type {
   ClientMessage,
+  EnemySyncState,
   MultiplayerMode,
-  PvpTeam,
+  PlayerTransformSync,
   RoomInfo,
   RoomPlayer,
   ServerMessage,
 } from './src/multiplayer/networkTypes.ts';
-import { CharacterId, DifficultyLevel } from './src/types/game.ts';
+import type { CharacterId } from './src/types/game.ts';
+import { registerDownloadRoutes } from './serverDownload.ts';
 
-const DEFAULT_CHARACTER: CharacterId = CharacterId.Zombie;
-const DEFAULT_DIFFICULTY: DifficultyLevel = DifficultyLevel.Easy;
+const DEFAULT_CHARACTER: CharacterId = 'ZOMBIE' as CharacterId;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,6 +29,7 @@ interface ConnectedPeer {
   ws: WebSocket;
   roomCode: string | null;
   player: RoomPlayer;
+  latestTransform?: PlayerTransformSync;
 }
 
 interface ServerRoom {
@@ -42,16 +41,17 @@ interface ServerRoom {
   inGame: boolean;
   seed: number;
   floorNumber: number;
-  difficulty: DifficultyLevel;
-  syncInterval: ReturnType<typeof setInterval> | null;
-  session: ServerCoopSession;
-  pvpSession?: ServerPvpSession;
+  syncInterval: NodeJS.Timeout | null;
+  enemies: Map<number, EnemySyncState>;
+  recentDamageEvents: Map<string, number>;
+  activeRoomId?: number;
+  wavesRemaining?: number;
 }
 
 const rooms = new Map<string, ServerRoom>();
 const peers = new Map<WebSocket, ConnectedPeer>();
 
-const PLAYER_COLORS = ['#4ADE80', '#38BDF8', '#FBBF24', '#C084FC'];
+const PLAYER_COLORS = ['#4ADE80', '#38BDF8', '#FBBF24', '#C084FC', '#F43F5E'];
 
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -67,7 +67,9 @@ function generateRoomCode(): string {
 }
 
 function serializeRoom(room: ServerRoom): RoomInfo {
-  const playersList: RoomPlayer[] = Array.from(room.players.values()).map((p) => p.player);
+  const playersList: RoomPlayer[] = Array.from(room.players.values()).map(
+    (p) => p.player
+  );
   return {
     code: room.code,
     mode: room.mode,
@@ -77,14 +79,13 @@ function serializeRoom(room: ServerRoom): RoomInfo {
     inGame: room.inGame,
     seed: room.seed,
     floorNumber: room.floorNumber,
-    difficulty: room.difficulty,
   };
 }
 
-function broadcastToRoom(room: ServerRoom, message: ServerMessage, excludePlayerId?: string) {
+function broadcastToRoom(room: ServerRoom, message: ServerMessage, excludeWs?: WebSocket) {
   const data = JSON.stringify(message);
   for (const peer of room.players.values()) {
-    if (peer.id !== excludePlayerId && peer.ws.readyState === WebSocket.OPEN) {
+    if (peer.ws !== excludeWs && peer.ws.readyState === WebSocket.OPEN) {
       peer.ws.send(data);
     }
   }
@@ -96,26 +97,6 @@ function sendToPeer(ws: WebSocket, message: ServerMessage) {
   }
 }
 
-function startRoomSimulationLoop(room: ServerRoom) {
-  if (room.syncInterval) clearInterval(room.syncInterval);
-  room.syncInterval = setInterval(() => {
-    if (room.players.size === 0) {
-      if (room.syncInterval) {
-        clearInterval(room.syncInterval);
-        room.syncInterval = null;
-      }
-      return;
-    }
-    if (room.pvpSession) {
-      room.pvpSession.step(0.05);
-      broadcastToRoom(room, room.pvpSession.buildSyncMessage());
-    } else {
-      room.session.step(0.05);
-      broadcastToRoom(room, room.session.buildWorldSyncMessage());
-    }
-  }, 50);
-}
-
 function cleanupPeerFromRoom(peer: ConnectedPeer) {
   if (!peer.roomCode) return;
   const room = rooms.get(peer.roomCode);
@@ -124,51 +105,34 @@ function cleanupPeerFromRoom(peer: ConnectedPeer) {
     return;
   }
 
-  const departedName = peer.player.name;
   room.players.delete(peer.id);
   peer.roomCode = null;
 
   if (room.players.size === 0) {
     if (room.syncInterval) {
       clearInterval(room.syncInterval);
-      room.syncInterval = null;
     }
     rooms.delete(room.code);
     return;
   }
 
-  // Elect new Party Leader immediately if the current leader disconnected
+  // If host left, elect new host immediately
   let newHostId: string | undefined;
-  let newHostName: string | undefined;
   if (room.hostId === peer.id) {
-    for (const p of room.players.values()) {
-      p.player.isHost = false;
-    }
     const nextPeer = Array.from(room.players.values())[0];
     room.hostId = nextPeer.id;
     nextPeer.player.isHost = true;
-    nextPeer.player.isReady = true;
     newHostId = nextPeer.id;
-    newHostName = nextPeer.player.name;
     broadcastToRoom(room, {
       type: 'S2C_HOST_CHANGED',
       newHostId: nextPeer.id,
-      newHostName: nextPeer.player.name,
     });
-  }
-
-  if (room.pvpSession) {
-    room.pvpSession.handlePlayerDisconnect(peer.id);
-  } else {
-    room.session.handlePlayerDisconnect(peer.id);
   }
 
   broadcastToRoom(room, {
     type: 'S2C_PLAYER_LEFT',
     playerId: peer.id,
-    playerName: departedName,
     newHostId,
-    newHostName,
   });
 
   broadcastToRoom(room, {
@@ -177,86 +141,13 @@ function cleanupPeerFromRoom(peer: ConnectedPeer) {
   });
 }
 
-function createServerRoom(
-  code: string,
-  mode: MultiplayerMode,
-  hostPeer: ConnectedPeer,
-  maxPlayers: number,
-  difficulty: DifficultyLevel
-): ServerRoom {
-  const initialSeed = Math.floor(Math.random() * 1000000) + 1;
-  let roomRef!: ServerRoom;
-
-  const isPvp = mode === 'ONLINE_PVP' || mode === 'LAN_PVP';
-  let pvpSession: ServerPvpSession | undefined;
-
-  if (isPvp) {
-    hostPeer.player.team = 'BLUE';
-    hostPeer.player.color = '#38BDF8';
-    pvpSession = new ServerPvpSession({
-      broadcast: (msg, excludePlayerId) => {
-        if (roomRef) broadcastToRoom(roomRef, msg, excludePlayerId);
-      },
-      getPartyPlayers: () =>
-        roomRef
-          ? Array.from(roomRef.players.values()).map((p) => ({
-              id: p.id,
-              name: p.player.name,
-              characterId: p.player.characterId,
-              team: p.player.team,
-            }))
-          : [],
-    });
-  }
-
-  const session = new ServerCoopSession(
-    {
-      broadcast: (msg, excludePlayerId) => {
-        if (roomRef) broadcastToRoom(roomRef, msg, excludePlayerId);
-      },
-      getDifficulty: () => (roomRef ? roomRef.difficulty : difficulty),
-      getPartyPlayers: () =>
-        roomRef
-          ? Array.from(roomRef.players.values()).map((p) => ({
-              id: p.id,
-              name: p.player.name,
-              characterId: p.player.characterId,
-            }))
-          : [],
-    },
-    initialSeed
-  );
-
-  roomRef = {
-    code,
-    mode,
-    hostId: hostPeer.id,
-    players: new Map([[hostPeer.id, hostPeer]]),
-    maxPlayers,
-    inGame: false,
-    seed: initialSeed,
-    floorNumber: 0,
-    difficulty,
-    syncInterval: null,
-    session,
-    pvpSession,
-  };
-
-  if (pvpSession) {
-    pvpSession.ensurePartyPlayersSynced();
-  } else {
-    session.ensurePartyPlayersSynced();
-  }
-  return roomRef;
-}
-
 async function startServer() {
   const app = express();
   const server = http.createServer(app);
 
   app.use(express.json());
 
-  // WebSocket Server setup on same port (HTTP upgrade) — shared by Online Co-op & Local Wi-Fi Co-op
+  // WebSocket Server setup on same port (HTTP upgrade)
   const wss = new WebSocketServer({ server, path: '/ws' });
 
   wss.on('connection', (ws) => {
@@ -267,7 +158,7 @@ async function startServer() {
       roomCode: null,
       player: {
         id: peerId,
-        name: 'Adventurer',
+        name: 'Player',
         characterId: DEFAULT_CHARACTER,
         isHost: false,
         isReady: false,
@@ -286,26 +177,30 @@ async function startServer() {
             cleanupPeerFromRoom(peer);
 
             const code = generateRoomCode();
-            const isPvp = (msg.mode || '').includes('PVP');
-            const maxPlayers = isPvp
-              ? Math.max(2, Math.min(8, msg.maxPlayers ?? 4))
-              : Math.max(2, Math.min(4, msg.maxPlayers ?? 4));
-            const difficulty = msg.difficulty ?? DEFAULT_DIFFICULTY;
+            const maxPlayers = Math.max(2, Math.min(4, msg.maxPlayers ?? 4));
             peer.player.name = (msg.playerName || 'Adventurer').trim().slice(0, 14);
             peer.player.characterId = msg.characterId || DEFAULT_CHARACTER;
             peer.player.isHost = true;
             peer.player.isReady = true;
-            peer.player.team = isPvp ? 'BLUE' : undefined;
-            peer.player.color = isPvp ? '#38BDF8' : PLAYER_COLORS[0];
+            peer.player.color = PLAYER_COLORS[0];
             peer.roomCode = code;
 
-            const room = createServerRoom(
+            const room: ServerRoom = {
               code,
-              msg.mode || 'ONLINE_COOP',
-              peer,
+              mode: msg.mode || 'ONLINE_COOP',
+              hostId: peer.id,
+              players: new Map([[peer.id, peer]]),
               maxPlayers,
-              difficulty
-            );
+              inGame: false,
+              seed: Math.floor(Math.random() * 1000000),
+              floorNumber: 0,
+              syncInterval: null,
+              enemies: new Map<number, EnemySyncState>(),
+              recentDamageEvents: new Map<string, number>(),
+              activeRoomId: 0,
+              wavesRemaining: 0,
+            };
+
             rooms.set(code, room);
 
             sendToPeer(ws, {
@@ -325,7 +220,7 @@ async function startServer() {
             if (!room) {
               sendToPeer(ws, {
                 type: 'S2C_ERROR',
-                message: `Party code "${code}" not found.`,
+                message: `Room code "${code}" not found.`,
                 code: 'ROOM_NOT_FOUND',
               });
               return;
@@ -334,57 +229,29 @@ async function startServer() {
             if (room.players.size >= room.maxPlayers) {
               sendToPeer(ws, {
                 type: 'S2C_ERROR',
-                message: `Party "${code}" is full (max ${room.maxPlayers} players).`,
+                message: `Room "${code}" is full (maximum ${room.maxPlayers} players).`,
                 code: 'ROOM_FULL',
               });
               return;
             }
 
-            if (room.inGame && room.floorNumber > 0) {
+            if (room.inGame) {
               sendToPeer(ws, {
                 type: 'S2C_ERROR',
-                message: `Party "${code}" is already battling in the Graveyard.`,
+                message: `A game is already in progress in room "${code}".`,
                 code: 'ROOM_IN_GAME',
               });
               return;
             }
 
-            const isPvp = room.mode.includes('PVP');
-            let assignedTeam: PvpTeam | undefined;
-            let assignedColor = PLAYER_COLORS[0];
-
-            if (isPvp) {
-              let blueCount = 0;
-              let redCount = 0;
-              for (const p of room.players.values()) {
-                if (p.player.team === 'BLUE') blueCount++;
-                else if (p.player.team === 'RED') redCount++;
-              }
-              assignedTeam = blueCount <= redCount ? 'BLUE' : 'RED';
-              assignedColor = assignedTeam === 'BLUE' ? '#38BDF8' : '#F43F5E';
-            } else {
-              const usedColors = new Set(
-                Array.from(room.players.values()).map((p) => p.player.color)
-              );
-              assignedColor =
-                PLAYER_COLORS.find((c) => !usedColors.has(c)) ??
-                PLAYER_COLORS[room.players.size % PLAYER_COLORS.length];
-            }
-
             peer.player.name = (msg.playerName || 'Adventurer').trim().slice(0, 14);
             peer.player.characterId = msg.characterId || DEFAULT_CHARACTER;
             peer.player.isHost = false;
-            peer.player.isReady = true;
-            peer.player.team = assignedTeam;
-            peer.player.color = assignedColor;
+            peer.player.isReady = false;
+            peer.player.color = PLAYER_COLORS[room.players.size % PLAYER_COLORS.length];
             peer.roomCode = code;
 
             room.players.set(peer.id, peer);
-            if (room.pvpSession) {
-              room.pvpSession.ensurePartyPlayersSynced();
-            } else {
-              room.session.ensurePartyPlayersSynced();
-            }
 
             sendToPeer(ws, {
               type: 'S2C_ROOM_JOINED',
@@ -398,23 +265,13 @@ async function startServer() {
                 type: 'S2C_PLAYER_JOINED',
                 player: peer.player,
               },
-              peer.id
+              ws
             );
 
             broadcastToRoom(room, {
               type: 'S2C_ROOM_STATE',
               room: serializeRoom(room),
             });
-
-            // If party is currently hanging out in the Guild Hall (floor 0), drop newcomer right in
-            if (room.inGame && room.floorNumber === 0) {
-              sendToPeer(ws, {
-                type: 'S2C_GAME_STARTED',
-                seed: room.seed,
-                floorNumber: 0,
-                difficulty: room.difficulty,
-              });
-            }
             break;
           }
 
@@ -440,59 +297,6 @@ async function startServer() {
             const room = rooms.get(peer.roomCode);
             if (!room) return;
             peer.player.characterId = msg.characterId;
-            room.session.ensurePartyPlayersSynced();
-            broadcastToRoom(room, {
-              type: 'S2C_ROOM_STATE',
-              room: serializeRoom(room),
-            });
-            break;
-          }
-
-          case 'C2S_SET_DIFFICULTY': {
-            if (!peer.roomCode) return;
-            const room = rooms.get(peer.roomCode);
-            if (!room) return;
-            if (room.hostId !== peer.id) {
-              sendToPeer(ws, {
-                type: 'S2C_ERROR',
-                message: 'Only the Party Leader can change difficulty.',
-              });
-              return;
-            }
-            room.difficulty = msg.difficulty;
-            broadcastToRoom(room, {
-              type: 'S2C_ROOM_STATE',
-              room: serializeRoom(room),
-            });
-            break;
-          }
-
-          case 'C2S_PROMOTE_LEADER': {
-            if (!peer.roomCode) return;
-            const room = rooms.get(peer.roomCode);
-            if (!room) return;
-            if (room.hostId !== peer.id) {
-              sendToPeer(ws, {
-                type: 'S2C_ERROR',
-                message: 'Only the current Party Leader can promote another member.',
-              });
-              return;
-            }
-            const targetPeer = room.players.get(msg.targetPlayerId);
-            if (!targetPeer) return;
-
-            for (const p of room.players.values()) {
-              p.player.isHost = false;
-            }
-            room.hostId = targetPeer.id;
-            targetPeer.player.isHost = true;
-            targetPeer.player.isReady = true;
-
-            broadcastToRoom(room, {
-              type: 'S2C_HOST_CHANGED',
-              newHostId: targetPeer.id,
-              newHostName: targetPeer.player.name,
-            });
             broadcastToRoom(room, {
               type: 'S2C_ROOM_STATE',
               room: serializeRoom(room),
@@ -507,115 +311,103 @@ async function startServer() {
             if (room.hostId !== peer.id) {
               sendToPeer(ws, {
                 type: 'S2C_ERROR',
-                message: 'Only the Party Leader can start the match.',
+                message: 'Only the party leader can start the game.',
               });
               return;
-            }
-
-            const isPvp = room.mode === 'ONLINE_PVP' || room.mode === 'LAN_PVP';
-
-            if (room.players.size < 1 || room.players.size > 8) {
-              sendToPeer(ws, {
-                type: 'S2C_ERROR',
-                message: 'Match requires 1–8 players in the lobby.',
-                code: 'PARTY_SIZE_REQUIRED',
-              });
-              return;
-            }
-
-            if (msg.difficulty) {
-              room.difficulty = msg.difficulty;
             }
 
             room.inGame = true;
-            room.seed = Math.floor(Math.random() * 1000000) + 1;
-            room.floorNumber = isPvp ? 99 : 1; // 99 indicates Base Brawl Arena!
+            room.seed = Math.floor(Math.random() * 1000000);
+            room.floorNumber = 0; // Sanctuary Guild Hall party start
+            room.enemies.clear();
+            room.recentDamageEvents.clear();
 
-            if (isPvp && room.pvpSession) {
-              let bCount = 0;
-              let rCount = 0;
-              for (const p of room.players.values()) {
-                if (p.player.team === 'BLUE') bCount++;
-                else if (p.player.team === 'RED') rCount++;
+            // Setup 20Hz transform sync loop for this room
+            if (room.syncInterval) clearInterval(room.syncInterval);
+            room.syncInterval = setInterval(() => {
+              if (room.players.size === 0) {
+                if (room.syncInterval) clearInterval(room.syncInterval);
+                return;
               }
+              const transforms: PlayerTransformSync[] = [];
               for (const p of room.players.values()) {
-                if (!p.player.team) {
-                  p.player.team = bCount <= rCount ? 'BLUE' : 'RED';
-                  if (p.player.team === 'BLUE') bCount++;
-                  else rCount++;
+                if (p.latestTransform) {
+                  transforms.push(p.latestTransform);
                 }
-                p.player.color = p.player.team === 'BLUE' ? '#38BDF8' : '#F43F5E';
-                room.pvpSession.setPlayerTeam(p.id, p.player.team);
               }
-              room.pvpSession.handleRequestRematch();
-            } else {
-              room.session.loadFloor(1, room.seed, room.difficulty);
-            }
 
-            startRoomSimulationLoop(room);
+              // Check if all players in party are downed (Party Defeat condition)
+              if (room.inGame && transforms.length > 0 && transforms.every((t) => t.isDowned)) {
+                broadcastToRoom(room, { type: 'S2C_PARTY_WIPE' });
+              }
 
-            broadcastToRoom(room, {
-              type: 'S2C_ROOM_STATE',
-              room: serializeRoom(room),
-            });
+              if (transforms.length > 0) {
+                broadcastToRoom(room, {
+                  type: 'S2C_SYNC_WORLD',
+                  players: transforms,
+                  enemies: Array.from(room.enemies.values()),
+                  activeRoomId: room.activeRoomId,
+                  wavesRemaining: room.wavesRemaining,
+                });
+              }
+            }, 50);
+
             broadcastToRoom(room, {
               type: 'S2C_GAME_STARTED',
               seed: room.seed,
               floorNumber: room.floorNumber,
-              difficulty: room.difficulty,
-            });
-            break;
-          }
-
-          case 'C2S_START_DUNGEON_RUN': {
-            if (!peer.roomCode) return;
-            const room = rooms.get(peer.roomCode);
-            if (!room) return;
-            if (room.hostId !== peer.id) {
-              sendToPeer(ws, {
-                type: 'S2C_ERROR',
-                message: 'Only the Party Leader can open the Graveyard Gate.',
-              });
-              return;
-            }
-            const isPvp = room.mode === 'ONLINE_PVP' || room.mode === 'LAN_PVP';
-            room.difficulty = msg.difficulty ?? room.difficulty;
-            room.inGame = true;
-            room.seed = Math.floor(Math.random() * 1000000) + 1;
-            room.floorNumber = isPvp ? 99 : 1;
-            if (isPvp && room.pvpSession) {
-              room.pvpSession.handleRequestRematch();
-            } else {
-              room.session.loadFloor(1, room.seed, room.difficulty);
-            }
-            startRoomSimulationLoop(room);
-
-            broadcastToRoom(room, {
-              type: 'S2C_ROOM_STATE',
-              room: serializeRoom(room),
-            });
-            broadcastToRoom(room, {
-              type: 'S2C_FLOOR_SYNC',
-              floorNumber: room.floorNumber,
-              seed: room.seed,
-              difficulty: room.difficulty,
             });
             break;
           }
 
           case 'C2S_UPDATE_TRANSFORM': {
             if (!peer.roomCode) return;
+            peer.latestTransform = {
+              ...msg.transform,
+              id: peer.id,
+            };
+            break;
+          }
+
+          case 'C2S_SYNC_ENEMIES': {
+            if (!peer.roomCode) return;
             const room = rooms.get(peer.roomCode);
             if (!room) return;
-            if (room.pvpSession) {
-              room.pvpSession.syncPlayerTransform(peer.id, msg.transform);
-            } else {
-              room.session.syncPlayerTransform(
-                peer.id,
-                peer.player.name,
-                peer.player.characterId,
-                msg.transform
-              );
+            // The room host maintains authoritative enemy positions, movement, and wave counts
+            if (room.hostId === peer.id) {
+              room.activeRoomId = msg.roomId;
+              room.wavesRemaining = msg.wavesRemaining;
+
+              const incomingIds = new Set(msg.enemies.map((e) => e.id));
+              for (const e of msg.enemies) {
+                const existing = room.enemies.get(e.id);
+                if (existing) {
+                  // Keep server-authoritative HP if damaged on server, update position & AI
+                  existing.x = e.x;
+                  existing.y = e.y;
+                  existing.vx = e.vx;
+                  existing.vy = e.vy;
+                  existing.facingX = e.facingX;
+                  existing.aiState = e.aiState;
+                  existing.telegraphType = e.telegraphType;
+                  existing.telegraphAngle = e.telegraphAngle;
+                  existing.hitFlashTimer = Math.max(existing.hitFlashTimer, e.hitFlashTimer);
+                  existing.stunTimer = e.stunTimer;
+                  existing.plagueTimer = e.plagueTimer;
+                  existing.infectionStacks = e.infectionStacks;
+                  existing.roomId = e.roomId;
+                } else {
+                  // Newly spawned wave enemy
+                  room.enemies.set(e.id, { ...e });
+                }
+              }
+
+              // Remove enemies that were despawned or defeated on host
+              for (const id of Array.from(room.enemies.keys())) {
+                if (!incomingIds.has(id)) {
+                  room.enemies.delete(id);
+                }
+              }
             }
             break;
           }
@@ -624,24 +416,76 @@ async function startServer() {
             if (!peer.roomCode) return;
             const room = rooms.get(peer.roomCode);
             if (!room) return;
-            room.session.handleDamageEnemy(
-              peer.id,
-              msg.eventId,
-              msg.enemyId,
-              msg.damage,
-              msg.isCrit,
-              msg.hitX,
-              msg.hitY,
-              msg.statusEffects
-            );
-            break;
-          }
 
-          case 'C2S_PLAYER_HEAL': {
-            if (!peer.roomCode) return;
-            const room = rooms.get(peer.roomCode);
-            if (!room) return;
-            room.session.handlePlayerHeal(peer.id, msg.eventId, msg.amount, msg.maxHp);
+            let enemy = room.enemies.get(msg.enemyId);
+            if (!enemy) {
+              // Check if enemy hasn't been synced yet or was just spawned
+              enemy = {
+                id: msg.enemyId,
+                kind: 'SKELETON_WARRIOR' as any,
+                x: msg.hitX,
+                y: msg.hitY,
+                vx: 0,
+                vy: 0,
+                hp: Math.max(1, msg.damage * 2),
+                maxHp: Math.max(1, msg.damage * 2),
+                facingX: 1,
+                aiState: 'CHASE',
+                telegraphType: 'NONE',
+                telegraphAngle: 0,
+                hitFlashTimer: 0.08,
+                stunTimer: 0,
+                plagueTimer: 0,
+                infectionStacks: 0,
+                roomId: room.activeRoomId || 0,
+              };
+              room.enemies.set(msg.enemyId, enemy);
+            }
+
+            if (enemy.hp <= 0) return;
+
+            // Deduplication window: within 40ms from same attacker on same enemy
+            const now = Date.now();
+            const dedupeKey = `${msg.enemyId}_${peer.id}_${Math.floor(now / 40)}`;
+            if (room.recentDamageEvents.has(dedupeKey)) {
+              return;
+            }
+            room.recentDamageEvents.set(dedupeKey, now);
+
+            // Clean old deduplication events (> 5s old)
+            if (room.recentDamageEvents.size > 200) {
+              for (const [k, t] of room.recentDamageEvents.entries()) {
+                if (now - t > 5000) room.recentDamageEvents.delete(k);
+              }
+            }
+
+            // Server-authoritative damage calculation
+            const prevHp = enemy.hp;
+            const newHp = Math.max(0, prevHp - msg.damage);
+            enemy.hp = newHp;
+            enemy.hitFlashTimer = 0.08;
+
+            if (newHp <= 0) {
+              room.enemies.delete(msg.enemyId);
+              broadcastToRoom(room, {
+                type: 'S2C_ENEMY_DEFEATED',
+                enemyId: msg.enemyId,
+                killerId: peer.id,
+                dropX: msg.hitX || enemy.x,
+                dropY: msg.hitY || enemy.y,
+              });
+            } else {
+              broadcastToRoom(room, {
+                type: 'S2C_ENEMY_DAMAGED',
+                enemyId: msg.enemyId,
+                newHp,
+                damageDealt: msg.damage,
+                isCrit: msg.isCrit,
+                hitX: msg.hitX,
+                hitY: msg.hitY,
+                attackerId: peer.id,
+              });
+            }
             break;
           }
 
@@ -659,24 +503,24 @@ async function startServer() {
                 y: msg.y,
                 angle: msg.angle,
                 slot: msg.slot,
-                targetX: msg.targetX,
-                targetY: msg.targetY,
               },
-              peer.id
+              ws
             );
             break;
           }
 
-          case 'C2S_INTERACT_PROP': {
+          case 'C2S_REVIVE_PLAYER': {
             if (!peer.roomCode) return;
             const room = rooms.get(peer.roomCode);
             if (!room) return;
-            room.session.handleInteractProp(peer.id, msg.propId);
-            break;
-          }
-
-          case 'C2S_REVIVE_PLAYER': {
-            // Proximity revival is calculated authoritatively on the server 20Hz loop
+            if (msg.progress >= 1.0) {
+              broadcastToRoom(room, {
+                type: 'S2C_PLAYER_REVIVED',
+                revivedPlayerId: msg.targetPlayerId,
+                reviverPlayerId: peer.id,
+                reviveHp: 50,
+              });
+            }
             break;
           }
 
@@ -685,127 +529,14 @@ async function startServer() {
             const room = rooms.get(peer.roomCode);
             if (!room) return;
             if (room.hostId !== peer.id) return;
-
-            const nextSeed = msg.seed ?? Math.floor(Math.random() * 1000000) + 1;
             room.floorNumber = msg.floorNumber;
-            room.seed = nextSeed;
-            room.session.loadFloor(room.floorNumber, room.seed, room.difficulty);
-
-            broadcastToRoom(room, {
-              type: 'S2C_ROOM_STATE',
-              room: serializeRoom(room),
-            });
+            room.seed = msg.seed;
+            room.enemies.clear();
+            room.recentDamageEvents.clear();
             broadcastToRoom(room, {
               type: 'S2C_FLOOR_SYNC',
-              floorNumber: room.floorNumber,
-              seed: room.seed,
-              difficulty: room.difficulty,
-            });
-            break;
-          }
-
-          case 'C2S_CLAIM_VICTORY': {
-            if (!peer.roomCode) return;
-            const room = rooms.get(peer.roomCode);
-            if (!room) return;
-            if (room.hostId !== peer.id) return;
-            room.session.handleClaimVictory();
-            break;
-          }
-
-          case 'C2S_RETURN_PARTY_TO_GUILD': {
-            if (!peer.roomCode) return;
-            const room = rooms.get(peer.roomCode);
-            if (!room) return;
-            if (room.hostId !== peer.id) return;
-
-            room.floorNumber = 0;
-            room.seed = Math.floor(Math.random() * 1000000) + 1;
-            room.session.startGuildSession(room.seed);
-            startRoomSimulationLoop(room);
-
-            broadcastToRoom(room, {
-              type: 'S2C_ROOM_STATE',
-              room: serializeRoom(room),
-            });
-            broadcastToRoom(room, {
-              type: 'S2C_RETURN_TO_GUILD',
-            });
-            break;
-          }
-
-          case 'C2S_DAMAGE_PVP_PLAYER': {
-            if (!peer.roomCode) return;
-            const room = rooms.get(peer.roomCode);
-            if (!room || !room.pvpSession) return;
-            room.pvpSession.handleDamagePvpPlayer(
-              peer.id,
-              msg.eventId,
-              msg.targetPlayerId,
-              msg.damage,
-              msg.isCrit,
-              msg.hitX,
-              msg.hitY
-            );
-            break;
-          }
-
-          case 'C2S_DAMAGE_BASE': {
-            if (!peer.roomCode) return;
-            const room = rooms.get(peer.roomCode);
-            if (!room || !room.pvpSession) return;
-            room.pvpSession.handleDamageBase(
-              peer.id,
-              msg.eventId,
-              msg.targetTeam,
-              msg.damage,
-              msg.isCrit,
-              msg.hitX,
-              msg.hitY
-            );
-            break;
-          }
-
-          case 'C2S_DAMAGE_MINION': {
-            if (!peer.roomCode) return;
-            const room = rooms.get(peer.roomCode);
-            if (!room || !room.pvpSession) return;
-            room.pvpSession.handleDamageMinion(
-              peer.id,
-              msg.eventId,
-              msg.minionId,
-              msg.damage,
-              msg.isCrit,
-              msg.hitX,
-              msg.hitY
-            );
-            break;
-          }
-
-          case 'C2S_SET_TEAM': {
-            if (!peer.roomCode) return;
-            const room = rooms.get(peer.roomCode);
-            if (!room) return;
-            peer.player.team = msg.team;
-            peer.player.color = msg.team === 'BLUE' ? '#38BDF8' : '#F43F5E';
-            if (room.pvpSession) {
-              room.pvpSession.setPlayerTeam(peer.id, msg.team);
-            }
-            broadcastToRoom(room, {
-              type: 'S2C_ROOM_STATE',
-              room: serializeRoom(room),
-            });
-            break;
-          }
-
-          case 'C2S_REQUEST_REMATCH': {
-            if (!peer.roomCode) return;
-            const room = rooms.get(peer.roomCode);
-            if (!room || !room.pvpSession) return;
-            room.pvpSession.handleRequestRematch();
-            broadcastToRoom(room, {
-              type: 'S2C_ROOM_STATE',
-              room: serializeRoom(room),
+              floorNumber: msg.floorNumber,
+              seed: msg.seed,
             });
             break;
           }
@@ -845,19 +576,19 @@ async function startServer() {
     });
   });
 
-  // Local Wi-Fi Co-op discovery endpoint (returns primary LAN IPv4 + all non-internal IPv4s)
+  // Local Wi-Fi Co-op discovery endpoint
   app.get('/api/lan-ip', (_req, res) => {
     const interfaces = os.networkInterfaces();
-    const lanAddresses: string[] = [];
+    let lanIp = 'localhost';
     for (const name of Object.keys(interfaces)) {
       for (const iface of interfaces[name] || []) {
         if (iface.family === 'IPv4' && !iface.internal) {
-          lanAddresses.push(iface.address);
+          lanIp = iface.address;
+          break;
         }
       }
     }
-    const lanIp = lanAddresses[0] || 'localhost';
-    res.json({ lanIp, lanAddresses, port: PORT });
+    res.json({ lanIp, port: PORT });
   });
 
   // Direct file download endpoints (standalone playable HTML + source/build ZIP archives)

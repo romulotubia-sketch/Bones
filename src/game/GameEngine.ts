@@ -57,7 +57,6 @@ import {
   buildGraveyardFloor,
   buildGuildWorld,
   createProceduralSkeleton,
-  createSeededRandom,
   GeneratedWorld,
   getBossInfoForFloor,
   getFloorLabel,
@@ -65,10 +64,8 @@ import {
   spawnRoomWave,
   STAGE_THEMES,
 } from './dungeonGenerator';
-import { buildPvpArenaWorld } from './pvpArenaGenerator';
-import { NetworkManager, WorldSyncPayload } from '../multiplayer/NetworkManager';
-import { PvpMatchSyncState, PvpTeam } from '../multiplayer/networkTypes';
-import { PvpMatchHudInfo, PvpPlayerHudItem, PvpTeamId } from '../types/game';
+import { NetworkManager } from '../multiplayer/NetworkManager';
+import { EnemySyncState, PlayerTransformSync } from '../multiplayer/networkTypes';
 import { RemoteRenderPlayer, renderGameWorld } from './renderer';
 
 export interface EngineCallbacks {
@@ -318,13 +315,8 @@ export class GameEngine {
 
   // Multiplayer Networking
   private networkManager: NetworkManager | null = null;
-  private networkUnsubscribe: (() => void) | null = null;
   private remotePlayers = new Map<string, RemoteRenderPlayer & { targetX: number; targetY: number }>();
   private networkSyncAccum = 0;
-  private coopCurrentWave = 0;
-  private coopTotalWaves = 0;
-  private pvpMatchState: PvpMatchSyncState | null = null;
-  private pvpEventCounter = 0;
 
   private currentRoomId = 0;
   private roomBannerText: string | null = null;
@@ -418,10 +410,6 @@ export class GameEngine {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
     }
-    if (this.networkUnsubscribe) {
-      this.networkUnsubscribe();
-      this.networkUnsubscribe = null;
-    }
     window.removeEventListener('blur', this.onBlurBound);
     window.removeEventListener('resize', this.onResizeBound);
     this.canvas.removeEventListener('pointerdown', this.onPointerDownBound);
@@ -439,103 +427,38 @@ export class GameEngine {
     return mode === 'ONLINE_COOP' || mode === 'LAN_COOP';
   }
 
-  public isPvpMatch(): boolean {
-    const mode = this.networkManager?.getRoom()?.mode;
-    return (
-      mode === 'ONLINE_PVP' ||
-      mode === 'LAN_PVP' ||
-      this.world?.floorNumber === 99 ||
-      this.pvpMatchState !== null
-    );
-  }
-
-  public isInMultiplayer(): boolean {
-    return this.isInCoop() || this.isPvpMatch();
-  }
-
-  public getMyPvpTeam(): PvpTeamId {
-    const localId = this.networkManager?.getLocalPlayerId();
-    if (!localId) return 'BLUE';
-    const roomPlayer = this.networkManager?.getRoom()?.players.find((p) => p.id === localId);
-    return (roomPlayer?.team as PvpTeamId) ?? 'BLUE';
-  }
-
-  private allocPvpEventId(): string {
-    return `pvp_ev_${this.pvpEventCounter++}_${Date.now()}`;
-  }
-
   public setNetworkManager(manager: NetworkManager | null): void {
-    if (this.networkUnsubscribe) {
-      this.networkUnsubscribe();
-      this.networkUnsubscribe = null;
-    }
     this.networkManager = manager;
     if (!manager) {
       this.remotePlayers.clear();
-      this.coopCurrentWave = 0;
-      this.coopTotalWaves = 0;
-      this.pvpMatchState = null;
       this.emitHudSnapshot();
       return;
     }
 
-    this.networkUnsubscribe = manager.subscribe({
-      onRoomUpdate: (room) => {
-        if (!room) {
-          this.remotePlayers.clear();
-          this.coopCurrentWave = 0;
-          this.coopTotalWaves = 0;
-        } else if (room.difficulty && this.world.isGuild) {
-          this.currentDifficulty = room.difficulty;
-        }
+    manager.setCallbacks({
+      onRoomUpdate: () => {
         this.emitHudSnapshot();
       },
-      onGameStart: (seed: number, floorNumber: number, difficulty: DifficultyLevel) => {
-        this.setDifficulty(difficulty);
-        if (floorNumber === 99 || this.isPvpMatch()) {
-          this.startPvpMatch(seed, difficulty);
-        } else if (floorNumber === 0) {
-          this.enterGuildRoam();
-        } else {
-          this.startGraveyardRun(difficulty, seed, true);
-        }
+      onGameStart: (seed: number, floorNumber: number) => {
+        this.startGraveyardRun(undefined, seed);
       },
-      onWorldSync: (payload: WorldSyncPayload) => {
+      onWorldSync: (players: PlayerTransformSync[], enemies?: EnemySyncState[], activeRoomId?: number, wavesRemaining?: number) => {
         const localId = manager.getLocalPlayerId();
         const activeIds = new Set<string>();
         const room = manager.getRoom();
         const isPvp = room?.mode === 'ONLINE_PVP' || room?.mode === 'LAN_PVP';
-        const myTeam = this.getMyPvpTeam();
 
-        for (const p of payload.players) {
-          if (p.id === localId) {
-            if (this.isInCoop() && !this.world.isGuild) {
-              this.player.isDowned = Boolean(p.isDowned);
-              this.player.bleedoutTimer = p.bleedoutTimer ?? this.player.bleedoutTimer;
-              this.player.reviveProgress = p.reviveProgress ?? 0;
-              this.player.isRevivingPlayerId = p.isRevivingPlayerId ?? null;
-              if (!p.isDowned && p.hp > 0 && Math.abs(this.player.hp - p.hp) >= 2) {
-                this.player.hp = Math.min(this.player.maxHp, p.hp);
-              }
-            }
-            continue;
-          }
-
+        for (const p of players) {
+          if (p.id === localId) continue;
           activeIds.add(p.id);
+
           const roomPlayer = room?.players.find((rp) => rp.id === p.id);
           const name = roomPlayer?.name || 'Ally';
           const color = roomPlayer?.color || '#38BDF8';
           const charId = roomPlayer?.characterId || CharacterId.Zombie;
-          const isMemberHost = Boolean(roomPlayer?.isHost);
-          const pvpStats = this.pvpMatchState?.playerStats?.[p.id];
-          const pvpTeam = (roomPlayer?.team as PvpTeamId) ?? (isPvp ? 'RED' : undefined);
-          const isRival = isPvp ? pvpTeam !== myTeam : false;
 
           const existing = this.remotePlayers.get(p.id);
           if (existing) {
-            existing.name = name;
-            existing.color = color;
-            existing.isHost = isMemberHost;
             existing.targetX = p.x;
             existing.targetY = p.y;
             existing.vx = p.vx;
@@ -545,15 +468,11 @@ export class GameEngine {
             existing.walkPhase = p.walkPhase;
             existing.hp = p.hp;
             existing.maxHp = p.maxHp;
-            existing.isRival = isRival;
-            existing.team = pvpTeam;
-            existing.invulnTimer = pvpStats?.invulnTimer ?? 0;
-            existing.hitFlashTimer = Math.max(existing.hitFlashTimer, p.hitFlashTimer);
+            existing.hitFlashTimer = p.hitFlashTimer;
             existing.squashX = p.squashX;
             existing.squashY = p.squashY;
             existing.dashTimer = p.dashTimer;
             existing.leapAirProgress = p.leapAirProgress;
-            existing.comboFlip = p.comboFlip;
             existing.characterId = charId;
             existing.isDowned = Boolean(p.isDowned);
             existing.bleedoutTimer = p.bleedoutTimer ?? 0;
@@ -564,23 +483,15 @@ export class GameEngine {
             existing.boneStormTimer = p.activeBuffs.boneStorm ? 6 : 0;
             existing.colossusTimer = p.activeBuffs.colossus ? 8 : 0;
             existing.windrunnerTimer = p.activeBuffs.windrunner ? 5 : 0;
-            existing.poisonBladesTimer = p.activeBuffs.poisonBlades ? 5 : 0;
-            existing.stolenMightTimer = p.activeBuffs.stolenMight ? 5 : 0;
             existing.fortressTimer = p.activeBuffs.fortress ? 5 : 0;
-            existing.magneticTimer = p.activeBuffs.magnetic ? 5 : 0;
             existing.mountainHeartTimer = p.activeBuffs.mountainHeart ? 8 : 0;
             existing.restlessTimer = p.activeBuffs.restless ? 4 : 0;
-            existing.soulDrainTimer = p.activeBuffs.soulDrain ? 4 : 0;
             existing.nightmareTimer = p.activeBuffs.nightmare ? 8 : 0;
-            existing.tinkerHasteTimer = p.activeBuffs.tinkerHaste ? 4 : 0;
-            existing.rapidReloadRemaining = p.activeBuffs.rapidReload ? 3 : 0;
-            existing.arsenalRemaining = p.activeBuffs.arsenal ? 5 : 0;
           } else {
             this.remotePlayers.set(p.id, {
               id: p.id,
               name,
               color,
-              isHost: isMemberHost,
               characterId: charId,
               x: p.x,
               y: p.y,
@@ -595,12 +506,9 @@ export class GameEngine {
               hitFlashTimer: p.hitFlashTimer,
               squashX: p.squashX,
               squashY: p.squashY,
-              comboFlip: p.comboFlip,
               hp: p.hp,
               maxHp: p.maxHp,
-              isRival,
-              team: pvpTeam,
-              invulnTimer: pvpStats?.invulnTimer ?? 0,
+              isRival: isPvp,
               isDowned: Boolean(p.isDowned),
               bleedoutTimer: p.bleedoutTimer ?? 0,
               reviveProgress: p.reviveProgress ?? 0,
@@ -612,86 +520,30 @@ export class GameEngine {
               colossusTimer: p.activeBuffs.colossus ? 8 : 0,
               unyieldingStacks: 0,
               windrunnerTimer: p.activeBuffs.windrunner ? 5 : 0,
-              poisonBladesTimer: p.activeBuffs.poisonBlades ? 5 : 0,
-              stolenMightTimer: p.activeBuffs.stolenMight ? 5 : 0,
+              poisonBladesTimer: 0,
+              stolenMightTimer: 0,
               fortressTimer: p.activeBuffs.fortress ? 5 : 0,
-              magneticTimer: p.activeBuffs.magnetic ? 5 : 0,
+              magneticTimer: 0,
               mountainHeartTimer: p.activeBuffs.mountainHeart ? 8 : 0,
               leapAirProgress: p.leapAirProgress,
               resolveRatio: 0,
               dashTimer: p.dashTimer,
-              restlessTimer: p.activeBuffs.restless ? 4 : 0,
-              soulDrainTimer: p.activeBuffs.soulDrain ? 4 : 0,
-              nightmareTimer: p.activeBuffs.nightmare ? 8 : 0,
-              tinkerHasteTimer: p.activeBuffs.tinkerHaste ? 4 : 0,
-              rapidReloadRemaining: p.activeBuffs.rapidReload ? 3 : 0,
-              arsenalRemaining: p.activeBuffs.arsenal ? 5 : 0,
               hoveredInGuild: false,
             });
           }
         }
 
-        for (const id of Array.from(this.remotePlayers.keys())) {
+        for (const id of this.remotePlayers.keys()) {
           if (!activeIds.has(id)) {
             this.remotePlayers.delete(id);
           }
         }
 
-        if (!this.isInCoop()) return;
-
-        this.coopCurrentWave = payload.currentWave ?? 0;
-        this.coopTotalWaves = payload.totalWaves ?? 0;
-
-        // Reconcile shared room lock / clear / wave state across all party members
-        if (payload.roomsState && !this.world.isGuild) {
-          for (const rs of payload.roomsState) {
-            const roomObj = this.world.rooms.find((r) => r.id === rs.id);
-            if (roomObj) {
-              roomObj.discovered = roomObj.discovered || rs.discovered;
-              roomObj.locked = rs.locked;
-              roomObj.cleared = rs.cleared;
-              roomObj.wavesRemaining = rs.wavesRemaining;
-            }
-          }
-        }
-
-        // Reconcile server-spawned chests & descent portals
-        if (payload.spawnedProps && !this.world.isGuild) {
-          for (const sp of payload.spawnedProps) {
-            const existingProp = this.world.props.find((pr) => pr.id === sp.id);
-            if (existingProp) {
-              if (sp.opened) existingProp.opened = true;
-            } else {
-              this.world.props.push({
-                id: sp.id,
-                kind: sp.kind,
-                x: sp.x,
-                y: sp.y,
-                w: sp.w,
-                h: sp.h,
-                solid: false,
-                destructible: false,
-                hp: 999,
-                opened: sp.opened ?? false,
-              });
-              this.spawnBurst(
-                sp.x,
-                sp.y,
-                sp.kind === 'PORTAL_ARCH' ? '#38BDF8' : '#FBBF24',
-                14,
-                95
-              );
-            }
-          }
-        }
-
-        // Reconcile server-authoritative enemies for ALL party members (zero duplicate enemies)
-        if (payload.enemies) {
-          const syncEnemyIds = new Set(payload.enemies.map((e) => e.id));
-          const { stage } = getStageAndFloor(Math.max(1, this.world.floorNumber));
-          const baseSeed = room?.seed ?? 1;
-
-          for (const se of payload.enemies) {
+        // In Co-op mode, if non-host client, synchronize enemies authoritative state from host
+        if (!manager.isHost() && this.isInCoop() && enemies) {
+          const syncEnemyIds = new Set(enemies.map((e) => e.id));
+          // Update or add enemies
+          for (const se of enemies) {
             const existing = this.world.enemies.find((e) => e.id === se.id);
             if (existing) {
               existing.x += (se.x - existing.x) * 0.45;
@@ -704,32 +556,22 @@ export class GameEngine {
               existing.aiState = se.aiState;
               existing.telegraphType = se.telegraphType;
               existing.telegraphAngle = se.telegraphAngle;
-              existing.hitFlashTimer = Math.max(existing.hitFlashTimer, se.hitFlashTimer);
+              existing.hitFlashTimer = se.hitFlashTimer;
               existing.stunTimer = se.stunTimer;
-              existing.slowTimer = se.slowTimer ?? existing.slowTimer;
-              existing.rootTimer = se.rootTimer ?? existing.rootTimer;
-              existing.fearTimer = se.fearTimer ?? existing.fearTimer;
-              existing.vulnerableTimer = se.vulnerableTimer ?? existing.vulnerableTimer;
               existing.plagueTimer = se.plagueTimer;
               existing.infectionStacks = se.infectionStacks;
-              if (se.bossPhase) existing.bossPhase = se.bossPhase;
             } else {
-              const traitRng = createSeededRandom(se.id * 7919 + baseSeed);
               const newEnemy = createProceduralSkeleton(
                 se.kind,
                 se.x,
                 se.y,
                 se.roomId,
                 1.0,
-                this.getDifficultyConfig(),
-                stage,
-                traitRng,
-                se.id
+                this.getDifficultyConfig()
               );
+              newEnemy.id = se.id;
               newEnemy.hp = se.hp;
               newEnemy.maxHp = se.maxHp;
-              newEnemy.vx = se.vx;
-              newEnemy.vy = se.vy;
               newEnemy.facingX = se.facingX;
               newEnemy.aiState = se.aiState;
               newEnemy.telegraphType = se.telegraphType;
@@ -738,307 +580,70 @@ export class GameEngine {
               newEnemy.stunTimer = se.stunTimer;
               newEnemy.plagueTimer = se.plagueTimer;
               newEnemy.infectionStacks = se.infectionStacks;
-              if (se.bossPhase) newEnemy.bossPhase = se.bossPhase;
               this.world.enemies.push(newEnemy);
-              if (!this.world.isGuild) {
-                this.spawnBurst(se.x, se.y, '#94A3B8', 8, 80);
-              }
             }
           }
-
+          // Remove dead enemies
           for (let i = this.world.enemies.length - 1; i >= 0; i--) {
             if (!syncEnemyIds.has(this.world.enemies[i].id)) {
               this.world.enemies.splice(i, 1);
             }
           }
-        }
-
-        // Reconcile server-authoritative enemy projectiles
-        if (payload.enemyProjectiles && !this.world.isGuild) {
-          const syncProjIds = new Set(payload.enemyProjectiles.map((ep) => ep.id));
-          for (const ep of payload.enemyProjectiles) {
-            const existingProj = this.projectiles.find((pr) => !pr.fromPlayer && pr.id === ep.id);
-            if (existingProj) {
-              existingProj.x += (ep.x - existingProj.x) * 0.55;
-              existingProj.y += (ep.y - existingProj.y) * 0.55;
-              existingProj.vx = ep.vx;
-              existingProj.vy = ep.vy;
-              existingProj.angle = ep.angle;
-              existingProj.life = Math.max(existingProj.life, 0.3);
-            } else {
-              this.projectiles.push({
-                id: ep.id,
-                fromPlayer: false,
-                x: ep.x,
-                y: ep.y,
-                vx: ep.vx,
-                vy: ep.vy,
-                radius: ep.radius,
-                damage: ep.damage,
-                life: 2.0,
-                color: ep.color,
-                kind: ep.kind,
-                angle: ep.angle,
-              });
-            }
-          }
-
-          for (let i = this.projectiles.length - 1; i >= 0; i--) {
-            const pr = this.projectiles[i];
-            if (!pr.fromPlayer && !syncProjIds.has(pr.id)) {
-              this.projectiles.splice(i, 1);
+          if (activeRoomId !== undefined && wavesRemaining !== undefined) {
+            const activeRoom = this.world.rooms.find((r) => r.id === activeRoomId);
+            if (activeRoom) {
+              activeRoom.wavesRemaining = wavesRemaining;
             }
           }
         }
       },
-      onWaveEvent: (evt) => {
-        this.coopCurrentWave = evt.currentWave;
-        this.coopTotalWaves = evt.totalWaves;
-        this.showBanner(evt.bannerText);
-        if (evt.isBoss) {
-          soundEngine.playBossSlam();
-        } else if (evt.isCleared) {
-          soundEngine.playHeal();
-          if (this.activeBlessingIds.has('relic_lantern_vitality')) {
-            this.healPlayer(Math.round(this.player.maxHp * 0.12));
-          }
-        }
-        this.emitHudSnapshot();
-      },
-      onPartyRoomPull: (roomId, x, y) => {
-        const roomObj = this.world.rooms.find((r) => r.id === roomId);
-        if (roomObj) {
-          const inside =
-            this.player.x >= roomObj.x + 24 &&
-            this.player.x <= roomObj.x + roomObj.w - 24 &&
-            this.player.y >= roomObj.y + 24 &&
-            this.player.y <= roomObj.y + roomObj.h - 24;
-          if (!inside) {
-            this.player.x = x;
-            this.player.y = y;
-            this.cameraX = x;
-            this.cameraY = y;
-            this.spawnBurst(x, y, '#38BDF8', 14, 95);
-            this.spawnPopup(x, y - 28, 'RALLIED TO PARTY!', '#38BDF8', 0.95);
-          }
-        }
-      },
-      onEnemyAttackFx: (kind, x, y, angle) => {
-        if (kind === 'WARRIOR_SLASH') {
-          soundEngine.playSlash(0);
-          this.slashes.push({
-            x: x + Math.cos(angle) * 14,
-            y: y + Math.sin(angle) * 14,
-            angle,
-            radius: 56,
-            arcSpread: 1.4,
-            color: '#FBBF24',
-            life: 0.14,
-            maxLife: 0.14,
-            flip: false,
-          });
-        } else if (kind === 'ARCHER_SHOT') {
-          soundEngine.playArrow();
-        } else if (kind === 'BOSS_CLEAVE') {
-          soundEngine.playBossSlam();
-          this.shakeMag = Math.max(this.shakeMag, 8);
-          this.slashes.push({
-            x: x + Math.cos(angle) * 20,
-            y: y + Math.sin(angle) * 20,
-            angle,
-            radius: 130,
-            arcSpread: 2.0,
-            color: '#FB7185',
-            life: 0.22,
-            maxLife: 0.22,
-            flip: false,
-          });
-        } else if (kind === 'BOSS_VOLLEY') {
-          soundEngine.playArrow();
-        } else if (kind === 'BOSS_SUMMON') {
-          soundEngine.playSummon();
-          this.shockwaves.push({
-            x,
-            y,
-            maxRadius: 95,
-            color: '#38BDF8',
-            life: 0.3,
-            maxLife: 0.3,
-          });
-        } else if (kind === 'BOSS_DASH') {
-          soundEngine.playDash();
-        }
-      },
-      onEnemyDamaged: (enemyId, newHp, maxHp, damage, isCrit, hitX, hitY, attackerId) => {
+      onEnemyDamaged: (enemyId, damage, isCrit, hitX, hitY, attackerId) => {
         const localId = manager.getLocalPlayerId();
-        const target = this.world.enemies.find((e) => e.id === enemyId);
-        if (target) {
-          target.hp = newHp;
-          target.maxHp = maxHp;
-          target.hitFlashTimer = 0.08;
-        }
         if (attackerId === localId) return;
 
-        soundEngine.playHit(Boolean(isCrit));
-        this.spawnPopup(
-          hitX ?? target?.x ?? this.player.x,
-          (hitY ?? target?.y ?? this.player.y) - 18,
-          `-${damage}`,
-          isCrit ? '#FEF08A' : '#F87171',
-          isCrit ? 1.18 : 0.95
-        );
+        const target = this.world.enemies.find((e) => e.id === enemyId);
+        if (target && target.hp > 0) {
+          target.hp = Math.max(0, target.hp - damage);
+          target.hitFlashTimer = 0.08;
+          soundEngine.playHit(isCrit);
+          this.spawnPopup(
+            hitX ?? target.x,
+            (hitY ?? target.y) - 18,
+            `-${damage}`,
+            isCrit ? '#FEF08A' : '#F87171',
+            isCrit ? 1.25 : 1.0
+          );
+          if (target.hp <= 0) {
+            this.handleEnemyDefeated(target);
+          }
+        }
       },
-      onEnemyDefeated: (enemyId, _killerId, dropX, dropY, kind) => {
+      onEnemyDefeated: (enemyId, _killerId, _dropX, _dropY) => {
         const target = this.world.enemies.find((e) => e.id === enemyId);
         if (target) {
           this.handleEnemyDefeated(target);
-        } else if (kind && !this.world.isGuild) {
-          const fallbackEnemy = createProceduralSkeleton(
-            kind,
-            dropX,
-            dropY,
-            this.currentRoomId,
-            1.0,
-            this.getDifficultyConfig()
-          );
-          fallbackEnemy.id = enemyId;
-          this.handleEnemyDefeated(fallbackEnemy);
         }
       },
-      onPlayerDamaged: (evt) => {
-        const localId = manager.getLocalPlayerId();
-        if (evt.targetPlayerId !== localId) {
-          const remote = this.remotePlayers.get(evt.targetPlayerId);
-          if (remote) {
-            remote.hp = evt.newHp;
-            remote.maxHp = evt.maxHp;
-            if (!evt.evaded) {
-              remote.hitFlashTimer = 0.12;
-              this.spawnBurst(remote.x, remote.y, '#EF4444', 6, 75);
-            }
-          }
-          return;
-        }
-
-        const p = this.player;
-        if (evt.evaded) {
-          soundEngine.playDash();
-          p.invulnTimer = 0.28;
-          const evadeLabel =
-            p.characterId === CharacterId.Ghost
-              ? 'PHASE!'
-              : p.characterId === CharacterId.Kobold
-              ? 'SIDESTEP!'
-              : 'EVADE!';
-          const evadeColor =
-            p.characterId === CharacterId.Ghost
-              ? '#67E8F9'
-              : p.characterId === CharacterId.Kobold
-              ? '#FB7185'
-              : '#FDE047';
-          this.afterimages.push({
-            x: p.x,
-            y: p.y,
-            facingX: p.facingX,
-            color: evadeColor,
-            life: 0.34,
-            maxLife: 0.34,
-          });
-          if (p.characterId === CharacterId.Ghost) this.triggerRestlessSpirit();
-          if (p.characterId === CharacterId.Kobold) p.tinkerHasteTimer = Math.max(p.tinkerHasteTimer, 2.0);
-          this.spawnPopup(p.x, p.y - 28, evadeLabel, evadeColor, 1.0);
-          this.emitHudSnapshot();
-          return;
-        }
-
-        p.hp = evt.newHp;
-        p.maxHp = evt.maxHp;
-        p.hitFlashTimer = 0.12;
-        p.invulnTimer = 0.42;
-        p.squashX = 1.18;
-        p.squashY = 0.84;
-        if (evt.ribBlocked && p.ribcageCharges > 0) {
-          p.ribcageCharges = Math.max(0, p.ribcageCharges - 1);
-          if (p.ribcageCharges <= 0) p.ribcageTimer = 0;
-        }
-        p.ultCharge = Math.min(100, p.ultCharge + 8);
-        this.shakeMag = Math.max(this.shakeMag, evt.ribBlocked ? 3.5 : 7);
-        soundEngine.playHit(true);
-
-        if (evt.ribBlocked) {
-          this.spawnPopup(p.x, p.y - 34, `RIB BLOCK -${evt.damage}`, '#E2E8F0', 0.96);
-          this.spawnBurst(p.x, p.y, '#E2E8F0', 8, 85);
-        } else {
-          this.spawnPopup(p.x, p.y - 24, `-${evt.damage}`, '#F87171', 1.05);
-          this.spawnBurst(p.x, p.y, '#EF4444', 8, 95);
-        }
-        this.emitHudSnapshot();
+      onRemoteSkill: (playerId, skillId, x, y, angle, slot) => {
+        this.handleRemoteSkillCast(playerId, skillId, x, y, angle, slot);
       },
-      onPlayerDowned: (playerId, playerName) => {
-        const localId = manager.getLocalPlayerId();
-        soundEngine.playBoneBreak();
-        if (playerId === localId) {
-          this.player.hp = 0;
-          this.player.isDowned = true;
-          this.player.bleedoutTimer = 35;
-          this.player.reviveProgress = 0;
-          this.spawnBurst(this.player.x, this.player.y, '#EF4444', 16, 110);
-          this.showBanner('DOWNED! Crawl toward teammates to be revived!');
-        } else {
-          const remote = this.remotePlayers.get(playerId);
-          if (remote) {
-            remote.hp = 0;
-            remote.isDowned = true;
-            remote.bleedoutTimer = 35;
-            remote.reviveProgress = 0;
-            this.spawnBurst(remote.x, remote.y, '#EF4444', 14, 100);
-          }
-          this.showBanner(`${playerName} is Downed! Stand nearby to revive!`);
-        }
-        this.emitHudSnapshot();
-      },
-      onRemoteSkill: (playerId, skillId, x, y, angle, slot, targetX, targetY) => {
-        this.handleRemoteSkillCast(playerId, skillId, x, y, angle, slot, targetX, targetY);
-      },
-      onPropOpened: (propId, kind, x, y, openerId) => {
-        const prop = this.world.props.find((pr) => pr.id === propId);
-        if (prop) {
-          prop.opened = true;
-        }
-        const localId = manager.getLocalPlayerId();
-        if (kind === 'CHEST' && openerId !== localId) {
-          soundEngine.playPickup();
-          this.spawnBurst(x, y, '#FBBF24', 14, 110);
-          const shardMult = this.getDifficultyConfig().shardMultiplier;
-          this.spawnOrb(
-            'SOUL_SHARD',
-            x,
-            y,
-            Math.max(1, Math.round((5 + this.world.floorNumber * 2) * shardMult))
-          );
-          this.spawnOrb('ESSENCE_HEAL', x, y, 18);
-          this.spawnOrb('GOLD_COIN', x, y, 12);
-        }
-      },
-      onPlayerRevived: (revivedPlayerId, _reviverPlayerId, reviveHp, maxHp) => {
+      onPlayerRevived: (revivedPlayerId, reviverPlayerId, reviveHp) => {
         const localId = manager.getLocalPlayerId();
         if (revivedPlayerId === localId) {
           this.player.isDowned = false;
           this.player.bleedoutTimer = 0;
           this.player.reviveProgress = 0;
-          if (maxHp && maxHp > 0) this.player.maxHp = maxHp;
           this.player.hp = reviveHp;
           this.player.invulnTimer = 2.5;
           soundEngine.playHeal();
           this.spawnBurst(this.player.x, this.player.y, '#4ADE80', 20, 120);
           this.spawnPopup(this.player.x, this.player.y - 32, 'REVIVED!', '#4ADE80', 1.4);
-          this.showBanner('Revived! Back in the fight!');
+          this.showBanner('Revived by teammate!');
         } else {
           const remote = this.remotePlayers.get(revivedPlayerId);
           if (remote) {
             remote.isDowned = false;
             remote.hp = reviveHp;
-            if (maxHp && maxHp > 0) remote.maxHp = maxHp;
             remote.reviveProgress = 0;
             soundEngine.playHeal();
             this.spawnBurst(remote.x, remote.y, '#4ADE80', 16, 110);
@@ -1047,228 +652,15 @@ export class GameEngine {
         }
         this.emitHudSnapshot();
       },
-      onFloorSync: (floorNumber, seed, difficulty) => {
-        this.setDifficulty(difficulty);
-        if (floorNumber === 99 || this.isPvpMatch()) {
-          this.startPvpMatch(seed, difficulty);
-          return;
-        }
-        if (floorNumber === 1 && this.world.isGuild) {
-          this.startGraveyardRun(difficulty, seed, true);
-          return;
-        }
+      onFloorSync: (floorNumber, seed) => {
         this.loadDungeonFloor(floorNumber, seed);
-        if (
-          floorNumber > 1 &&
-          floorNumber <= 8 &&
-          this.activeBlessingIds.size < MAX_RUN_BLESSINGS
-        ) {
-          this.offerBlessingsAndAdvanceFloor(null, 'STAGE_CLEAR');
-        }
-      },
-      onPartyVictory: () => {
-        if (this.phase === GamePhase.Victory) return;
-        this.showBanner('Graveyard Conquered Together!');
-        this.finishRun(true);
       },
       onPartyWipe: () => {
-        if (this.phase === GamePhase.GameOver) return;
         this.showBanner('Party Defeated!');
         this.finishRun(false);
       },
-      onReturnToGuild: () => {
-        this.pvpMatchState = null;
-        this.enterGuildRoam();
-      },
-      onHostChanged: (newHostId, newHostName) => {
-        const localId = manager.getLocalPlayerId();
-        for (const [id, rp] of this.remotePlayers.entries()) {
-          rp.isHost = id === newHostId;
-        }
-        if (newHostId === localId) {
-          this.showBanner('You are now the Party Leader!');
-        } else if (newHostName) {
-          this.showBanner(`${newHostName} is now the Party Leader`);
-        }
-        this.emitHudSnapshot();
-      },
-      onPlayerLeft: (playerId: string, playerName?: string) => {
+      onPlayerLeft: (playerId: string) => {
         this.remotePlayers.delete(playerId);
-        if (playerName) {
-          this.showBanner(`${playerName} disconnected from the party`);
-        }
-        this.emitHudSnapshot();
-      },
-      onPvpSync: (state: PvpMatchSyncState) => {
-        const wasEnded = Boolean(this.pvpMatchState?.isMatchEnded);
-        this.pvpMatchState = state;
-        const localId = manager.getLocalPlayerId();
-        const localStats = localId ? state.playerStats[localId] : undefined;
-
-        if (wasEnded && !state.isMatchEnded) {
-          const myTeam = this.getMyPvpTeam();
-          this.player.x = myTeam === 'BLUE' ? -870 : 870;
-          this.player.y = 0;
-          this.player.facingX = myTeam === 'BLUE' ? 1 : -1;
-          this.player.hp = this.player.maxHp;
-          this.player.invulnTimer = 3.5;
-          this.cameraX = this.player.x;
-          this.cameraY = this.player.y;
-          this.clearTransientEntities();
-          soundEngine.playSummon();
-          this.showBanner('⚔️ REMATCH STARTED! Destroy the opposing base!');
-        }
-
-        if (localStats) {
-          if (localStats.invulnTimer > 0) {
-            this.player.invulnTimer = Math.max(this.player.invulnTimer, localStats.invulnTimer);
-          }
-          if (localStats.respawnTimer > 0) {
-            this.player.hp = 0;
-          }
-        }
-        this.emitHudSnapshot();
-      },
-      onPvpBaseDamaged: (team, newHp, maxHp, damage, attackerId, hitX, hitY) => {
-        soundEngine.playHit(true);
-        this.shakeMag = Math.max(this.shakeMag, 6.0);
-        this.spawnPopup(
-          hitX,
-          hitY - 40,
-          `-${damage} BASE!`,
-          team === 'BLUE' ? '#38BDF8' : '#F43F5E',
-          1.25
-        );
-        this.spawnBurst(hitX, hitY, team === 'BLUE' ? '#38BDF8' : '#F43F5E', 14, 110);
-        if (this.pvpMatchState) {
-          if (team === 'BLUE') this.pvpMatchState.blueBase.hp = newHp;
-          else this.pvpMatchState.redBase.hp = newHp;
-        }
-        this.emitHudSnapshot();
-      },
-      onPvpBaseDestroyed: (winningTeam, destroyedTeam) => {
-        soundEngine.playBossSlam();
-        this.shakeMag = 18;
-        const baseX = destroyedTeam === 'BLUE' ? -740 : 740;
-        this.spawnBurst(baseX, 0, '#F59E0B', 32, 220);
-        this.shockwaves.push({
-          x: baseX,
-          y: 0,
-          maxRadius: 260,
-          color: '#F59E0B',
-          life: 0.8,
-          maxLife: 0.8,
-        });
-        const myTeam = this.getMyPvpTeam();
-        if (winningTeam === myTeam) {
-          this.showBanner('🏆 VICTORY! Enemy Base Destroyed!');
-        } else {
-          this.showBanner('💀 DEFEAT! Your Base Has Fallen!');
-        }
-        this.emitHudSnapshot();
-      },
-      onPvpPlayerEliminated: (victimId, victimName, victimTeam, killerId, killerName, killerTeam, respawnDelay) => {
-        soundEngine.playBoneBreak();
-        const localId = manager.getLocalPlayerId();
-        if (victimId === localId) {
-          this.player.hp = 0;
-          this.player.invulnTimer = 0;
-          this.spawnBurst(this.player.x, this.player.y, '#EF4444', 18, 120);
-          this.showBanner(`Slain by ${killerName}! Respawning in ${respawnDelay}s...`);
-        } else {
-          this.showBanner(`${killerName} (${killerTeam}) eliminated ${victimName} (${victimTeam})!`);
-        }
-        this.emitHudSnapshot();
-      },
-      onPvpPlayerRespawned: (playerId, x, y, hp, maxHp) => {
-        soundEngine.playHeal();
-        const localId = manager.getLocalPlayerId();
-        if (playerId === localId) {
-          this.player.x = x;
-          this.player.y = y;
-          this.player.hp = hp;
-          this.player.maxHp = maxHp;
-          this.player.invulnTimer = 3.5;
-          this.cameraX = x;
-          this.cameraY = y;
-          this.spawnBurst(x, y, '#38BDF8', 22, 130);
-          this.showBanner('Back in the fight! Respawn protection active!');
-        } else {
-          const remote = this.remotePlayers.get(playerId);
-          if (remote) {
-            remote.x = x;
-            remote.y = y;
-            remote.targetX = x;
-            remote.targetY = y;
-            remote.hp = hp;
-            remote.maxHp = maxHp;
-            remote.invulnTimer = 3.5;
-          }
-          this.spawnBurst(x, y, '#38BDF8', 16, 100);
-        }
-        this.emitHudSnapshot();
-      },
-      onPvpMinionAttackFx: (minionId, team, kind, x, y, targetX, targetY) => {
-        const ang = Math.atan2(targetY - y, targetX - x);
-        const color = team === 'BLUE' ? '#60A5FA' : '#F87171';
-        if (kind === 'RANGED') {
-          soundEngine.playArrow();
-          this.projectiles.push({
-            id: allocEntityId(),
-            fromPlayer: false,
-            isVisualOnly: true,
-            x,
-            y,
-            vx: Math.cos(ang) * 440,
-            vy: Math.sin(ang) * 440,
-            radius: 6,
-            damage: 0,
-            life: 0.65,
-            color,
-            kind: 'PLAYER_CROSSBOW_BOLT',
-            angle: ang,
-          });
-        } else {
-          soundEngine.playSlash(0);
-          this.slashes.push({
-            x: x + Math.cos(ang) * 14,
-            y: y + Math.sin(ang) * 14,
-            angle: ang,
-            radius: 34,
-            arcSpread: 1.2,
-            color,
-            life: 0.16,
-            maxLife: 0.16,
-            flip: false,
-          });
-        }
-      },
-      onPvpMinionDamaged: (minionId, newHp, maxHp, damage, isCrit, hitX, hitY, attackerId) => {
-        const localId = manager.getLocalPlayerId();
-        if (attackerId !== localId) {
-          soundEngine.playHit(Boolean(isCrit));
-          this.spawnPopup(
-            hitX ?? 0,
-            (hitY ?? 0) - 20,
-            `-${damage}`,
-            isCrit ? '#FEF08A' : '#F87171',
-            0.95
-          );
-        }
-      },
-      onPvpMinionDefeated: (minionId, killerId, dropX, dropY) => {
-        this.spawnBurst(dropX, dropY, '#94A3B8', 8, 70);
-      },
-      onPvpMatchEnded: (winningTeam, blueScore, redScore, matchDuration) => {
-        soundEngine.playBossSlam();
-        this.shakeMag = 14;
-        if (this.pvpMatchState) {
-          this.pvpMatchState.isMatchEnded = true;
-          this.pvpMatchState.winnerTeam = winningTeam;
-        }
-        const myTeam = this.getMyPvpTeam();
-        const won = winningTeam === myTeam;
-        this.showBanner(won ? '🏆 VICTORY! Base Brawl Won!' : '💀 DEFEAT! Base Brawl Lost!');
         this.emitHudSnapshot();
       },
     });
@@ -1281,14 +673,10 @@ export class GameEngine {
     x: number,
     y: number,
     angle: number,
-    _slot: 'BASIC' | 'NORMAL_0' | 'NORMAL_1' | 'ULTIMATE',
-    targetX?: number,
-    targetY?: number
+    _slot: 'BASIC' | 'NORMAL_0' | 'NORMAL_1' | 'ULTIMATE'
   ): void {
     const remote = this.remotePlayers.get(playerId);
     const charId = remote?.characterId ?? CharacterId.Zombie;
-    const aimDestX = targetX ?? x + Math.cos(angle) * 180;
-    const aimDestY = targetY ?? y + Math.sin(angle) * 180;
 
     if (skillId === 'BASIC') {
       if (charId === CharacterId.Skeleton) {
@@ -1361,13 +749,12 @@ export class GameEngine {
         this.projectiles.push({
           id: allocEntityId(),
           fromPlayer: true,
-          isVisualOnly: true,
           x: mx,
           y: my,
           vx: Math.cos(angle) * 760,
           vy: Math.sin(angle) * 760,
           radius: 6,
-          damage: 0,
+          damage: 18,
           life: 0.62,
           color: '#FB7185',
           kind: 'PLAYER_CROSSBOW_BOLT',
@@ -1396,14 +783,13 @@ export class GameEngine {
       soundEngine.playPlague();
       this.poisonClouds.push({
         id: allocEntityId(),
-        isVisualOnly: true,
         x,
         y,
         radius: 120,
         life: 4.5,
         maxLife: 4.5,
         tickTimer: 0.1,
-        damagePerTick: 0,
+        damagePerTick: 10,
       });
       this.shockwaves.push({
         x,
@@ -1413,17 +799,17 @@ export class GameEngine {
         life: 0.28,
         maxLife: 0.28,
       });
-    } else if (skillId === NormalSkillId.RottingClaw || skillId === NormalSkillId.FleshRipper) {
+    } else if (skillId === NormalSkillId.FleshRipper) {
       soundEngine.playDash();
       this.slashes.push({
         x,
         y,
         angle,
-        radius: 82,
-        arcSpread: 1.65,
+        radius: 80,
+        arcSpread: 1.6,
         color: '#4ADE80',
-        life: 0.26,
-        maxLife: 0.26,
+        life: 0.24,
+        maxLife: 0.24,
         flip: false,
         kind: 'ZOMBIE_SAVAGE_REND',
       });
@@ -1432,13 +818,12 @@ export class GameEngine {
       this.projectiles.push({
         id: allocEntityId(),
         fromPlayer: true,
-        isVisualOnly: true,
         x,
         y,
         vx: Math.cos(angle) * 600,
         vy: Math.sin(angle) * 600,
         radius: 8,
-        damage: 0,
+        damage: 25,
         life: 1.2,
         color: '#38BDF8',
         kind: 'PLAYER_BONE_SPEAR',
@@ -1460,7 +845,7 @@ export class GameEngine {
         flip: false,
         kind: 'SKELETON_RIBCAGE_BURST',
       });
-    } else if (skillId === NormalSkillId.BoneStorm || skillId === NormalSkillId.SkeletalRush) {
+    } else if (skillId === NormalSkillId.BoneStorm) {
       soundEngine.playSlash(3);
       this.shockwaves.push({
         x,
@@ -1477,13 +862,12 @@ export class GameEngine {
         this.projectiles.push({
           id: allocEntityId(),
           fromPlayer: true,
-          isVisualOnly: true,
           x,
           y,
           vx: Math.cos(fa) * 560,
           vy: Math.sin(fa) * 560,
           radius: 6,
-          damage: 0,
+          damage: 18,
           life: 0.9,
           color: '#F59E0B',
           kind: 'PLAYER_ENCHANTED_DAGGER',
@@ -1491,69 +875,22 @@ export class GameEngine {
           hitEnemyIds: new Set<number>(),
         });
       }
-    } else if (skillId === NormalSkillId.ExplosiveTrap) {
-      soundEngine.playUiClick(680);
-      this.traps.push({
-        id: allocEntityId(),
-        isVisualOnly: true,
-        x: aimDestX,
-        y: aimDestY,
-        triggerRadius: 52,
-        blastRadius: 118,
-        damage: 0,
-        armTimer: 0.25,
-        life: 10,
-        maxLife: 10,
-      });
-    } else if (skillId === NormalSkillId.Shadowstep || skillId === NormalSkillId.Windrunner) {
+    } else if (skillId === NormalSkillId.Shadowstep) {
       soundEngine.playDash();
       this.spawnBurst(x, y, '#F59E0B', 10, 85);
-    } else if (skillId === NormalSkillId.IronFist || skillId === NormalSkillId.Groundbreaker) {
+    } else if (skillId === NormalSkillId.Groundbreaker) {
       soundEngine.playBossSlam();
       this.shockwaves.push({
-        x: targetX ?? x,
-        y: targetY ?? y,
-        maxRadius: 102,
+        x,
+        y,
+        maxRadius: 95,
         color: '#FB923C',
         life: 0.3,
         maxLife: 0.3,
       });
-    } else if (skillId === NormalSkillId.EarthenGrasp) {
-      soundEngine.playBossSlam();
-      this.earthenGrasps.push({
-        id: allocEntityId(),
-        isVisualOnly: true,
-        x: aimDestX,
-        y: aimDestY,
-        radius: 105,
-        life: 4.0,
-        maxLife: 4.0,
-        tickTimer: 0.2,
-        damagePerTick: 0,
-        targetEnemyId: null,
-      });
-    } else if (skillId === NormalSkillId.FortressStance || skillId === NormalSkillId.MagneticGuard) {
+    } else if (skillId === NormalSkillId.FortressStance) {
       soundEngine.playBoneBreak();
       this.spawnBurst(x, y, '#FB923C', 12, 90);
-    } else if (skillId === NormalSkillId.SpectralBolt) {
-      soundEngine.playDash();
-      this.projectiles.push({
-        id: allocEntityId(),
-        fromPlayer: true,
-        isVisualOnly: true,
-        x,
-        y,
-        vx: Math.cos(angle) * 680,
-        vy: Math.sin(angle) * 680,
-        radius: 9,
-        damage: 0,
-        life: 0.9,
-        color: '#67E8F9',
-        kind: 'PLAYER_SPECTRAL_BOLT',
-        angle,
-        pierce: true,
-        hitEnemyIds: new Set<number>(),
-      });
     } else if (skillId === NormalSkillId.PhantomDash) {
       soundEngine.playDash();
       this.afterimages.push({
@@ -1565,7 +902,7 @@ export class GameEngine {
         maxLife: 0.36,
         archetype: 'GHOST',
       });
-    } else if (skillId === NormalSkillId.SoulDrain || skillId === NormalSkillId.SpectralBolt) {
+    } else if (skillId === NormalSkillId.SoulDrain) {
       soundEngine.playDash();
       this.slashes.push({
         x,
@@ -1596,13 +933,12 @@ export class GameEngine {
       this.projectiles.push({
         id: allocEntityId(),
         fromPlayer: true,
-        isVisualOnly: true,
         x,
         y,
         vx: Math.cos(angle) * 900,
         vy: Math.sin(angle) * 900,
         radius: 9,
-        damage: 0,
+        damage: 28,
         life: 0.78,
         color: '#FB7185',
         kind: 'PLAYER_PIERCING_BOLT',
@@ -1610,55 +946,19 @@ export class GameEngine {
         pierce: true,
         hitEnemyIds: new Set<number>(),
       });
-    } else if (skillId === NormalSkillId.ExplosiveBolt) {
-      soundEngine.playArrow();
-      this.projectiles.push({
-        id: allocEntityId(),
-        fromPlayer: true,
-        isVisualOnly: true,
-        x,
-        y,
-        vx: Math.cos(angle) * 720,
-        vy: Math.sin(angle) * 720,
-        radius: 9,
-        damage: 0,
-        life: 0.72,
-        color: '#FB923C',
-        kind: 'PLAYER_EXPLOSIVE_BOLT',
-        angle,
-        blastRadius: 112,
-        hitEnemyIds: new Set<number>(),
-      });
-    } else if (skillId === NormalSkillId.SnareTrap) {
-      soundEngine.playUiClick(740);
-      this.snareTraps.push({
-        id: allocEntityId(),
-        isVisualOnly: true,
-        x: aimDestX,
-        y: aimDestY,
-        triggerRadius: 50,
-        captureRadius: 92,
-        damage: 0,
-        rootDuration: 2.5,
-        vulnerableDuration: 4.0,
-        armTimer: 0.22,
-        life: 12,
-        maxLife: 12,
-      });
-    } else if (skillId === NormalSkillId.MultiShot || skillId === NormalSkillId.RapidReload) {
+    } else if (skillId === NormalSkillId.MultiShot) {
       soundEngine.playArrow();
       for (let i = -3; i <= 3; i++) {
         const fa = angle + i * 0.2;
         this.projectiles.push({
           id: allocEntityId(),
           fromPlayer: true,
-          isVisualOnly: true,
           x,
           y,
           vx: Math.cos(fa) * 740,
           vy: Math.sin(fa) * 740,
           radius: 6,
-          damage: 0,
+          damage: 16,
           life: 0.56,
           color: '#FB7185',
           kind: 'PLAYER_CROSSBOW_BOLT',
@@ -1666,71 +966,12 @@ export class GameEngine {
           hitEnemyIds: new Set<number>(),
         });
       }
-    } else if (skillId === UltimateSkillId.DragonsBarrage) {
-      soundEngine.playBossSlam();
-      this.dragonsBarrages.push({
-        id: allocEntityId(),
-        isVisualOnly: true,
-        x: aimDestX,
-        y: aimDestY,
-        radius: 175,
-        life: 4.2,
-        maxLife: 4.2,
-        tickTimer: 0.12,
-        damagePerVolley: 0,
-      });
-    } else if (skillId === UltimateSkillId.MasterArtificer) {
-      soundEngine.playSummon();
-      for (let i = 0; i < 3; i++) {
-        const ta = angle + ((i - 1) * Math.PI * 2) / 3;
-        this.turrets.push({
-          id: allocEntityId(),
-          isVisualOnly: true,
-          x: x + Math.cos(ta) * 58,
-          y: y + Math.sin(ta) * 58,
-          aimAngle: angle,
-          recoilOffset: 0,
-          fireCooldown: 0.2 + i * 0.12,
-          shotsFired: 0,
-          damage: 0,
-          life: 10,
-          maxLife: 10,
-        });
-      }
-    } else if (skillId === UltimateSkillId.ThousandDaggers) {
-      soundEngine.playSlash(2);
-      this.daggerRains.push({
-        id: allocEntityId(),
-        isVisualOnly: true,
-        x: aimDestX,
-        y: aimDestY,
-        radius: 155,
-        life: 4.0,
-        maxLife: 4.0,
-        tickTimer: 0.15,
-        damagePerVolley: 0,
-      });
-    } else if (skillId === UltimateSkillId.DeathsPassage) {
-      soundEngine.playBossSlam();
-      this.deathsPassageRifts.push({
-        id: allocEntityId(),
-        isVisualOnly: true,
-        x: aimDestX,
-        y: aimDestY,
-        radius: 155,
-        life: 2.2,
-        maxLife: 2.2,
-        tickTimer: 0.2,
-        pullDamage: 0,
-        explosionDamage: 0,
-        detonated: false,
-      });
     } else {
       soundEngine.playBossSlam();
       this.shockwaves.push({
         x,
         y,
-        maxRadius: 135,
+        maxRadius: 130,
         color: '#FBBF24',
         life: 0.4,
         maxLife: 0.4,
@@ -1866,11 +1107,7 @@ export class GameEngine {
     this.emitHudSnapshot();
   }
 
-  public startGraveyardRun(
-    difficulty?: DifficultyLevel,
-    seed?: number,
-    fromNetworkSync = false
-  ): void {
+  public startGraveyardRun(difficulty?: DifficultyLevel, seed?: number): void {
     if (difficulty) {
       this.currentDifficulty = difficulty;
       this.saveData.selectedDifficulty = difficulty;
@@ -1887,8 +1124,6 @@ export class GameEngine {
     this.runDamageDealt = 0;
     this.corpseBloomCounter = 0;
     this.pendingNextFloor = null;
-    this.coopCurrentWave = 0;
-    this.coopTotalWaves = 0;
 
     this.player.isDowned = false;
     this.player.bleedoutTimer = 0;
@@ -1899,158 +1134,12 @@ export class GameEngine {
     this.player.normalCooldowns = [0, 0];
     this.player.ultCooldown = 0;
 
-    if (!fromNetworkSync && this.isInCoop()) {
-      if (this.networkManager?.isHost()) {
-        this.networkManager.startDungeonRun(this.currentDifficulty);
-      }
-      return;
-    }
-
     const runSeed = seed ?? Math.floor(Math.random() * 1000000);
+    if (this.isInCoop() && this.networkManager?.isHost()) {
+      this.networkManager.sendAdvanceFloor(1, runSeed);
+    }
     this.loadDungeonFloor(1, runSeed);
     soundEngine.playSummon();
-  }
-
-  public startPvpMatch(seed = 1, difficulty = DifficultyLevel.Easy): void {
-    this.currentDifficulty = difficulty;
-    this.activeBlessingIds.clear();
-    this.runLevel = 1;
-    this.runXp = 0;
-    this.runXpNext = 1000;
-    this.runCoins = 0;
-    this.runShardsEarned = 0;
-    this.runKills = 0;
-    this.runDamageDealt = 0;
-    this.corpseBloomCounter = 0;
-    this.pendingNextFloor = null;
-    this.coopCurrentWave = 0;
-    this.coopTotalWaves = 0;
-
-    this.player.isDowned = false;
-    this.player.bleedoutTimer = 0;
-    this.player.reviveProgress = 0;
-    this.player.characterId = this.saveData.selectedCharacter;
-    this.recomputePlayerStats(true);
-    this.player.ultCharge = 40;
-    this.player.normalCooldowns = [0, 0];
-    this.player.ultCooldown = 0;
-
-    this.clearTransientEntities();
-    this.world = buildPvpArenaWorld(seed);
-
-    const myTeam = this.getMyPvpTeam();
-    if (myTeam === 'RED') {
-      this.player.x = 870;
-      this.player.y = 0;
-      this.player.facingX = -1;
-    } else {
-      this.player.x = -870;
-      this.player.y = 0;
-      this.player.facingX = 1;
-    }
-    this.cameraX = this.player.x;
-    this.cameraY = this.player.y;
-    this.player.invulnTimer = 3.5;
-    this.phase = GamePhase.Dungeon;
-    this.showBanner('⚔️ BASE BRAWL ⚔️ Push the lane & destroy enemy base!');
-    soundEngine.playSummon();
-    this.emitHudSnapshot();
-  }
-
-  public checkPvpCombatHits(
-    hitX: number,
-    hitY: number,
-    radius: number,
-    rawDamage: number,
-    isCrit = false,
-    canHitBase = true
-  ): boolean {
-    if (!this.isPvpMatch() || !this.pvpMatchState || !this.networkManager) return false;
-    let hitSomething = false;
-    const myTeam = this.getMyPvpTeam();
-    const opposingTeam: PvpTeam = myTeam === 'BLUE' ? 'RED' : 'BLUE';
-
-    // 1. Minions: Hit opposing minions within radius
-    for (const minion of this.pvpMatchState.minions) {
-      if (minion.team === opposingTeam && minion.hp > 0) {
-        const d = Math.hypot(minion.x - hitX, minion.y - hitY);
-        if (d <= radius + 18) {
-          hitSomething = true;
-          this.networkManager.sendDamageMinion(
-            minion.id,
-            rawDamage,
-            isCrit,
-            minion.x,
-            minion.y
-          );
-          soundEngine.playHit(isCrit);
-          this.spawnPopup(
-            minion.x,
-            minion.y - 20,
-            isCrit ? `CRIT! ${Math.round(rawDamage)}` : `${Math.round(rawDamage)}`,
-            isCrit ? '#FEF08A' : '#F87171',
-            isCrit ? 1.15 : 0.95
-          );
-          this.spawnBurst(minion.x, minion.y, isCrit ? '#FEF08A' : '#F87171', 5, 65);
-        }
-      }
-    }
-
-    // 2. Rival Players: Hit opposing players within radius
-    for (const remote of this.remotePlayers.values()) {
-      if (remote.isRival && !remote.isDowned && (remote.invulnTimer ?? 0) <= 0 && remote.hp > 0) {
-        const d = Math.hypot(remote.x - hitX, remote.y - hitY);
-        if (d <= radius + remote.radius) {
-          hitSomething = true;
-          this.networkManager.sendDamagePvpPlayer(
-            remote.id,
-            rawDamage,
-            isCrit,
-            remote.x,
-            remote.y
-          );
-          soundEngine.playHit(isCrit);
-          this.spawnPopup(
-            remote.x,
-            remote.y - 28,
-            isCrit ? `CRIT! ${Math.round(rawDamage)}` : `${Math.round(rawDamage)}`,
-            isCrit ? '#FBBF24' : '#F43F5E',
-            isCrit ? 1.25 : 1.05
-          );
-          this.spawnBurst(remote.x, remote.y, '#F43F5E', 8, 90);
-        }
-      }
-    }
-
-    // 3. Opposing Base Structure
-    if (canHitBase) {
-      const opposingBase = opposingTeam === 'BLUE' ? this.pvpMatchState.blueBase : this.pvpMatchState.redBase;
-      if (opposingBase && !opposingBase.isDestroyed && opposingBase.hp > 0) {
-        const baseDist = Math.hypot(opposingBase.x - hitX, opposingBase.y - hitY);
-        if (baseDist <= radius + 75) {
-          hitSomething = true;
-          this.networkManager.sendDamageBase(
-            opposingTeam,
-            rawDamage,
-            isCrit,
-            hitX,
-            hitY
-          );
-          soundEngine.playHit(true);
-          this.shakeMag = Math.max(this.shakeMag, 4.0);
-          this.spawnPopup(
-            opposingBase.x,
-            opposingBase.y - 36,
-            `BASE HIT! -${Math.round(rawDamage)}`,
-            '#F59E0B',
-            1.2
-          );
-          this.spawnBurst(hitX, hitY, '#F59E0B', 10, 85);
-        }
-      }
-    }
-
-    return hitSomething;
   }
 
   public applyBlessingChoice(blessingId: string): void {
@@ -3410,10 +2499,6 @@ export class GameEngine {
           Math.hypot(worldX - door.x, worldY - door.y) <= 82 &&
           Math.hypot(this.player.x - door.x, this.player.y - door.y) <= 120
         ) {
-          if (this.isInCoop() && !this.networkManager?.isHost()) {
-            this.showBanner('Waiting for Party Leader to open the Graveyard Gate...');
-            return;
-          }
           soundEngine.playUiClick(640);
           if (this.callbacks.onRequestDifficultySelect) {
             this.callbacks.onRequestDifficultySelect();
@@ -3438,22 +2523,6 @@ export class GameEngine {
           return;
         }
         if (prop.kind === 'PORTAL_ARCH' && tapDist <= 68 && playerDist <= 105) {
-          if (this.isInCoop()) {
-            if (!this.networkManager?.isHost()) {
-              this.showBanner('Waiting for Party Leader to enter the portal...');
-              return;
-            }
-            const maxFloors = this.getDifficultyConfig().maxFloors;
-            if (this.world.floorNumber >= maxFloors) {
-              this.networkManager?.sendClaimVictory();
-            } else {
-              const nextFloor = this.world.floorNumber + 1;
-              const seed = Math.floor(Math.random() * 1000000) + 1;
-              this.networkManager?.sendAdvanceFloor(nextFloor, seed);
-            }
-            return;
-          }
-
           const maxFloors = this.getDifficultyConfig().maxFloors;
           if (this.world.floorNumber >= maxFloors) {
             this.finishRun(true);
@@ -3557,15 +2626,7 @@ export class GameEngine {
           dashTimer: +this.player.dashTimer.toFixed(2),
           leapAirProgress: +this.player.leapAirProgress.toFixed(2),
           isAttacking: this.attackHeld || this.bufferedActions.has('BASIC'),
-          comboStep:
-            this.player.zombieComboStep ||
-            this.player.skelComboStep ||
-            this.player.goblinComboStep ||
-            this.player.gnomeComboStep ||
-            this.player.ghostComboStep ||
-            this.player.koboldShotStep ||
-            0,
-          comboFlip: this.player.comboFlip,
+          comboStep: this.player.zombieComboStep || this.player.skelComboStep || 0,
           isDowned: this.player.isDowned,
           bleedoutTimer: +this.player.bleedoutTimer.toFixed(1),
           reviveProgress: +this.player.reviveProgress.toFixed(2),
@@ -3577,19 +2638,41 @@ export class GameEngine {
             boneStorm: this.player.boneStormTimer > 0,
             colossus: this.player.colossusTimer > 0,
             windrunner: this.player.windrunnerTimer > 0,
-            poisonBlades: this.player.poisonBladesTimer > 0,
-            stolenMight: this.player.stolenMightTimer > 0,
             fortress: this.player.fortressTimer > 0,
-            magnetic: this.player.magneticTimer > 0,
             mountainHeart: this.player.mountainHeartTimer > 0,
             restless: this.player.restlessTimer > 0,
-            soulDrain: this.player.soulDrainTimer > 0,
             nightmare: this.player.nightmareTimer > 0,
-            tinkerHaste: this.player.tinkerHasteTimer > 0,
-            rapidReload: this.player.rapidReloadRemaining > 0,
-            arsenal: this.player.arsenalRemaining > 0,
           },
         });
+
+        // Host in Co-op mode syncs authoritative enemy positions and wave count (10-20 Hz)
+        if (this.networkManager.isHost() && this.isInCoop() && this.phase === GamePhase.Dungeon) {
+          const activeRoom = this.world.rooms.find((r) => r.id === this.currentRoomId);
+          const syncEnemies: EnemySyncState[] = this.world.enemies.map((e) => ({
+            id: e.id,
+            kind: e.kind,
+            x: +e.x.toFixed(1),
+            y: +e.y.toFixed(1),
+            vx: +e.vx.toFixed(1),
+            vy: +e.vy.toFixed(1),
+            hp: e.hp,
+            maxHp: e.maxHp,
+            facingX: e.facingX,
+            aiState: e.aiState,
+            telegraphType: e.telegraphType,
+            telegraphAngle: +e.telegraphAngle.toFixed(2),
+            hitFlashTimer: +e.hitFlashTimer.toFixed(2),
+            stunTimer: +e.stunTimer.toFixed(2),
+            plagueTimer: +e.plagueTimer.toFixed(2),
+            infectionStacks: e.infectionStacks,
+            roomId: e.roomId,
+          }));
+          this.networkManager.sendSyncEnemies(
+            this.currentRoomId,
+            activeRoom?.wavesRemaining ?? 0,
+            syncEnemies
+          );
+        }
       }
     }
     this.updateMinions(dt);
@@ -4949,10 +4032,10 @@ export class GameEngine {
       p.vy *= Math.pow(0.001, dt);
     }
 
-    // Co-op: Proximity revival visual feedback (server calculates authoritative revive progress)
+    // Co-op: Proximity revival channeling (channel resurrect when standing near a downed ally)
     if (!p.isDowned && this.isInCoop()) {
-      let nearestDowned: { id: string; x: number; y: number } | null = null;
-      let nearestDist = 92;
+      let nearestDowned: { id: string; x: number; y: number; reviveProgress?: number } | null = null;
+      let nearestDist = 80;
       for (const remote of this.remotePlayers.values()) {
         if (remote.isDowned) {
           const dist = Math.hypot(p.x - remote.x, p.y - remote.y);
@@ -4965,6 +4048,13 @@ export class GameEngine {
 
       if (nearestDowned) {
         p.isRevivingPlayerId = nearestDowned.id;
+        nearestDowned.reviveProgress = Math.min(
+          1.0,
+          (nearestDowned.reviveProgress ?? 0) + dt * 0.45
+        );
+        this.networkManager?.sendReviveProgress(nearestDowned.id, nearestDowned.reviveProgress);
+
+        // Spawn revival healing tether & soul motes
         if (Math.random() < 0.4 && this.particles.length < 240) {
           this.particles.push({
             x: nearestDowned.x + (Math.random() - 0.5) * 16,
@@ -5063,10 +4153,6 @@ export class GameEngine {
 
   private performBasicAttack(): void {
     const p = this.player;
-    if (this.isPvpMatch() && p.invulnTimer > 0) {
-      this.spawnPopup(p.x, p.y - 28, 'SHIELDED!', '#38BDF8', 0.85);
-      return;
-    }
     const profile = this.getActiveProfile();
     const ranks = this.getActiveUpgrades();
     const isSkel = profile.id === CharacterId.Skeleton;
@@ -5096,7 +4182,7 @@ export class GameEngine {
       p.squashY = isFinisher ? 1.16 : 1.09;
 
       soundEngine.playArrow();
-      if (this.isInMultiplayer()) {
+      if (this.isInCoop()) {
         this.networkManager?.sendCastSkill('BASIC', p.x, p.y, p.aimAngle, 'BASIC');
       }
 
@@ -5267,9 +4353,6 @@ export class GameEngine {
     const isGnomeFinisher = isGnome && gnomeStep === 2;
     const ghostStep = isGhost ? p.ghostComboStep : 0;
     const isGhostFinisher = isGhost && ghostStep === 2;
-    if (this.isInMultiplayer()) {
-      this.networkManager?.sendCastSkill('BASIC', p.x, p.y, p.aimAngle, 'BASIC');
-    }
 
     if (isSkel) {
       p.skelComboStep = (skelStep + 1) % 3;
@@ -5383,7 +4466,7 @@ export class GameEngine {
         ? 1
         : 0
     );
-    if (this.isInMultiplayer()) {
+    if (this.isInCoop()) {
       this.networkManager?.sendCastSkill('BASIC', p.x, p.y, p.aimAngle, 'BASIC');
     }
     const originX = p.x + Math.cos(p.aimAngle) * 16;
@@ -5869,23 +4952,17 @@ export class GameEngine {
   }
 
   private castNormalSkill(slotIndex: 0 | 1): void {
-    if (this.isPvpMatch() && this.player.invulnTimer > 0) {
-      this.spawnPopup(this.player.x, this.player.y - 28, 'SHIELDED!', '#38BDF8', 0.85);
-      return;
-    }
     const loadout = this.getActiveLoadout();
     const skillId = loadout.normalSkills[slotIndex];
     const manual = this.currentCastManualAim;
     this.player.normalCooldowns[slotIndex] = this.player.normalMaxCooldowns[slotIndex];
-    if (this.isInMultiplayer()) {
+    if (this.isInCoop()) {
       this.networkManager?.sendCastSkill(
         skillId,
         this.player.x,
         this.player.y,
         this.player.aimAngle,
-        slotIndex === 0 ? 'NORMAL_0' : 'NORMAL_1',
-        manual?.targetX,
-        manual?.targetY
+        slotIndex === 0 ? 'NORMAL_0' : 'NORMAL_1'
       );
     }
 
@@ -8718,10 +7795,6 @@ export class GameEngine {
 
   private castUltimateSkill(): void {
     const p = this.player;
-    if (this.isPvpMatch() && p.invulnTimer > 0) {
-      this.spawnPopup(p.x, p.y - 28, 'SHIELDED!', '#38BDF8', 0.85);
-      return;
-    }
     const loadout = this.getActiveLoadout();
     const ultId = loadout.ultimateSkill;
     const manual = this.currentCastManualAim;
@@ -8730,16 +7803,8 @@ export class GameEngine {
     if (this.activeBlessingIds.has('relic_chrono_hourglass')) {
       p.ultSurgeTimer = 5.0;
     }
-    if (this.isInMultiplayer()) {
-      this.networkManager?.sendCastSkill(
-        ultId,
-        p.x,
-        p.y,
-        p.aimAngle,
-        'ULTIMATE',
-        manual?.targetX,
-        manual?.targetY
-      );
+    if (this.isInCoop()) {
+      this.networkManager?.sendCastSkill(ultId, p.x, p.y, p.aimAngle, 'ULTIMATE');
     }
 
     switch (ultId) {
@@ -10190,7 +9255,7 @@ export class GameEngine {
           const plagueDmg =
             e.plagueTimer > 0 ? Math.round(6 * this.getPlagueOrSkillMultiplier() * strainMult) : 0;
           const totalDot = infDmg + plagueDmg;
-          if (totalDot > 0 && !this.isInCoop()) {
+          if (totalDot > 0) {
             this.damageEnemy(e, totalDot, false, e.x, e.y);
             if (e.hp <= 0) continue;
           }
@@ -10281,14 +9346,12 @@ export class GameEngine {
       const isRooted = e.rootTimer > 0;
       const moveSpeed = isRooted ? 0 : e.speed * e.slowFactor;
 
-      if (!this.isInCoop()) {
-        if (e.kind === EnemyKind.SkeletonWarrior) {
-          this.updateWarriorAi(e, dt, dist, angleToTarget, moveSpeed);
-        } else if (e.kind === EnemyKind.SkeletonArcher) {
-          this.updateArcherAi(e, dt, dist, angleToTarget, moveSpeed);
-        } else if (e.kind === EnemyKind.SkeletonBoss) {
-          this.updateBossAi(e, dt, dist, angleToTarget, moveSpeed);
-        }
+      if (e.kind === EnemyKind.SkeletonWarrior) {
+        this.updateWarriorAi(e, dt, dist, angleToTarget, moveSpeed);
+      } else if (e.kind === EnemyKind.SkeletonArcher) {
+        this.updateArcherAi(e, dt, dist, angleToTarget, moveSpeed);
+      } else if (e.kind === EnemyKind.SkeletonBoss) {
+        this.updateBossAi(e, dt, dist, angleToTarget, moveSpeed);
       }
 
       if (isRooted) {
@@ -10990,11 +10053,6 @@ export class GameEngine {
     this.emitHudSnapshot();
 
     if (p.hp <= 0) {
-      if (this.isPvpMatch()) {
-        p.hp = 0;
-        this.emitHudSnapshot();
-        return;
-      }
       if (this.isInCoop()) {
         if (!p.isDowned) {
           p.hp = 0;
@@ -11178,26 +10236,6 @@ export class GameEngine {
       }
 
       if (pr.fromPlayer) {
-        if (this.isPvpMatch() && !pr.isVisualOnly) {
-          const hitPvp = this.checkPvpCombatHits(
-            pr.x,
-            pr.y,
-            pr.radius + 14,
-            pr.damage,
-            Boolean(pr.isFinisherBolt),
-            true
-          );
-          if (hitPvp) {
-            if (pr.kind === 'PLAYER_EXPLOSIVE_BOLT') {
-              this.detonateExplosiveBolt(pr.x, pr.y, pr.damage, pr.blastRadius ?? 116);
-            }
-            if (!pr.pierce) {
-              this.projectiles.splice(i, 1);
-              continue;
-            }
-          }
-        }
-
         let consumed = false;
         const isKoboldBolt =
           pr.kind === 'PLAYER_CROSSBOW_BOLT' ||
@@ -11617,10 +10655,7 @@ export class GameEngine {
         continue;
       }
 
-      if (
-        !this.isInCoop() &&
-        Math.hypot(pr.x - this.player.x, pr.y - this.player.y) <= pr.radius + this.player.radius - 2
-      ) {
+      if (Math.hypot(pr.x - this.player.x, pr.y - this.player.y) <= pr.radius + this.player.radius - 2) {
         this.damagePlayer(pr.damage, true);
         this.projectiles.splice(i, 1);
         continue;
@@ -11743,10 +10778,6 @@ export class GameEngine {
       });
     }
 
-    if (this.isPvpMatch()) {
-      this.checkPvpCombatHits(trap.x, trap.y, trap.blastRadius, trap.damage, false, true);
-    }
-
     for (const enemy of [...this.world.enemies]) {
       if (!enemy || enemy.hp <= 0) continue;
       const dist = Math.hypot(enemy.x - trap.x, enemy.y - trap.y);
@@ -11840,10 +10871,6 @@ export class GameEngine {
         thick: 2.8,
         drag: 4.5,
       });
-    }
-
-    if (this.isPvpMatch()) {
-      this.checkPvpCombatHits(x, y, blastRadius, rawDamage, false, true);
     }
 
     const clusterAlt = this.activeBlessingIds.has('kobold_skill_explosive_bolt_alt');
@@ -12358,15 +11385,6 @@ export class GameEngine {
   ): void {
     let hitAny = false;
     let landedCrit = false;
-
-    if (this.isPvpMatch()) {
-      const pvpCenterDist = reach * 0.65;
-      const hitX = ox + Math.cos(angle) * pvpCenterDist;
-      const hitY = oy + Math.sin(angle) * pvpCenterDist;
-      const hitPvp = this.checkPvpCombatHits(hitX, hitY, reach * 0.75, rawDamage, false, true);
-      if (hitPvp) hitAny = true;
-    }
-
     for (const enemy of [...this.world.enemies]) {
       if (enemy.hp <= 0) continue;
       if (this.isEnemyInArc(enemy, ox, oy, angle, reach, halfSpread)) {
@@ -13013,8 +12031,8 @@ export class GameEngine {
           room.discovered = true;
         }
 
-        // In Co-op mode, the server authoritatively controls waves and enemy spawning
-        if (this.isInCoop()) {
+        // In Co-op mode, only the host/party leader spawns waves and locks rooms
+        if (this.isInCoop() && !this.networkManager?.isHost()) {
           break;
         }
 
@@ -13041,8 +12059,8 @@ export class GameEngine {
       }
     }
 
-    // In Co-op mode, room clearance and wave progression are server-authoritative
-    if (this.isInCoop()) {
+    // In Co-op mode, non-host client receives room clearance and next waves from host sync
+    if (this.isInCoop() && !this.networkManager?.isHost()) {
       return;
     }
 
@@ -13174,11 +12192,7 @@ export class GameEngine {
             return;
           }
           if (isRunVictory) {
-            if (this.isInCoop()) {
-              this.networkManager?.sendClaimVictory();
-            } else {
-              this.finishRun(true);
-            }
+            this.finishRun(true);
           } else if (this.isInCoop()) {
             const seed = Math.floor(Math.random() * 1000000);
             this.networkManager?.sendAdvanceFloor(nextFloor, seed);
@@ -13780,81 +12794,8 @@ export class GameEngine {
           mode: room.mode,
           isHost: room.hostId === localId,
           playerCount: room.players.length,
-          maxPlayers: room.maxPlayers,
           ping: this.networkManager?.getPing() ?? 0,
           partyMembers,
-        };
-      })(),
-      pvpMatchInfo: (() => {
-        if (!this.pvpMatchState) return null;
-        const room = this.networkManager?.getRoom();
-        const localId = this.networkManager?.getLocalPlayerId();
-        const myTeam = this.getMyPvpTeam();
-        const myStats = localId ? this.pvpMatchState.playerStats[localId] : undefined;
-
-        const players: PvpPlayerHudItem[] = (room?.players || []).map((rp) => {
-          const isSelf = rp.id === localId;
-          const stats = this.pvpMatchState?.playerStats[rp.id];
-          const remote = !isSelf ? this.remotePlayers.get(rp.id) : null;
-          const team: PvpTeamId = (rp.team as PvpTeamId) || (isSelf ? myTeam : (myTeam === 'BLUE' ? 'RED' : 'BLUE'));
-          return {
-            id: rp.id,
-            name: rp.name,
-            characterId: isSelf ? this.player.characterId : (remote?.characterId ?? rp.characterId),
-            team,
-            isSelf,
-            hp: isSelf ? Math.max(0, Math.ceil(this.player.hp)) : (remote?.hp ?? 100),
-            maxHp: isSelf ? this.player.maxHp : (remote?.maxHp ?? 100),
-            kills: stats?.kills ?? 0,
-            deaths: stats?.deaths ?? 0,
-            damage: stats?.damage ?? 0,
-            respawnTimer: isSelf ? (myStats?.respawnTimer ?? 0) : (stats?.respawnTimer ?? 0),
-            invulnTimer: isSelf ? this.player.invulnTimer : (stats?.invulnTimer ?? 0),
-            color: rp.color || (team === 'BLUE' ? '#38BDF8' : '#F43F5E'),
-          };
-        });
-
-        return {
-          blueBase: {
-            hp: Math.ceil(this.pvpMatchState.blueBase.hp),
-            maxHp: this.pvpMatchState.blueBase.maxHp,
-            x: this.pvpMatchState.blueBase.x,
-            y: this.pvpMatchState.blueBase.y,
-            isDestroyed: this.pvpMatchState.blueBase.isDestroyed,
-            hitFlashTimer: this.pvpMatchState.blueBase.hitFlashTimer,
-          },
-          redBase: {
-            hp: Math.ceil(this.pvpMatchState.redBase.hp),
-            maxHp: this.pvpMatchState.redBase.maxHp,
-            x: this.pvpMatchState.redBase.x,
-            y: this.pvpMatchState.redBase.y,
-            isDestroyed: this.pvpMatchState.redBase.isDestroyed,
-            hitFlashTimer: this.pvpMatchState.redBase.hitFlashTimer,
-          },
-          minions: this.pvpMatchState.minions.map((m) => ({
-            id: m.id,
-            team: m.team as PvpTeamId,
-            kind: m.kind,
-            x: m.x,
-            y: m.y,
-            vx: m.vx,
-            vy: m.vy,
-            hp: m.hp,
-            maxHp: m.maxHp,
-            facingX: m.facingX,
-            aiState: m.aiState,
-            attackAngle: m.attackAngle,
-            hitFlashTimer: m.hitFlashTimer,
-          })),
-          matchTime: this.pvpMatchState.matchTime,
-          blueScore: this.pvpMatchState.blueScore,
-          redScore: this.pvpMatchState.redScore,
-          myTeam,
-          isMatchEnded: this.pvpMatchState.isMatchEnded,
-          winnerTeam: this.pvpMatchState.winnerTeam as PvpTeamId | undefined,
-          myRespawnTimer: myStats?.respawnTimer ?? 0,
-          myInvulnTimer: this.player.invulnTimer,
-          players,
         };
       })(),
     });
@@ -13896,7 +12837,6 @@ export class GameEngine {
       player: this.player,
       remotePlayers: Array.from(this.remotePlayers.values()),
       guildCompanions: this.getGuildCompanions(),
-      pvpMatchState: this.pvpMatchState,
       projectiles: this.projectiles,
       slashes: this.slashes,
       shockwaves: this.shockwaves,

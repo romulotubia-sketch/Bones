@@ -87,7 +87,6 @@ export interface RemoteRenderPlayer extends RenderPlayerState {
   color: string;
   hp: number;
   maxHp: number;
-  isHost?: boolean;
   isRival?: boolean;
   isDowned?: boolean;
   bleedoutTimer?: number;
@@ -1125,37 +1124,12 @@ export function renderGameWorld(input: WorldRenderInput): void {
 
       if (player.isDowned) {
         ctx.save();
-        const pulse = 0.7 + Math.sin(time * 6) * 0.3;
-        ctx.strokeStyle = `rgba(239, 68, 68, ${pulse})`;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(player.x, player.y, 22, 0, Math.PI * 2);
-        ctx.stroke();
-
-        if (player.reviveProgress && player.reviveProgress > 0) {
-          ctx.strokeStyle = '#4ADE80';
-          ctx.lineWidth = 3.5;
-          ctx.beginPath();
-          ctx.arc(
-            player.x,
-            player.y,
-            26,
-            -Math.PI / 2,
-            -Math.PI / 2 + Math.PI * 2 * player.reviveProgress
-          );
-          ctx.stroke();
-        }
-
         const nameY = player.y - 36;
         ctx.font = '700 10px "Plus Jakarta Sans", system-ui, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const bleedSec = Math.max(0, Math.ceil(player.bleedoutTimer ?? 35));
-        const revPct =
-          player.reviveProgress && player.reviveProgress > 0
-            ? ` · ${Math.round(player.reviveProgress * 100)}%`
-            : '';
-        const labelText = `DOWNED (${bleedSec}s${revPct})`;
+        const labelText = `DOWNED (${bleedSec}s)`;
         const textW = ctx.measureText(labelText).width;
         ctx.fillStyle = 'rgba(69, 10, 10, 0.92)';
         ctx.strokeStyle = '#EF4444';
@@ -1192,7 +1166,12 @@ export function renderGameWorld(input: WorldRenderInput): void {
       drawList.push({
         sortY: remote.y,
         draw: () => {
-          // Draw colored indicator ring or downed revival beacon under feet
+          // Draw colored indicator ring under feet
+          ctx.save();
+          ctx.strokeStyle = remote.color || (remote.isRival ? '#EF4444' : '#38BDF8');
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 4]);
+          // Draw colored indicator ring or downed beacon under feet
           ctx.save();
           if (remote.isDowned) {
             const pulse = 0.7 + Math.sin(time * 6) * 0.3;
@@ -1201,15 +1180,6 @@ export function renderGameWorld(input: WorldRenderInput): void {
             ctx.beginPath();
             ctx.arc(remote.x, remote.y, 22, 0, Math.PI * 2);
             ctx.stroke();
-
-            // Outer proximity revival radius guide
-            ctx.strokeStyle = 'rgba(74, 222, 128, 0.24)';
-            ctx.lineWidth = 1.2;
-            ctx.setLineDash([5, 5]);
-            ctx.beginPath();
-            ctx.arc(remote.x, remote.y, 88, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.setLineDash([]);
 
             if (remote.reviveProgress && remote.reviveProgress > 0) {
               ctx.strokeStyle = '#4ADE80';
@@ -1237,30 +1207,19 @@ export function renderGameWorld(input: WorldRenderInput): void {
           // Draw the hero character model
           drawHeroCharacter(ctx, remote, phase, time, false);
 
-          // Nameplate, Party Leader Crown, and Health Bar above remote hero
+          // Nameplate and Health Bar above remote hero
           ctx.save();
-          const nameY = remote.y - (remote.colossusTimer > 0 || remote.abominationTimer > 0 ? 52 : 38);
+          const nameY = remote.y - (remote.colossusTimer > 0 || remote.abominationTimer > 0 ? 52 : 36);
           ctx.font = '600 10px "Plus Jakarta Sans", system-ui, sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          const leaderPrefix = remote.isHost ? '♛ ' : '';
-          const reviveSuffix =
-            remote.isDowned && remote.reviveProgress && remote.reviveProgress > 0
-              ? ` ${Math.round(remote.reviveProgress * 100)}%`
-              : remote.isDowned
-              ? ' [REVIVE]'
-              : '';
-          const labelText = `${leaderPrefix}${remote.name}${reviveSuffix}`;
+          const labelText = remote.isDowned ? `${remote.name} [REVIVE]` : remote.name;
           const textW = ctx.measureText(labelText).width;
           const padX = 6;
-          const pillW = Math.max(40, textW + padX * 2);
+          const pillW = Math.max(38, textW + padX * 2);
 
           ctx.fillStyle = remote.isDowned ? 'rgba(69, 10, 10, 0.92)' : 'rgba(18, 16, 23, 0.88)';
-          ctx.strokeStyle = remote.isDowned
-            ? '#EF4444'
-            : remote.isHost
-            ? '#FBBF24'
-            : remote.color || '#38BDF8';
+          ctx.strokeStyle = remote.isDowned ? '#EF4444' : remote.color || '#38BDF8';
           ctx.lineWidth = 1;
           drawRoundedRect(ctx, remote.x - pillW / 2, nameY - 8, pillW, 15, 4);
           ctx.fill();
@@ -1268,20 +1227,18 @@ export function renderGameWorld(input: WorldRenderInput): void {
 
           ctx.fillStyle = remote.isDowned
             ? '#FCA5A5'
-            : remote.isHost
-            ? '#FDE68A'
             : remote.isRival
             ? '#FCA5A5'
             : '#F3EFE6';
           ctx.fillText(labelText, remote.x, nameY);
 
-          // Live HP bar for party members in dungeon (or whenever injured)
-          if (!remote.isDowned && remote.maxHp > 0 && (!isGuild || remote.hp < remote.maxHp)) {
-            const barW = 36;
-            const barH = 3.5;
+          // Mini HP bar if damaged and not downed
+          if (!remote.isDowned && remote.hp < remote.maxHp && remote.maxHp > 0) {
+            const barW = 32;
+            const barH = 3;
             const barY = nameY + 9;
             const hpRatio = Math.max(0, Math.min(1, remote.hp / remote.maxHp));
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.78)';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
             ctx.fillRect(remote.x - barW / 2, barY, barW, barH);
             ctx.fillStyle = hpRatio > 0.45 ? '#4ADE80' : hpRatio > 0.2 ? '#FBBF24' : '#EF4444';
             ctx.fillRect(remote.x - barW / 2, barY, barW * hpRatio, barH);

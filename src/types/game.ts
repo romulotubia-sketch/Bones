@@ -350,7 +350,6 @@ export interface ProjectileEntity {
   blastRadius?: number;
   elementKind?: 'FIRE' | 'FROST' | 'LIGHTNING';
   isFinisherBolt?: boolean;
-  isVisualOnly?: boolean;
 }
 
 export interface ExplosiveTrapEntity {
@@ -362,8 +361,6 @@ export interface ExplosiveTrapEntity {
   damage: number;
   armTimer: number;
   life: number;
-  maxLife?: number;
-  isVisualOnly?: boolean;
 }
 
 export interface SnareTrapEntity {
@@ -378,7 +375,6 @@ export interface SnareTrapEntity {
   armTimer: number;
   life: number;
   maxLife: number;
-  isVisualOnly?: boolean;
 }
 
 export interface CrossbowTurretEntity {
@@ -393,7 +389,6 @@ export interface CrossbowTurretEntity {
   recoilOffset: number;
   shotsFired: number;
   overclocked?: boolean;
-  isVisualOnly?: boolean;
 }
 
 export interface DragonsBarrageZone {
@@ -406,7 +401,6 @@ export interface DragonsBarrageZone {
   tickTimer: number;
   damagePerVolley: number;
   scorched?: boolean;
-  isVisualOnly?: boolean;
 }
 
 export interface AfterimageEntity {
@@ -430,7 +424,6 @@ export interface DeathsPassageRift {
   pullDamage: number;
   explosionDamage: number;
   detonated: boolean;
-  isVisualOnly?: boolean;
 }
 
 export interface GhostMistZone {
@@ -442,7 +435,6 @@ export interface GhostMistZone {
   maxLife: number;
   tickTimer: number;
   damagePerTick: number;
-  isVisualOnly?: boolean;
 }
 
 export interface DaggerRainZone {
@@ -454,7 +446,6 @@ export interface DaggerRainZone {
   maxLife: number;
   tickTimer: number;
   damagePerVolley: number;
-  isVisualOnly?: boolean;
 }
 
 export interface EarthenGraspZone {
@@ -467,7 +458,6 @@ export interface EarthenGraspZone {
   maxLife: number;
   tickTimer: number;
   damagePerTick: number;
-  isVisualOnly?: boolean;
 }
 
 export interface StoneRampartEntity {
@@ -478,7 +468,6 @@ export interface StoneRampartEntity {
   angle: number;
   life: number;
   maxLife: number;
-  isVisualOnly?: boolean;
 }
 
 export interface PoisonCloudEntity {
@@ -490,7 +479,6 @@ export interface PoisonCloudEntity {
   maxLife: number;
   tickTimer: number;
   damagePerTick: number;
-  isVisualOnly?: boolean;
 }
 
 export interface PickupOrb {
@@ -808,11 +796,7 @@ export interface HudSnapshot {
     mode: string;
     isHost: boolean;
     playerCount: number;
-    maxPlayers: number;
     ping: number;
-    currentWave?: number;
-    totalWaves?: number;
-    roomLocked?: boolean;
     partyMembers?: {
       id: string;
       name: string;
@@ -824,69 +808,9 @@ export interface HudSnapshot {
       isDowned: boolean;
       bleedoutTimer?: number;
       reviveProgress?: number;
-      statusText?: string;
       color: string;
     }[];
   } | null;
-  pvpMatchInfo?: PvpMatchHudInfo | null;
-}
-
-export type PvpTeamId = 'BLUE' | 'RED';
-
-export interface PvpBaseHudInfo {
-  hp: number;
-  maxHp: number;
-  x: number;
-  y: number;
-  isDestroyed: boolean;
-  hitFlashTimer: number;
-}
-
-export interface PvpMinionHudInfo {
-  id: number;
-  team: PvpTeamId;
-  kind: 'MELEE' | 'RANGED';
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  hp: number;
-  maxHp: number;
-  facingX: number;
-  aiState: 'MARCH' | 'ATTACK' | 'COOLDOWN' | 'DEATH';
-  attackAngle: number;
-  hitFlashTimer: number;
-}
-
-export interface PvpPlayerHudItem {
-  id: string;
-  name: string;
-  characterId: CharacterId;
-  team: PvpTeamId;
-  isSelf: boolean;
-  hp: number;
-  maxHp: number;
-  kills: number;
-  deaths: number;
-  damage: number;
-  respawnTimer: number;
-  invulnTimer: number;
-  color: string;
-}
-
-export interface PvpMatchHudInfo {
-  blueBase: PvpBaseHudInfo;
-  redBase: PvpBaseHudInfo;
-  minions: PvpMinionHudInfo[];
-  matchTime: number;
-  blueScore: number;
-  redScore: number;
-  myTeam: PvpTeamId;
-  isMatchEnded: boolean;
-  winnerTeam?: PvpTeamId;
-  myRespawnTimer: number;
-  myInvulnTimer: number;
-  players: PvpPlayerHudItem[];
 }
 
 export type SkillSlotKey = 'NORMAL_0' | 'NORMAL_1' | 'ULTIMATE';
