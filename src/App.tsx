@@ -274,7 +274,6 @@ export default function App() {
       },
       onGameStart: () => {
         setMultiplayerModalOpen(false);
-        engineRef.current?.enterGuildRoam();
       },
     });
   }, []);
@@ -465,6 +464,16 @@ export default function App() {
     saveData.loadouts[saveData.selectedCharacter] ??
     CHARACTER_ROSTER[saveData.selectedCharacter].defaultLoadout;
 
+  const handlePvpRematch = useCallback(() => {
+    soundEngine.playUiClick(580);
+    networkManagerRef.current?.sendRequestRematch();
+  }, []);
+
+  const handlePvpReturnToLobby = useCallback(() => {
+    soundEngine.playUiClick(440);
+    networkManagerRef.current?.sendReturnPartyToGuild();
+  }, []);
+
   return (
     <main
       className={`${
@@ -519,6 +528,8 @@ export default function App() {
             onTriggerSkill={handleTriggerSkill}
             onSkillAimChange={handleSkillAimChange}
             onReleaseSkill={handleReleaseSkill}
+            onPvpRematch={handlePvpRematch}
+            onPvpReturnToLobby={handlePvpReturnToLobby}
           />
         )}
 

@@ -68,7 +68,7 @@ import {
 import { buildPvpArenaWorld } from './pvpArenaGenerator';
 import { NetworkManager, WorldSyncPayload } from '../multiplayer/NetworkManager';
 import { PvpMatchSyncState, PvpTeam } from '../multiplayer/networkTypes';
-import { PvpMatchHudInfo, PvpTeamId } from '../types/game';
+import { PvpMatchHudInfo, PvpPlayerHudItem, PvpTeamId } from '../types/game';
 import { RemoteRenderPlayer, renderGameWorld } from './renderer';
 
 export interface EngineCallbacks {
@@ -449,11 +449,13 @@ export class GameEngine {
     );
   }
 
+  public isInMultiplayer(): boolean {
+    return this.isInCoop() || this.isPvpMatch();
+  }
+
   public getMyPvpTeam(): PvpTeamId {
     const localId = this.networkManager?.getLocalPlayerId();
     if (!localId) return 'BLUE';
-    const syncPlayer = this.pvpMatchState?.players.find((p) => p.id === localId);
-    if (syncPlayer) return syncPlayer.team;
     const roomPlayer = this.networkManager?.getRoom()?.players.find((p) => p.id === localId);
     return (roomPlayer?.team as PvpTeamId) ?? 'BLUE';
   }
@@ -525,8 +527,8 @@ export class GameEngine {
           const color = roomPlayer?.color || '#38BDF8';
           const charId = roomPlayer?.characterId || CharacterId.Zombie;
           const isMemberHost = Boolean(roomPlayer?.isHost);
-          const pvpMember = this.pvpMatchState?.players.find((pp) => pp.id === p.id);
-          const pvpTeam = pvpMember?.team ?? (roomPlayer?.team as PvpTeamId) ?? (isPvp ? 'RED' : undefined);
+          const pvpStats = this.pvpMatchState?.playerStats?.[p.id];
+          const pvpTeam = (roomPlayer?.team as PvpTeamId) ?? (isPvp ? 'RED' : undefined);
           const isRival = isPvp ? pvpTeam !== myTeam : false;
 
           const existing = this.remotePlayers.get(p.id);
@@ -545,7 +547,7 @@ export class GameEngine {
             existing.maxHp = p.maxHp;
             existing.isRival = isRival;
             existing.team = pvpTeam;
-            existing.invulnTimer = pvpMember?.invulnTimer ?? 0;
+            existing.invulnTimer = pvpStats?.invulnTimer ?? 0;
             existing.hitFlashTimer = Math.max(existing.hitFlashTimer, p.hitFlashTimer);
             existing.squashX = p.squashX;
             existing.squashY = p.squashY;
@@ -598,7 +600,7 @@ export class GameEngine {
               maxHp: p.maxHp,
               isRival,
               team: pvpTeam,
-              invulnTimer: pvpMember?.invulnTimer ?? 0,
+              invulnTimer: pvpStats?.invulnTimer ?? 0,
               isDowned: Boolean(p.isDowned),
               bleedoutTimer: p.bleedoutTimer ?? 0,
               reviveProgress: p.reviveProgress ?? 0,
@@ -1075,6 +1077,7 @@ export class GameEngine {
         this.finishRun(false);
       },
       onReturnToGuild: () => {
+        this.pvpMatchState = null;
         this.enterGuildRoam();
       },
       onHostChanged: (newHostId, newHostName) => {
@@ -1097,14 +1100,30 @@ export class GameEngine {
         this.emitHudSnapshot();
       },
       onPvpSync: (state: PvpMatchSyncState) => {
+        const wasEnded = Boolean(this.pvpMatchState?.isMatchEnded);
         this.pvpMatchState = state;
         const localId = manager.getLocalPlayerId();
-        const localState = state.players.find((p) => p.id === localId);
-        if (localState) {
-          if (localState.invulnTimer > 0) {
-            this.player.invulnTimer = Math.max(this.player.invulnTimer, localState.invulnTimer);
+        const localStats = localId ? state.playerStats[localId] : undefined;
+
+        if (wasEnded && !state.isMatchEnded) {
+          const myTeam = this.getMyPvpTeam();
+          this.player.x = myTeam === 'BLUE' ? -870 : 870;
+          this.player.y = 0;
+          this.player.facingX = myTeam === 'BLUE' ? 1 : -1;
+          this.player.hp = this.player.maxHp;
+          this.player.invulnTimer = 3.5;
+          this.cameraX = this.player.x;
+          this.cameraY = this.player.y;
+          this.clearTransientEntities();
+          soundEngine.playSummon();
+          this.showBanner('⚔️ REMATCH STARTED! Destroy the opposing base!');
+        }
+
+        if (localStats) {
+          if (localStats.invulnTimer > 0) {
+            this.player.invulnTimer = Math.max(this.player.invulnTimer, localStats.invulnTimer);
           }
-          if (localState.respawnTimer > 0) {
+          if (localStats.respawnTimer > 0) {
             this.player.hp = 0;
           }
         }
@@ -5077,7 +5096,7 @@ export class GameEngine {
       p.squashY = isFinisher ? 1.16 : 1.09;
 
       soundEngine.playArrow();
-      if (this.isInCoop()) {
+      if (this.isInMultiplayer()) {
         this.networkManager?.sendCastSkill('BASIC', p.x, p.y, p.aimAngle, 'BASIC');
       }
 
@@ -5248,7 +5267,7 @@ export class GameEngine {
     const isGnomeFinisher = isGnome && gnomeStep === 2;
     const ghostStep = isGhost ? p.ghostComboStep : 0;
     const isGhostFinisher = isGhost && ghostStep === 2;
-    if (this.isInCoop()) {
+    if (this.isInMultiplayer()) {
       this.networkManager?.sendCastSkill('BASIC', p.x, p.y, p.aimAngle, 'BASIC');
     }
 
@@ -5364,7 +5383,7 @@ export class GameEngine {
         ? 1
         : 0
     );
-    if (this.isInCoop()) {
+    if (this.isInMultiplayer()) {
       this.networkManager?.sendCastSkill('BASIC', p.x, p.y, p.aimAngle, 'BASIC');
     }
     const originX = p.x + Math.cos(p.aimAngle) * 16;
@@ -5858,7 +5877,7 @@ export class GameEngine {
     const skillId = loadout.normalSkills[slotIndex];
     const manual = this.currentCastManualAim;
     this.player.normalCooldowns[slotIndex] = this.player.normalMaxCooldowns[slotIndex];
-    if (this.isInCoop()) {
+    if (this.isInMultiplayer()) {
       this.networkManager?.sendCastSkill(
         skillId,
         this.player.x,
@@ -8711,7 +8730,7 @@ export class GameEngine {
     if (this.activeBlessingIds.has('relic_chrono_hourglass')) {
       p.ultSurgeTimer = 5.0;
     }
-    if (this.isInCoop()) {
+    if (this.isInMultiplayer()) {
       this.networkManager?.sendCastSkill(
         ultId,
         p.x,
@@ -10971,6 +10990,11 @@ export class GameEngine {
     this.emitHudSnapshot();
 
     if (p.hp <= 0) {
+      if (this.isPvpMatch()) {
+        p.hp = 0;
+        this.emitHudSnapshot();
+        return;
+      }
       if (this.isInCoop()) {
         if (!p.isDowned) {
           p.hp = 0;
@@ -11717,6 +11741,8 @@ export class GameEngine {
         thick: 2.8,
         drag: isShrapnel ? 4.8 : 3.4,
       });
+    }
+
     if (this.isPvpMatch()) {
       this.checkPvpCombatHits(trap.x, trap.y, trap.blastRadius, trap.damage, false, true);
     }
@@ -13759,6 +13785,78 @@ export class GameEngine {
           partyMembers,
         };
       })(),
+      pvpMatchInfo: (() => {
+        if (!this.pvpMatchState) return null;
+        const room = this.networkManager?.getRoom();
+        const localId = this.networkManager?.getLocalPlayerId();
+        const myTeam = this.getMyPvpTeam();
+        const myStats = localId ? this.pvpMatchState.playerStats[localId] : undefined;
+
+        const players: PvpPlayerHudItem[] = (room?.players || []).map((rp) => {
+          const isSelf = rp.id === localId;
+          const stats = this.pvpMatchState?.playerStats[rp.id];
+          const remote = !isSelf ? this.remotePlayers.get(rp.id) : null;
+          const team: PvpTeamId = (rp.team as PvpTeamId) || (isSelf ? myTeam : (myTeam === 'BLUE' ? 'RED' : 'BLUE'));
+          return {
+            id: rp.id,
+            name: rp.name,
+            characterId: isSelf ? this.player.characterId : (remote?.characterId ?? rp.characterId),
+            team,
+            isSelf,
+            hp: isSelf ? Math.max(0, Math.ceil(this.player.hp)) : (remote?.hp ?? 100),
+            maxHp: isSelf ? this.player.maxHp : (remote?.maxHp ?? 100),
+            kills: stats?.kills ?? 0,
+            deaths: stats?.deaths ?? 0,
+            damage: stats?.damage ?? 0,
+            respawnTimer: isSelf ? (myStats?.respawnTimer ?? 0) : (stats?.respawnTimer ?? 0),
+            invulnTimer: isSelf ? this.player.invulnTimer : (stats?.invulnTimer ?? 0),
+            color: rp.color || (team === 'BLUE' ? '#38BDF8' : '#F43F5E'),
+          };
+        });
+
+        return {
+          blueBase: {
+            hp: Math.ceil(this.pvpMatchState.blueBase.hp),
+            maxHp: this.pvpMatchState.blueBase.maxHp,
+            x: this.pvpMatchState.blueBase.x,
+            y: this.pvpMatchState.blueBase.y,
+            isDestroyed: this.pvpMatchState.blueBase.isDestroyed,
+            hitFlashTimer: this.pvpMatchState.blueBase.hitFlashTimer,
+          },
+          redBase: {
+            hp: Math.ceil(this.pvpMatchState.redBase.hp),
+            maxHp: this.pvpMatchState.redBase.maxHp,
+            x: this.pvpMatchState.redBase.x,
+            y: this.pvpMatchState.redBase.y,
+            isDestroyed: this.pvpMatchState.redBase.isDestroyed,
+            hitFlashTimer: this.pvpMatchState.redBase.hitFlashTimer,
+          },
+          minions: this.pvpMatchState.minions.map((m) => ({
+            id: m.id,
+            team: m.team as PvpTeamId,
+            kind: m.kind,
+            x: m.x,
+            y: m.y,
+            vx: m.vx,
+            vy: m.vy,
+            hp: m.hp,
+            maxHp: m.maxHp,
+            facingX: m.facingX,
+            aiState: m.aiState,
+            attackAngle: m.attackAngle,
+            hitFlashTimer: m.hitFlashTimer,
+          })),
+          matchTime: this.pvpMatchState.matchTime,
+          blueScore: this.pvpMatchState.blueScore,
+          redScore: this.pvpMatchState.redScore,
+          myTeam,
+          isMatchEnded: this.pvpMatchState.isMatchEnded,
+          winnerTeam: this.pvpMatchState.winnerTeam as PvpTeamId | undefined,
+          myRespawnTimer: myStats?.respawnTimer ?? 0,
+          myInvulnTimer: this.player.invulnTimer,
+          players,
+        };
+      })(),
     });
   }
 
@@ -13798,6 +13896,7 @@ export class GameEngine {
       player: this.player,
       remotePlayers: Array.from(this.remotePlayers.values()),
       guildCompanions: this.getGuildCompanions(),
+      pvpMatchState: this.pvpMatchState,
       projectiles: this.projectiles,
       slashes: this.slashes,
       shockwaves: this.shockwaves,

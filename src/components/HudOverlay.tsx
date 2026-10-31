@@ -67,6 +67,8 @@ interface HudOverlayProps {
     slot: SkillSlotKey,
     manualAim?: { angle: number; magnitude: number }
   ) => void;
+  onPvpRematch?: () => void;
+  onPvpReturnToLobby?: () => void;
 }
 
 export const HudOverlay: React.FC<HudOverlayProps> = ({
@@ -93,9 +95,12 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
   onTriggerSkill,
   onSkillAimChange,
   onReleaseSkill,
+  onPvpRematch,
+  onPvpReturnToLobby,
 }) => {
   const attackPointerId = useRef<number | null>(null);
   const [attackPressed, setAttackPressed] = useState(false);
+  const [scoreboardOpen, setScoreboardOpen] = useState(false);
 
   const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
   const [aimingState, setAimingState] = useState<{
@@ -517,7 +522,88 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
             </button>
           )}
 
-          {hud.bossInfo ? (
+          {hud.pvpMatchInfo ? (
+            <div className="w-full max-w-[560px] bg-[#120E1C]/95 border border-[#3A2D50] rounded-xl px-2.5 py-1.5 shadow-2xl backdrop-blur flex flex-col gap-1 pointer-events-auto">
+              <div className="flex items-center justify-between gap-2.5">
+                {/* Blue Team Base Bar */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between text-[10px] mb-0.5">
+                    <span className="font-bold text-[#38BDF8] flex items-center gap-1 truncate">
+                      🛡️ Blue Base
+                    </span>
+                    <span className="font-mono-num text-[9.5px] text-[#BAE6FD]">
+                      {Math.max(0, hud.pvpMatchInfo.blueBase.hp)}/{hud.pvpMatchInfo.blueBase.maxHp}
+                    </span>
+                  </div>
+                  <div className="w-full h-2 rounded bg-[#0F172A] border border-[#1E293B] overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-[#0284C7] to-[#38BDF8] origin-left transition-transform duration-100"
+                      style={{
+                        transform: `scaleX(${Math.max(
+                          0,
+                          Math.min(1, hud.pvpMatchInfo.blueBase.hp / hud.pvpMatchInfo.blueBase.maxHp)
+                        )})`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Central Match Time & Kills Score */}
+                <div className="flex flex-col items-center shrink-0 px-2.5 py-0.5 rounded-lg bg-[#1B1428] border border-[#3C2D54]">
+                  <div className="flex items-center gap-1.5 font-bold tabular-nums text-xs">
+                    <span className="text-[#38BDF8]">{hud.pvpMatchInfo.blueScore}</span>
+                    <span className="text-[#64748B]">:</span>
+                    <span className="text-[#F43F5E]">{hud.pvpMatchInfo.redScore}</span>
+                  </div>
+                  <span className="text-[8.5px] font-mono-num text-[#A69FB4]">
+                    {Math.floor(hud.pvpMatchInfo.matchTime / 60)}:
+                    {Math.floor(hud.pvpMatchInfo.matchTime % 60).toString().padStart(2, '0')}
+                  </span>
+                </div>
+
+                {/* Red Team Base Bar */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between text-[10px] mb-0.5">
+                    <span className="font-mono-num text-[9.5px] text-[#FECDD3]">
+                      {Math.max(0, hud.pvpMatchInfo.redBase.hp)}/{hud.pvpMatchInfo.redBase.maxHp}
+                    </span>
+                    <span className="font-bold text-[#F43F5E] flex items-center gap-1 truncate">
+                      Red Base ⚔️
+                    </span>
+                  </div>
+                  <div className="w-full h-2 rounded bg-[#2A0F15] border border-[#3B151F] overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-l from-[#BE123C] to-[#F43F5E] origin-right transition-transform duration-100"
+                      style={{
+                        transform: `scaleX(${Math.max(
+                          0,
+                          Math.min(1, hud.pvpMatchInfo.redBase.hp / hud.pvpMatchInfo.redBase.maxHp)
+                        )})`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Scoreboard Trigger Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick(550);
+                    setScoreboardOpen((prev) => !prev);
+                  }}
+                  className={`px-2 py-1 rounded-lg border text-[10px] font-bold flex items-center gap-1 shrink-0 active:scale-95 transition-colors ${
+                    scoreboardOpen
+                      ? 'bg-[#FBBF24] text-[#120F17] border-[#FDE047]'
+                      : 'bg-[#241A38] text-[#F3EFE6] border-[#44335E] hover:border-[#6D4FA0]'
+                  }`}
+                  title="View Scoreboard"
+                >
+                  <Swords className="w-3 h-3 text-[#FBBF24]" />
+                  <span className="hidden sm:inline">Score</span>
+                </button>
+              </div>
+            </div>
+          ) : hud.bossInfo ? (
             <div className="w-full bg-[#181322]/95 border border-[#4C2D4E] rounded-xl px-3 py-1.5 shadow-lg">
               <div className="flex items-baseline justify-between gap-2 mb-1">
                 <span className="font-display text-xs font-bold text-[#F5F0E6] truncate">
@@ -722,7 +808,11 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
           </button>
         </div>
       ) : (
-        <div className="flex items-end justify-between w-full">
+        <div className={`flex items-end justify-between w-full transition-opacity duration-150 ${
+          hud.pvpMatchInfo && (hud.pvpMatchInfo.myRespawnTimer > 0 || hud.hp <= 0)
+            ? 'opacity-25 pointer-events-none'
+            : ''
+        }`}>
           {/* Left Thumb Zone: Analog Virtual Joystick */}
           <VirtualJoystick onMove={onJoystickMove} scale={joystickScale} />
 
@@ -951,6 +1041,228 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                 />
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* PvP Respawn Screen when eliminated */}
+      {hud.pvpMatchInfo && (hud.pvpMatchInfo.myRespawnTimer > 0 || hud.hp <= 0) && !hud.pvpMatchInfo.isMatchEnded && (
+        <div className="absolute inset-0 z-30 pointer-events-auto bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center p-4">
+          <div className="p-4 rounded-2xl bg-[#161220]/95 border border-[#EF4444]/60 shadow-2xl flex flex-col items-center text-center max-w-[280px]">
+            <span className="text-2xl mb-1">💀</span>
+            <h3 className="text-sm font-bold text-[#EF4444] tracking-wide uppercase">Hero Eliminated</h3>
+            <p className="text-[11px] text-[#A69FB4] mt-0.5">Respawning at your team's base</p>
+            <div className="my-2 text-3xl font-mono-num font-bold text-[#F3EFE6] tabular-nums">
+              {Math.max(0, hud.pvpMatchInfo.myRespawnTimer).toFixed(1)}s
+            </div>
+            <div className="text-[9.5px] text-[#64748B]">Lane minions are advancing...</div>
+          </div>
+        </div>
+      )}
+
+      {/* PvP Respawn Protection Shield indicator */}
+      {hud.pvpMatchInfo && hud.pvpMatchInfo.myInvulnTimer > 0 && !hud.pvpMatchInfo.isMatchEnded && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 px-3 py-1 rounded-full bg-[#0284C7]/85 border border-[#38BDF8] text-[10px] font-bold text-[#F0F9FF] shadow-lg flex items-center gap-1.5 animate-pulse pointer-events-none">
+          <span>🛡️</span>
+          <span>RESPAWN SHIELD: {hud.pvpMatchInfo.myInvulnTimer.toFixed(1)}s (Protected)</span>
+        </div>
+      )}
+
+      {/* PvP Match End (Victory / Defeat) Modal */}
+      {hud.pvpMatchInfo && hud.pvpMatchInfo.isMatchEnded && (
+        <div className="absolute inset-0 z-40 pointer-events-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-3">
+          <div className="w-full max-w-[560px] max-h-[92vh] flex flex-col rounded-2xl bg-[#15111E] border border-[#382C4A] shadow-2xl overflow-hidden">
+            <div
+              className={`p-3 text-center border-b ${
+                hud.pvpMatchInfo.winnerTeam === hud.pvpMatchInfo.myTeam
+                  ? 'bg-gradient-to-r from-[#0E2C3D] via-[#103D37] to-[#0E2C3D] border-[#38BDF8]/40'
+                  : 'bg-gradient-to-r from-[#3D1418] via-[#2A101A] to-[#3D1418] border-[#F43F5E]/40'
+              }`}
+            >
+              <div className="text-2xl mb-0.5">
+                {hud.pvpMatchInfo.winnerTeam === hud.pvpMatchInfo.myTeam ? '🏆' : '💀'}
+              </div>
+              <h2
+                className={`font-display text-lg font-bold tracking-wide ${
+                  hud.pvpMatchInfo.winnerTeam === hud.pvpMatchInfo.myTeam ? 'text-[#38BDF8]' : 'text-[#F43F5E]'
+                }`}
+              >
+                {hud.pvpMatchInfo.winnerTeam === hud.pvpMatchInfo.myTeam
+                  ? 'VICTORY — BASE DESTROYED'
+                  : 'DEFEAT — YOUR BASE FELL'}
+              </h2>
+              <p className="text-[11px] text-[#C4BED1] mt-0.5">
+                {hud.pvpMatchInfo.winnerTeam} Team won in{' '}
+                <span className="font-mono-num text-[#FBBF24]">
+                  {Math.floor(hud.pvpMatchInfo.matchTime / 60)}m{' '}
+                  {Math.floor(hud.pvpMatchInfo.matchTime % 60)}s
+                </span>
+              </p>
+            </div>
+
+            <div className="p-3 overflow-y-auto flex-1 min-h-0 flex flex-col gap-2.5">
+              <div className="rounded-xl border border-[#38BDF8]/30 bg-[#0F172A]/70 p-2">
+                <div className="flex items-center justify-between text-[11px] font-bold text-[#38BDF8] mb-1.5 px-1">
+                  <span>
+                    BLUE SANCTUM ({hud.pvpMatchInfo.blueScore} Kills · Base{' '}
+                    {Math.max(0, hud.pvpMatchInfo.blueBase.hp)} HP)
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  {hud.pvpMatchInfo.players
+                    .filter((p) => p.team === 'BLUE')
+                    .map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between text-[10px] px-2 py-1 rounded-lg bg-[#162035] text-[#F3EFE6]"
+                      >
+                        <div className="flex items-center gap-1.5 truncate">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#38BDF8]" />
+                          <span className="font-semibold truncate">
+                            {p.name} {p.isSelf ? '(You)' : ''}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 font-mono-num text-[9.5px]">
+                          <span className="text-[#38BDF8]">{p.kills} K</span>
+                          <span className="text-[#EF4444]">{p.deaths} D</span>
+                          <span className="text-[#FBBF24]">{p.damage} DMG</span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-[#F43F5E]/30 bg-[#2A1016]/70 p-2">
+                <div className="flex items-center justify-between text-[11px] font-bold text-[#F43F5E] mb-1.5 px-1">
+                  <span>
+                    RED CRUCIBLE ({hud.pvpMatchInfo.redScore} Kills · Base{' '}
+                    {Math.max(0, hud.pvpMatchInfo.redBase.hp)} HP)
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  {hud.pvpMatchInfo.players
+                    .filter((p) => p.team === 'RED')
+                    .map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between text-[10px] px-2 py-1 rounded-lg bg-[#38161E] text-[#F3EFE6]"
+                      >
+                        <div className="flex items-center gap-1.5 truncate">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#F43F5E]" />
+                          <span className="font-semibold truncate">
+                            {p.name} {p.isSelf ? '(You)' : ''}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 font-mono-num text-[9.5px]">
+                          <span className="text-[#38BDF8]">{p.kills} K</span>
+                          <span className="text-[#EF4444]">{p.deaths} D</span>
+                          <span className="text-[#FBBF24]">{p.damage} DMG</span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 bg-[#110D18] border-t border-[#2D233C] flex items-center justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiClick(440);
+                  onPvpReturnToLobby?.();
+                }}
+                className="min-h-[38px] px-4 rounded-xl bg-[#281F37] hover:bg-[#382B4E] text-xs font-semibold text-[#D6D0C4] active:scale-95 transition-transform"
+              >
+                Return to Guild
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiClick(580);
+                  onPvpRematch?.();
+                }}
+                className="min-h-[38px] px-5 rounded-xl bg-[#4ADE80] hover:bg-[#3FC772] text-[#0F1E14] text-xs font-bold tracking-wide shadow-lg active:scale-95 transition-transform flex items-center gap-1.5"
+              >
+                <span>Rematch</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating PvP Scoreboard Modal */}
+      {scoreboardOpen && hud.pvpMatchInfo && (
+        <div
+          className="absolute inset-0 z-35 pointer-events-auto bg-black/60 backdrop-blur-sm flex items-center justify-center p-3"
+          onClick={() => setScoreboardOpen(false)}
+        >
+          <div
+            className="w-full max-w-[520px] rounded-2xl bg-[#15111E] border border-[#3A2E50] p-3 shadow-2xl flex flex-col gap-2.5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-1.5 border-b border-[#2C233C]">
+              <div className="flex items-center gap-2">
+                <Swords className="w-4 h-4 text-[#FBBF24]" />
+                <span className="font-bold text-xs text-[#F3EFE6]">
+                  Base Brawl Match Scoreboard
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setScoreboardOpen(false)}
+                className="p-1 rounded-md text-[#A69FB4] hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl border border-[#38BDF8]/30 bg-[#0F172A]/70 p-2">
+                <div className="text-[11px] font-bold text-[#38BDF8] mb-1">
+                  Blue Sanctum ({hud.pvpMatchInfo.blueScore})
+                </div>
+                <div className="flex flex-col gap-1">
+                  {hud.pvpMatchInfo.players
+                    .filter((p) => p.team === 'BLUE')
+                    .map((p) => (
+                      <div
+                        key={p.id}
+                        className="text-[10px] px-1.5 py-1 rounded bg-[#162035] text-[#F3EFE6] flex items-center justify-between"
+                      >
+                        <span className="truncate">
+                          {p.name} {p.isSelf ? '(You)' : ''}
+                        </span>
+                        <span className="font-mono-num text-[9px] text-[#BAE6FD] shrink-0">
+                          {p.kills}K / {p.deaths}D
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-[#F43F5E]/30 bg-[#2A1016]/70 p-2">
+                <div className="text-[11px] font-bold text-[#F43F5E] mb-1">
+                  Red Crucible ({hud.pvpMatchInfo.redScore})
+                </div>
+                <div className="flex flex-col gap-1">
+                  {hud.pvpMatchInfo.players
+                    .filter((p) => p.team === 'RED')
+                    .map((p) => (
+                      <div
+                        key={p.id}
+                        className="text-[10px] px-1.5 py-1 rounded bg-[#38161E] text-[#F3EFE6] flex items-center justify-between"
+                      >
+                        <span className="truncate">
+                          {p.name} {p.isSelf ? '(You)' : ''}
+                        </span>
+                        <span className="font-mono-num text-[9px] text-[#FDA4AF] shrink-0">
+                          {p.kills}K / {p.deaths}D
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
