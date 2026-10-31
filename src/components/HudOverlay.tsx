@@ -8,6 +8,7 @@ import {
   Pause,
   SlidersHorizontal,
   Swords,
+  Users,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -43,6 +44,7 @@ interface HudOverlayProps {
   onToggleFullscreen: () => void;
   onPause: () => void;
   onOpenLoadout: (charId?: CharacterId) => void;
+  onOpenMultiplayer?: () => void;
   onSelectDifficulty?: (diff: DifficultyLevel) => void;
   onJoystickMove: (nx: number, ny: number) => void;
   onMapPanJoystick: (nx: number, ny: number) => void;
@@ -63,6 +65,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
   onToggleFullscreen,
   onPause,
   onOpenLoadout,
+  onOpenMultiplayer,
   onSelectDifficulty,
   onJoystickMove,
   onMapPanJoystick,
@@ -330,12 +333,34 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                 />
                 <span>Heroes &amp; Skills</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiClick(580);
+                  onOpenMultiplayer?.();
+                }}
+                className="min-h-[44px] px-3 rounded-xl bg-[#201B2D]/90 active:scale-95 border border-[#38BDF8]/60 text-xs font-semibold text-[#F5F0E6] flex items-center gap-1.5 shadow-lg whitespace-nowrap shrink-0"
+              >
+                <Users className="w-4 h-4 text-[#38BDF8]" />
+                <span>Multiplayer</span>
+              </button>
             </div>
           )}
         </div>
 
-        {/* Top-Center: Boss Health Bar, Room Banner, or Re-Center Camera Button */}
+        {/* Top-Center: Boss Health Bar, Room Banner, Multiplayer Info, or Re-Center Camera Button */}
         <div className="flex-1 max-w-xs sm:max-w-sm mx-auto flex flex-col items-center gap-1.5 px-1">
+          {hud.multiplayerInfo && (
+            <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#181324]/95 border border-[#483761] text-[10px] text-[#A69FB4] shadow-md">
+              <span className="w-2 h-2 rounded-full bg-[#4ADE80] animate-pulse" />
+              <span className="font-mono-num font-bold text-[#FBBF24]">[{hud.multiplayerInfo.roomCode}]</span>
+              <span className="text-[#E2E8F0] font-semibold">{hud.multiplayerInfo.mode.replace('_', ' ')}</span>
+              <span className="text-[#38BDF8] font-bold">({hud.multiplayerInfo.playerCount}P)</span>
+              <span>{hud.multiplayerInfo.ping}ms</span>
+            </div>
+          )}
+
           {hud.bossInfo ? (
             <div className="w-full bg-[#181322]/95 border border-[#4C2D4E] rounded-xl px-3 py-1.5 shadow-lg">
               <div className="flex items-baseline justify-between gap-2 mb-1">

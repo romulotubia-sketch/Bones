@@ -436,12 +436,28 @@ export function getBossInfoForFloor(floorIndex: number) {
   };
 }
 
-export function buildGraveyardFloor(floorIndex: number, diffConfig?: DifficultyConfig): GeneratedWorld {
+function createSeededRandom(seed: number) {
+  let s = (seed ^ 0xdeadbeef) | 0;
+  return function () {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function buildGraveyardFloor(
+  floorIndex: number,
+  diffConfig?: DifficultyConfig,
+  seed?: number
+): GeneratedWorld {
   const ROOM_W = 820;
   const ROOM_H = 640;
   const STEP_X = 1100;
   const STEP_Y = 920;
   const CORRIDOR_WIDTH = 144;
+
+  const rng = seed !== undefined ? createSeededRandom(seed + floorIndex * 9973) : Math.random;
 
   const { stage, stageFloor, isStageBoss } = getStageAndFloor(floorIndex);
   const cfg = diffConfig ?? DIFFICULTY_CONFIGS[DifficultyLevel.Easy];
@@ -472,9 +488,9 @@ export function buildGraveyardFloor(floorIndex: number, diffConfig?: DifficultyC
     safety++;
     // Prefer growing outward from newer rooms for good dungeon progression
     const pickIdx =
-      Math.random() < 0.7 ? cells.length - 1 : Math.floor(Math.random() * cells.length);
+      rng() < 0.7 ? cells.length - 1 : Math.floor(rng() * cells.length);
     const base = cells[pickIdx];
-    const shuffled = [...dirs].sort(() => Math.random() - 0.5);
+    const shuffled = [...dirs].sort(() => rng() - 0.5);
 
     for (const d of shuffled) {
       const ngx = base.gx + d.dx;
@@ -662,14 +678,14 @@ export function buildGraveyardFloor(floorIndex: number, diffConfig?: DifficultyC
           [110, -115],
         ],
       ];
-      const chosen = patterns[Math.floor(Math.random() * patterns.length)];
+      const chosen = patterns[Math.floor(rng() * patterns.length)];
       for (const [ox, oy] of chosen) {
-        const isCross = Math.random() < 0.45;
+        const isCross = rng() < 0.45;
         props.push({
           id: allocEntityId(),
           kind: isCross ? 'TOMBSTONE_CROSS' : 'TOMBSTONE_ROUND',
-          x: cx + ox + (Math.random() - 0.5) * 28,
-          y: cy + oy + (Math.random() - 0.5) * 24,
+          x: cx + ox + (rng() - 0.5) * 28,
+          y: cy + oy + (rng() - 0.5) * 24,
           w: 38,
           h: 44,
           solid: true,
@@ -679,15 +695,15 @@ export function buildGraveyardFloor(floorIndex: number, diffConfig?: DifficultyC
       }
 
       // 3-4 Destructible Bone Urns / Crates
-      const urnCount = 3 + Math.floor(Math.random() * 2);
+      const urnCount = 3 + Math.floor(rng() * 2);
       for (let i = 0; i < urnCount; i++) {
-        const angle = (i / urnCount) * Math.PI * 2 + Math.random() * 0.8;
-        const dist = 190 + Math.random() * 75;
+        const angle = (i / urnCount) * Math.PI * 2 + rng() * 0.8;
+        const dist = 190 + rng() * 75;
         const ux = cx + Math.cos(angle) * dist;
         const uy = cy + Math.sin(angle) * (dist * 0.72);
         props.push({
           id: allocEntityId(),
-          kind: Math.random() < 0.65 ? 'BONE_URN' : 'WOOD_CRATE',
+          kind: rng() < 0.65 ? 'BONE_URN' : 'WOOD_CRATE',
           x: ux,
           y: uy,
           w: 32,

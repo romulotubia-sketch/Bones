@@ -706,4 +706,23 @@ export interface HudSnapshot {
     gridOffsetY: number;
     isPanned: boolean;
   };
+  multiplayerInfo?: {
+    inRoom: boolean;
+    roomCode: string;
+    mode: string;
+    isHost: boolean;
+    playerCount: number;
+    ping: number;
+    partyMembers?: {
+      id: string;
+      name: string;
+      characterId: CharacterId;
+      isHost: boolean;
+      hp: number;
+      maxHp: number;
+      isDowned: boolean;
+      color: string;
+    }[];
+  } | null;
 }
+

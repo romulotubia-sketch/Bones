@@ -13,6 +13,9 @@ import {
 } from './components/GameModals';
 import { HudOverlay } from './components/HudOverlay';
 import { LoadoutModal } from './components/LoadoutModal';
+import { MultiplayerLobbyModal } from './components/MultiplayerLobbyModal';
+import { NetworkManager } from './multiplayer/NetworkManager';
+import { RoomInfo } from './multiplayer/networkTypes';
 import {
   CHARACTER_ROSTER,
   EMPTY_UPGRADE_RANKS,
@@ -136,6 +139,13 @@ export default function App() {
     damageDealt: 0,
   });
 
+  const networkManagerRef = useRef<NetworkManager | null>(null);
+  if (!networkManagerRef.current) {
+    networkManagerRef.current = new NetworkManager();
+  }
+  const [multiplayerModalOpen, setMultiplayerModalOpen] = useState(false);
+  const [multiplayerRoom, setMultiplayerRoom] = useState<RoomInfo | null>(null);
+
   const saveDataRef = useRef(saveData);
   saveDataRef.current = saveData;
 
@@ -236,13 +246,29 @@ export default function App() {
     });
 
     engineRef.current = engine;
+    engine.setNetworkManager(networkManagerRef.current);
     engine.start();
 
     return () => {
+      engine.setNetworkManager(null);
       engine.destroy();
       engineRef.current = null;
     };
   }, [handleOpenLoadout]);
+
+  useEffect(() => {
+    const net = networkManagerRef.current;
+    if (!net) return;
+    net.setCallbacks({
+      onRoomUpdate: (room) => {
+        setMultiplayerRoom(room ? { ...room } : null);
+      },
+      onGameStart: () => {
+        setMultiplayerModalOpen(false);
+        engineRef.current?.enterGuildRoam();
+      },
+    });
+  }, []);
 
   const handleToggleFullscreen = useCallback(() => {
     void toggleAppFullscreen().then((active) => {
@@ -402,6 +428,7 @@ export default function App() {
           onToggleMute={handleToggleMute}
           onToggleFullscreen={handleToggleFullscreen}
           onStartGame={handleStartFromTitle}
+          onOpenMultiplayer={() => setMultiplayerModalOpen(true)}
         />
       )}
 
@@ -422,6 +449,7 @@ export default function App() {
             onToggleFullscreen={handleToggleFullscreen}
             onPause={handlePause}
             onOpenLoadout={handleOpenLoadout}
+            onOpenMultiplayer={() => setMultiplayerModalOpen(true)}
             onSelectDifficulty={handleSelectDifficulty}
             onJoystickMove={handleJoystickMove}
             onMapPanJoystick={handleMapPanJoystick}
@@ -487,6 +515,22 @@ export default function App() {
           onResume={handleResume}
           onReturnToGuild={handleReturnToGuild}
           onPlayAgain={handlePlayAgain}
+        />
+      )}
+
+      {/* Multiplayer Lobby & Party Management Modal */}
+      {multiplayerModalOpen && networkManagerRef.current && (
+        <MultiplayerLobbyModal
+          networkManager={networkManagerRef.current}
+          room={multiplayerRoom}
+          selectedCharacter={saveData.selectedCharacter}
+          onClose={() => setMultiplayerModalOpen(false)}
+          onStartMultiplayerGame={() => {
+            setMultiplayerModalOpen(false);
+            if (hud.phase === GamePhase.Title || hud.phase === GamePhase.GuildPicking) {
+              engineRef.current?.enterGuildRoam();
+            }
+          }}
         />
       )}
     </main>

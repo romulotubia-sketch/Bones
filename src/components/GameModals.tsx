@@ -10,6 +10,7 @@ import {
   Shield,
   Skull,
   Swords,
+  Users,
   Volume2,
   VolumeX,
   X,
@@ -33,6 +34,7 @@ interface TitleScreenOverlayProps {
   onToggleMute: () => void;
   onToggleFullscreen: () => void;
   onStartGame: () => void;
+  onOpenMultiplayer?: () => void;
 }
 
 export const TitleScreenOverlay: React.FC<TitleScreenOverlayProps> = ({
@@ -41,6 +43,7 @@ export const TitleScreenOverlay: React.FC<TitleScreenOverlayProps> = ({
   onToggleMute,
   onToggleFullscreen,
   onStartGame,
+  onOpenMultiplayer,
 }) => {
   return (
     <div className="absolute inset-0 z-30 pointer-events-none flex flex-col justify-between safe-hud-insets bg-gradient-to-t from-[#0D0A12]/85 via-[#0D0A12]/25 to-[#0D0A12]/55">
@@ -97,20 +100,38 @@ export const TitleScreenOverlay: React.FC<TitleScreenOverlayProps> = ({
           Choose the Zombie, Skeleton, Goblin, Gnome, or Ghost in the Guild House, equip your skills, and step out the North Door into the Whispering Graveyard.
         </p>
 
-        <button
-          type="button"
-          onClick={() => {
-            tryLockScreenLandscape();
-            if (!isFullscreen) {
-              void requestAppFullscreen();
-            }
-            soundEngine.playUiClick(580);
-            onStartGame();
-          }}
-          className="mt-4 sm:mt-5 min-h-[48px] px-8 rounded-2xl bg-[#4ADE80] text-[#0E1912] text-sm font-bold tracking-wide shadow-xl transition-transform active:scale-95 whitespace-nowrap"
-        >
-          Start Game
-        </button>
+        <div className="mt-4 sm:mt-5 flex items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              tryLockScreenLandscape();
+              if (!isFullscreen) {
+                void requestAppFullscreen();
+              }
+              soundEngine.playUiClick(580);
+              onStartGame();
+            }}
+            className="min-h-[46px] px-6 rounded-2xl bg-[#4ADE80] text-[#0E1912] text-sm font-bold tracking-wide shadow-xl transition-transform active:scale-95 whitespace-nowrap"
+          >
+            Solo Journey
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              tryLockScreenLandscape();
+              if (!isFullscreen) {
+                void requestAppFullscreen();
+              }
+              soundEngine.playUiClick(600);
+              onOpenMultiplayer?.();
+            }}
+            className="min-h-[46px] px-5 rounded-2xl bg-[#241D32] hover:bg-[#322745] border border-[#483761] text-[#F3EFE6] text-sm font-bold tracking-wide shadow-xl transition-transform active:scale-95 whitespace-nowrap flex items-center gap-2"
+          >
+            <Users className="w-4 h-4 text-[#38BDF8]" />
+            <span>Multiplayer</span>
+          </button>
+        </div>
       </div>
 
       {/* Single flat mobile control-hint line */}

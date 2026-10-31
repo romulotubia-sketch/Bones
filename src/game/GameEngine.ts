@@ -57,7 +57,9 @@ import {
   spawnRoomWave,
   STAGE_THEMES,
 } from './dungeonGenerator';
-import { renderGameWorld } from './renderer';
+import { NetworkManager } from '../multiplayer/NetworkManager';
+import { PlayerTransformSync } from '../multiplayer/networkTypes';
+import { RemoteRenderPlayer, renderGameWorld } from './renderer';
 
 export interface EngineCallbacks {
   onHudUpdate: (snapshot: HudSnapshot) => void;
@@ -230,6 +232,11 @@ export class GameEngine {
     ghostBasicCount: 0,
     ghostMistDropAccum: 0,
 
+    isDowned: false,
+    bleedoutTimer: 0,
+    reviveProgress: 0,
+    isRevivingPlayerId: null as string | null,
+
     hoveredInGuild: false,
   };
 
@@ -264,6 +271,11 @@ export class GameEngine {
   private deathsEmbraceEffects: DeathsEmbraceEffect[] = [];
   private particles: Particle[] = [];
   private popups: FloatingPopup[] = [];
+
+  // Multiplayer Networking
+  private networkManager: NetworkManager | null = null;
+  private remotePlayers = new Map<string, RemoteRenderPlayer & { targetX: number; targetY: number }>();
+  private networkSyncAccum = 0;
 
   private currentRoomId = 0;
   private roomBannerText: string | null = null;
@@ -367,6 +379,489 @@ export class GameEngine {
 
   public notifyViewportSync(): void {
     this.handleResize();
+  }
+
+  public isInCoop(): boolean {
+    const mode = this.networkManager?.getRoom()?.mode;
+    return mode === 'ONLINE_COOP' || mode === 'LAN_COOP';
+  }
+
+  public setNetworkManager(manager: NetworkManager | null): void {
+    this.networkManager = manager;
+    if (!manager) {
+      this.remotePlayers.clear();
+      this.emitHudSnapshot();
+      return;
+    }
+
+    manager.setCallbacks({
+      onRoomUpdate: () => {
+        this.emitHudSnapshot();
+      },
+      onGameStart: (seed: number, floorNumber: number) => {
+        this.startGraveyardRun(undefined, seed);
+      },
+      onWorldSync: (players: PlayerTransformSync[], enemies?: EnemySyncState[], activeRoomId?: number, wavesRemaining?: number) => {
+        const localId = manager.getLocalPlayerId();
+        const activeIds = new Set<string>();
+        const room = manager.getRoom();
+        const isPvp = room?.mode === 'ONLINE_PVP' || room?.mode === 'LAN_PVP';
+
+        for (const p of players) {
+          if (p.id === localId) continue;
+          activeIds.add(p.id);
+
+          const roomPlayer = room?.players.find((rp) => rp.id === p.id);
+          const name = roomPlayer?.name || 'Ally';
+          const color = roomPlayer?.color || '#38BDF8';
+          const charId = roomPlayer?.characterId || CharacterId.Zombie;
+
+          const existing = this.remotePlayers.get(p.id);
+          if (existing) {
+            existing.targetX = p.x;
+            existing.targetY = p.y;
+            existing.vx = p.vx;
+            existing.vy = p.vy;
+            existing.aimAngle = p.aimAngle;
+            existing.facingX = p.facingX;
+            existing.walkPhase = p.walkPhase;
+            existing.hp = p.hp;
+            existing.maxHp = p.maxHp;
+            existing.hitFlashTimer = p.hitFlashTimer;
+            existing.squashX = p.squashX;
+            existing.squashY = p.squashY;
+            existing.dashTimer = p.dashTimer;
+            existing.leapAirProgress = p.leapAirProgress;
+            existing.characterId = charId;
+            existing.isDowned = Boolean(p.isDowned);
+            existing.bleedoutTimer = p.bleedoutTimer ?? 0;
+            existing.reviveProgress = p.reviveProgress ?? 0;
+            existing.undyingTimer = p.activeBuffs.undying ? 5 : 0;
+            existing.abominationTimer = p.activeBuffs.abomination ? 8 : 0;
+            existing.ribcageCharges = p.activeBuffs.ribcageCharges;
+            existing.boneStormTimer = p.activeBuffs.boneStorm ? 6 : 0;
+            existing.colossusTimer = p.activeBuffs.colossus ? 8 : 0;
+            existing.windrunnerTimer = p.activeBuffs.windrunner ? 5 : 0;
+            existing.fortressTimer = p.activeBuffs.fortress ? 5 : 0;
+            existing.mountainHeartTimer = p.activeBuffs.mountainHeart ? 8 : 0;
+            existing.restlessTimer = p.activeBuffs.restless ? 4 : 0;
+            existing.nightmareTimer = p.activeBuffs.nightmare ? 8 : 0;
+          } else {
+            this.remotePlayers.set(p.id, {
+              id: p.id,
+              name,
+              color,
+              characterId: charId,
+              x: p.x,
+              y: p.y,
+              targetX: p.x,
+              targetY: p.y,
+              vx: p.vx,
+              vy: p.vy,
+              radius: 17,
+              aimAngle: p.aimAngle,
+              facingX: p.facingX,
+              walkPhase: p.walkPhase,
+              hitFlashTimer: p.hitFlashTimer,
+              squashX: p.squashX,
+              squashY: p.squashY,
+              hp: p.hp,
+              maxHp: p.maxHp,
+              isRival: isPvp,
+              isDowned: Boolean(p.isDowned),
+              bleedoutTimer: p.bleedoutTimer ?? 0,
+              reviveProgress: p.reviveProgress ?? 0,
+              undyingTimer: p.activeBuffs.undying ? 5 : 0,
+              abominationTimer: p.activeBuffs.abomination ? 8 : 0,
+              ribcageTimer: 0,
+              ribcageCharges: p.activeBuffs.ribcageCharges,
+              boneStormTimer: p.activeBuffs.boneStorm ? 6 : 0,
+              colossusTimer: p.activeBuffs.colossus ? 8 : 0,
+              unyieldingStacks: 0,
+              windrunnerTimer: p.activeBuffs.windrunner ? 5 : 0,
+              poisonBladesTimer: 0,
+              stolenMightTimer: 0,
+              fortressTimer: p.activeBuffs.fortress ? 5 : 0,
+              magneticTimer: 0,
+              mountainHeartTimer: p.activeBuffs.mountainHeart ? 8 : 0,
+              leapAirProgress: p.leapAirProgress,
+              resolveRatio: 0,
+              dashTimer: p.dashTimer,
+              hoveredInGuild: false,
+            });
+          }
+        }
+
+        for (const id of this.remotePlayers.keys()) {
+          if (!activeIds.has(id)) {
+            this.remotePlayers.delete(id);
+          }
+        }
+
+        // In Co-op mode, if non-host client, synchronize enemies authoritative state from host
+        if (!manager.isHost() && this.isInCoop() && enemies) {
+          const syncEnemyIds = new Set(enemies.map((e) => e.id));
+          // Update or add enemies
+          for (const se of enemies) {
+            const existing = this.world.enemies.find((e) => e.id === se.id);
+            if (existing) {
+              existing.x += (se.x - existing.x) * 0.45;
+              existing.y += (se.y - existing.y) * 0.45;
+              existing.vx = se.vx;
+              existing.vy = se.vy;
+              existing.hp = se.hp;
+              existing.maxHp = se.maxHp;
+              existing.facingX = se.facingX;
+              existing.aiState = se.aiState;
+              existing.telegraphType = se.telegraphType;
+              existing.telegraphAngle = se.telegraphAngle;
+              existing.hitFlashTimer = se.hitFlashTimer;
+              existing.stunTimer = se.stunTimer;
+              existing.plagueTimer = se.plagueTimer;
+              existing.infectionStacks = se.infectionStacks;
+            } else {
+              const newEnemy = createProceduralSkeleton(
+                se.kind,
+                se.x,
+                se.y,
+                se.roomId,
+                1.0,
+                this.getDifficultyConfig()
+              );
+              newEnemy.id = se.id;
+              newEnemy.hp = se.hp;
+              newEnemy.maxHp = se.maxHp;
+              newEnemy.facingX = se.facingX;
+              newEnemy.aiState = se.aiState;
+              newEnemy.telegraphType = se.telegraphType;
+              newEnemy.telegraphAngle = se.telegraphAngle;
+              newEnemy.hitFlashTimer = se.hitFlashTimer;
+              newEnemy.stunTimer = se.stunTimer;
+              newEnemy.plagueTimer = se.plagueTimer;
+              newEnemy.infectionStacks = se.infectionStacks;
+              this.world.enemies.push(newEnemy);
+            }
+          }
+          // Remove dead enemies
+          for (let i = this.world.enemies.length - 1; i >= 0; i--) {
+            if (!syncEnemyIds.has(this.world.enemies[i].id)) {
+              this.world.enemies.splice(i, 1);
+            }
+          }
+          if (activeRoomId !== undefined && wavesRemaining !== undefined) {
+            const activeRoom = this.world.rooms.find((r) => r.id === activeRoomId);
+            if (activeRoom) {
+              activeRoom.wavesRemaining = wavesRemaining;
+            }
+          }
+        }
+      },
+      onEnemyDamaged: (enemyId, damage, isCrit, hitX, hitY, attackerId) => {
+        if (manager.isHost()) {
+          const target = this.world.enemies.find((e) => e.id === enemyId);
+          if (target && target.hp > 0) {
+            this.damageEnemy(target, damage, true, hitX ?? target.x, hitY ?? target.y, false, isCrit);
+          }
+        } else {
+          const target = this.world.enemies.find((e) => e.id === enemyId);
+          if (target) {
+            target.hp = Math.max(0, target.hp - damage);
+            target.hitFlashTimer = 0.08;
+            soundEngine.playHit(isCrit);
+            this.spawnPopup(
+              hitX ?? target.x,
+              (hitY ?? target.y) - 18,
+              `-${damage}`,
+              isCrit ? '#FEF08A' : '#F87171',
+              isCrit ? 1.25 : 1.0
+            );
+          }
+        }
+      },
+      onEnemyDefeated: (enemyId, killerId, dropX, dropY) => {
+        const idx = this.world.enemies.findIndex((e) => e.id === enemyId);
+        if (idx !== -1) {
+          const deadEnemy = this.world.enemies[idx];
+          this.spawnBurst(deadEnemy.x, deadEnemy.y, '#94A3B8', 12, 110);
+          this.world.enemies.splice(idx, 1);
+          this.runKills++;
+          soundEngine.playEnemyDeath();
+          this.spawnOrb('SOUL_SHARD', dropX, dropY, 2);
+        }
+      },
+      onRemoteSkill: (playerId, skillId, x, y, angle, slot) => {
+        this.handleRemoteSkillCast(playerId, skillId, x, y, angle, slot);
+      },
+      onPlayerRevived: (revivedPlayerId, reviverPlayerId, reviveHp) => {
+        const localId = manager.getLocalPlayerId();
+        if (revivedPlayerId === localId) {
+          this.player.isDowned = false;
+          this.player.bleedoutTimer = 0;
+          this.player.reviveProgress = 0;
+          this.player.hp = reviveHp;
+          this.player.invulnTimer = 2.5;
+          soundEngine.playHeal();
+          this.spawnBurst(this.player.x, this.player.y, '#4ADE80', 20, 120);
+          this.spawnPopup(this.player.x, this.player.y - 32, 'REVIVED!', '#4ADE80', 1.4);
+          this.showBanner('Revived by teammate!');
+        } else {
+          const remote = this.remotePlayers.get(revivedPlayerId);
+          if (remote) {
+            remote.isDowned = false;
+            remote.hp = reviveHp;
+            remote.reviveProgress = 0;
+            soundEngine.playHeal();
+            this.spawnBurst(remote.x, remote.y, '#4ADE80', 16, 110);
+            this.spawnPopup(remote.x, remote.y - 32, 'REVIVED!', '#4ADE80', 1.3);
+          }
+        }
+        this.emitHudSnapshot();
+      },
+      onFloorSync: (floorNumber, seed) => {
+        this.loadDungeonFloor(floorNumber, seed);
+      },
+      onPartyWipe: () => {
+        this.showBanner('Party Defeated!');
+        this.finishRun(false);
+      },
+      onPlayerLeft: (playerId: string) => {
+        this.remotePlayers.delete(playerId);
+        this.emitHudSnapshot();
+      },
+    });
+    this.emitHudSnapshot();
+  }
+
+  private handleRemoteSkillCast(
+    playerId: string,
+    skillId: string,
+    x: number,
+    y: number,
+    angle: number,
+    _slot: 'BASIC' | 'NORMAL_0' | 'NORMAL_1' | 'ULTIMATE'
+  ): void {
+    const remote = this.remotePlayers.get(playerId);
+    const charId = remote?.characterId ?? CharacterId.Zombie;
+
+    if (skillId === 'BASIC') {
+      if (charId === CharacterId.Skeleton) {
+        soundEngine.playSlash(1);
+        this.slashes.push({
+          x: x + Math.cos(angle) * 16,
+          y: y + Math.sin(angle) * 16,
+          angle,
+          radius: 72,
+          arcSpread: 1.5,
+          color: '#38BDF8',
+          life: 0.22,
+          maxLife: 0.22,
+          flip: Math.random() < 0.5,
+          kind: 'SKELETON_SWORD_SLASH',
+        });
+      } else if (charId === CharacterId.Goblin) {
+        soundEngine.playSlash(1);
+        this.slashes.push({
+          x: x + Math.cos(angle) * 14,
+          y: y + Math.sin(angle) * 14,
+          angle,
+          radius: 64,
+          arcSpread: 1.4,
+          color: '#F59E0B',
+          life: 0.18,
+          maxLife: 0.18,
+          flip: Math.random() < 0.5,
+        });
+      } else if (charId === CharacterId.Gnome) {
+        soundEngine.playBoneBreak();
+        this.shockwaves.push({
+          x: x + Math.cos(angle) * 24,
+          y: y + Math.sin(angle) * 24,
+          maxRadius: 76,
+          color: '#FB923C',
+          life: 0.22,
+          maxLife: 0.22,
+        });
+      } else if (charId === CharacterId.Ghost) {
+        soundEngine.playDash();
+        this.slashes.push({
+          x: x + Math.cos(angle) * 16,
+          y: y + Math.sin(angle) * 16,
+          angle,
+          radius: 68,
+          arcSpread: 1.6,
+          color: '#C084FC',
+          life: 0.2,
+          maxLife: 0.2,
+          flip: Math.random() < 0.5,
+          kind: 'GHOST_CLAW_SLASH',
+        });
+      } else {
+        soundEngine.playSlash(1);
+        this.slashes.push({
+          x: x + Math.cos(angle) * 16,
+          y: y + Math.sin(angle) * 16,
+          angle,
+          radius: 70,
+          arcSpread: 1.5,
+          color: '#4ADE80',
+          life: 0.22,
+          maxLife: 0.22,
+          flip: Math.random() < 0.5,
+          kind: 'ZOMBIE_BASIC_ATTACK',
+        });
+      }
+      return;
+    }
+
+    if (skillId === NormalSkillId.PlagueBurst) {
+      soundEngine.playPlague();
+      this.poisonClouds.push({
+        id: allocEntityId(),
+        x,
+        y,
+        radius: 120,
+        life: 4.5,
+        maxLife: 4.5,
+        tickTimer: 0.1,
+        damagePerTick: 10,
+      });
+      this.shockwaves.push({
+        x,
+        y,
+        maxRadius: 120,
+        color: '#A3E635',
+        life: 0.28,
+        maxLife: 0.28,
+      });
+    } else if (skillId === NormalSkillId.FleshRipper) {
+      soundEngine.playDash();
+      this.slashes.push({
+        x,
+        y,
+        angle,
+        radius: 80,
+        arcSpread: 1.6,
+        color: '#4ADE80',
+        life: 0.24,
+        maxLife: 0.24,
+        flip: false,
+        kind: 'ZOMBIE_SAVAGE_REND',
+      });
+    } else if (skillId === NormalSkillId.BoneSpear) {
+      soundEngine.playSlash(2);
+      this.projectiles.push({
+        id: allocEntityId(),
+        fromPlayer: true,
+        x,
+        y,
+        vx: Math.cos(angle) * 600,
+        vy: Math.sin(angle) * 600,
+        radius: 8,
+        damage: 25,
+        life: 1.2,
+        color: '#38BDF8',
+        kind: 'PLAYER_BONE_SPEAR',
+        angle,
+        pierce: true,
+        hitEnemyIds: new Set<number>(),
+      });
+    } else if (skillId === NormalSkillId.RibcageShield) {
+      soundEngine.playBoneBreak();
+      this.slashes.push({
+        x,
+        y,
+        angle: 0,
+        radius: 60,
+        arcSpread: Math.PI * 2,
+        color: '#E2E8F0',
+        life: 0.26,
+        maxLife: 0.26,
+        flip: false,
+        kind: 'SKELETON_RIBCAGE_BURST',
+      });
+    } else if (skillId === NormalSkillId.BoneStorm) {
+      soundEngine.playSlash(3);
+      this.shockwaves.push({
+        x,
+        y,
+        maxRadius: 85,
+        color: '#38BDF8',
+        life: 0.35,
+        maxLife: 0.35,
+      });
+    } else if (skillId === NormalSkillId.FanOfKnives) {
+      soundEngine.playSlash(1);
+      for (let i = 0; i < 5; i++) {
+        const fa = angle + (i - 2) * 0.18;
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x,
+          y,
+          vx: Math.cos(fa) * 560,
+          vy: Math.sin(fa) * 560,
+          radius: 6,
+          damage: 18,
+          life: 0.9,
+          color: '#F59E0B',
+          kind: 'PLAYER_SPECTRAL_DAGGER',
+          angle: fa,
+          hitEnemyIds: new Set<number>(),
+        });
+      }
+    } else if (skillId === NormalSkillId.ShadowStep) {
+      soundEngine.playDash();
+      this.spawnBurst(x, y, '#F59E0B', 10, 85);
+    } else if (skillId === NormalSkillId.Groundbreaker) {
+      soundEngine.playBossSlam();
+      this.shockwaves.push({
+        x,
+        y,
+        maxRadius: 95,
+        color: '#FB923C',
+        life: 0.3,
+        maxLife: 0.3,
+      });
+    } else if (skillId === NormalSkillId.StoneRampart) {
+      soundEngine.playBoneBreak();
+      this.spawnBurst(x, y, '#FB923C', 12, 90);
+    } else if (skillId === NormalSkillId.PhantomDash) {
+      soundEngine.playDash();
+      this.afterimages.push({
+        x,
+        y,
+        facingX: Math.cos(angle) >= 0 ? 1 : -1,
+        color: '#C084FC',
+        life: 0.36,
+        maxLife: 0.36,
+        archetype: 'GHOST',
+      });
+    } else if (skillId === NormalSkillId.SoulDrain) {
+      soundEngine.playDash();
+      this.slashes.push({
+        x,
+        y,
+        angle: 0,
+        radius: 95,
+        arcSpread: Math.PI * 2,
+        color: '#34D399',
+        life: 0.45,
+        maxLife: 0.45,
+        flip: false,
+        kind: 'GHOST_SOUL_DRAIN_RING',
+      });
+    } else {
+      soundEngine.playBossSlam();
+      this.shockwaves.push({
+        x,
+        y,
+        maxRadius: 130,
+        color: '#FBBF24',
+        life: 0.4,
+        maxLife: 0.4,
+      });
+      this.spawnBurst(x, y, '#FBBF24', 16, 120);
+    }
   }
 
   public setJoystickInput(nx: number, ny: number): void {
@@ -493,7 +988,7 @@ export class GameEngine {
     this.emitHudSnapshot();
   }
 
-  public startGraveyardRun(difficulty?: DifficultyLevel): void {
+  public startGraveyardRun(difficulty?: DifficultyLevel, seed?: number): void {
     if (difficulty) {
       this.currentDifficulty = difficulty;
       this.saveData.selectedDifficulty = difficulty;
@@ -511,13 +1006,16 @@ export class GameEngine {
     this.corpseBloomCounter = 0;
     this.pendingNextFloor = null;
 
+    this.player.isDowned = false;
+    this.player.bleedoutTimer = 0;
+    this.player.reviveProgress = 0;
     this.player.characterId = this.saveData.selectedCharacter;
     this.recomputePlayerStats(true);
     this.player.ultCharge = 100;
     this.player.normalCooldowns = [0, 0];
     this.player.ultCooldown = 0;
 
-    this.loadDungeonFloor(1);
+    this.loadDungeonFloor(1, seed);
     soundEngine.playSummon();
   }
 
@@ -552,6 +1050,7 @@ export class GameEngine {
 
   public triggerSkillFromHud(slot: 'BASIC' | 'NORMAL_0' | 'NORMAL_1' | 'ULTIMATE'): void {
     if (this.phase !== GamePhase.Dungeon && this.phase !== GamePhase.GuildRoam) return;
+    if (this.player.isDowned) return;
     if (slot === 'BASIC') {
       this.bufferedActions.set('BASIC', 0.14);
     } else if (slot === 'NORMAL_0') {
@@ -563,9 +1062,12 @@ export class GameEngine {
     }
   }
 
-  private loadDungeonFloor(floorNum: number): void {
+  public loadDungeonFloor(floorNum: number, seed?: number): void {
     this.clearTransientEntities();
-    this.world = buildGraveyardFloor(floorNum, this.getDifficultyConfig());
+    this.player.isDowned = false;
+    this.player.bleedoutTimer = 0;
+    this.player.reviveProgress = 0;
+    this.world = buildGraveyardFloor(floorNum, this.getDifficultyConfig(), seed);
     this.player.x = this.world.spawnX;
     this.player.y = this.world.spawnY;
     this.player.vx = 0;
@@ -1196,6 +1698,52 @@ export class GameEngine {
     }
 
     this.updatePlayer(dt);
+
+    // Smoothly interpolate remote players
+    for (const remote of this.remotePlayers.values()) {
+      const lerpFactor = Math.min(1, dt * 16);
+      remote.x += (remote.targetX - remote.x) * lerpFactor;
+      remote.y += (remote.targetY - remote.y) * lerpFactor;
+      if (remote.hitFlashTimer > 0) remote.hitFlashTimer = Math.max(0, remote.hitFlashTimer - dt);
+    }
+
+    // Network transform broadcast (20 Hz)
+    if (this.networkManager) {
+      this.networkSyncAccum += dt;
+      if (this.networkSyncAccum >= 0.05) {
+        this.networkSyncAccum = 0;
+        this.networkManager.sendTransform({
+          x: +this.player.x.toFixed(1),
+          y: +this.player.y.toFixed(1),
+          vx: +this.player.vx.toFixed(1),
+          vy: +this.player.vy.toFixed(1),
+          aimAngle: +this.player.aimAngle.toFixed(2),
+          facingX: this.player.facingX,
+          walkPhase: +this.player.walkPhase.toFixed(2),
+          hp: Math.ceil(this.player.hp),
+          maxHp: this.player.maxHp,
+          hitFlashTimer: +this.player.hitFlashTimer.toFixed(2),
+          squashX: +this.player.squashX.toFixed(2),
+          squashY: +this.player.squashY.toFixed(2),
+          dashTimer: +this.player.dashTimer.toFixed(2),
+          leapAirProgress: +this.player.leapAirProgress.toFixed(2),
+          isAttacking: this.attackHeld || this.bufferedActions.has('BASIC'),
+          comboStep: this.player.zombieComboStep || this.player.skelComboStep || 0,
+          activeBuffs: {
+            undying: this.player.undyingTimer > 0,
+            abomination: this.player.abominationTimer > 0,
+            ribcageCharges: this.player.ribcageCharges,
+            boneStorm: this.player.boneStormTimer > 0,
+            colossus: this.player.colossusTimer > 0,
+            windrunner: this.player.windrunnerTimer > 0,
+            fortress: this.player.fortressTimer > 0,
+            mountainHeart: this.player.mountainHeartTimer > 0,
+            restless: this.player.restlessTimer > 0,
+            nightmare: this.player.nightmareTimer > 0,
+          },
+        });
+      }
+    }
     this.updateMinions(dt);
     this.updateEnemies(dt);
     this.updateProjectiles(dt);
@@ -8917,6 +9465,18 @@ export class GameEngine {
         gridOffsetY: +(this.mapPanY / stepY).toFixed(3),
         isPanned: Math.hypot(this.mapPanX, this.mapPanY) > 18,
       },
+      multiplayerInfo: (() => {
+        const room = this.networkManager?.getRoom();
+        if (!room) return null;
+        return {
+          inRoom: true,
+          roomCode: room.code,
+          mode: room.mode,
+          isHost: room.hostId === this.networkManager?.getLocalPlayerId(),
+          playerCount: room.players.length,
+          ping: this.networkManager?.getPing() ?? 0,
+        };
+      })(),
     });
   }
 
@@ -8951,6 +9511,7 @@ export class GameEngine {
       minions: this.minions,
       enemies: this.world.enemies,
       player: this.player,
+      remotePlayers: Array.from(this.remotePlayers.values()),
       guildCompanions: this.getGuildCompanions(),
       projectiles: this.projectiles,
       slashes: this.slashes,
