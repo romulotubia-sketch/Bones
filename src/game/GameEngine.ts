@@ -67,10 +67,12 @@ import {
 import { NetworkManager } from '../multiplayer/NetworkManager';
 import { EnemySyncState, PlayerTransformSync } from '../multiplayer/networkTypes';
 import { RemoteRenderPlayer, renderGameWorld } from './renderer';
+import { awakeningEngine } from './awakeningEngine';
 
 export interface EngineCallbacks {
   onHudUpdate: (snapshot: HudSnapshot) => void;
   onOpenLoadout: (charId?: CharacterId) => void;
+  onOpenAwakening?: (charId?: CharacterId) => void;
   onOfferBlessings: (choices: RunBlessing[], source?: 'STATUE' | 'STAGE_CLEAR') => void;
   onRunFinished: (victory: boolean, shardsEarned: number, kills: number, damageDealt: number) => void;
   onRequestDifficultySelect?: () => void;
@@ -1962,6 +1964,7 @@ export class GameEngine {
   }
 
   private clearTransientEntities(): void {
+    awakeningEngine.resetAll();
     this.minions = [];
     this.projectiles = [];
     this.poisonClouds = [];
@@ -2625,6 +2628,14 @@ export class GameEngine {
         return;
       }
 
+      // Tapping the Awakening Altar opens Awakening Station
+      const awakeningAltar = this.world.props.find((pr) => pr.kind === 'GUILD_AWAKENING_ALTAR');
+      if (awakeningAltar && Math.hypot(worldX - awakeningAltar.x, worldY - awakeningAltar.y) <= 68) {
+        soundEngine.playUiClick(720);
+        this.callbacks.onOpenAwakening?.(this.saveData.selectedCharacter);
+        return;
+      }
+
       // Tapping the North Guild Door when standing near it steps outside into the Dungeon
       if (this.phase === GamePhase.GuildRoam) {
         const door = this.world.props.find((pr) => pr.kind === 'GUILD_DOOR');
@@ -2716,6 +2727,13 @@ export class GameEngine {
       this.hitstopTimer -= dt;
       return;
     }
+
+    awakeningEngine.update(dt, this.player, this.world.enemies, {
+      dealDamage: (enemy, amount, isCrit) =>
+        this.damageEnemy(enemy, amount, true, this.player.x, this.player.y, false, isCrit),
+      spawnBurst: (x, y, color, count, speed) => this.spawnBurst(x, y, color, count, speed),
+      spawnPopup: (x, y, text, color, scale) => this.spawnPopup(x, y, text, color, scale),
+    });
 
     for (const [key, rem] of this.bufferedActions.entries()) {
       if (rem - dt <= 0) this.bufferedActions.delete(key);
@@ -7941,6 +7959,28 @@ export class GameEngine {
       this.networkManager?.sendCastSkill(ultId, p.x, p.y, p.aimAngle, 'ULTIMATE');
     }
 
+    const awakened = this.saveData.awakenedUltimates?.[this.saveData.selectedCharacter]?.[ultId];
+    if (awakened && (awakened.activePath === 'PATH_A' || awakened.activePath === 'PATH_B')) {
+      awakeningEngine.triggerAwakened(
+        this.saveData.selectedCharacter,
+        ultId,
+        awakened.activePath,
+        p,
+        this.world.enemies,
+        {
+          spawnPopup: (x, y, text, color, scale) => this.spawnPopup(x, y, text, color, scale),
+          spawnBurst: (x, y, color, count, speed) => this.spawnBurst(x, y, color, count, speed),
+          dealAoEDamage: (x, y, radius, damage, isCrit) => {
+            for (const e of this.world.enemies) {
+              if (e.hp > 0 && Math.hypot(e.x - x, e.y - y) <= radius) {
+                this.damageEnemy(e, damage, true, x, y, true, isCrit);
+              }
+            }
+          },
+        }
+      );
+    }
+
     switch (ultId) {
       // === ZOMBIE ULTIMATE SKILLS ===
       case UltimateSkillId.AbominationForm: {
@@ -12373,6 +12413,14 @@ export class GameEngine {
           this.callbacks.onOpenLoadout(this.saveData.selectedCharacter);
           return;
         }
+      } else if (prop.kind === 'GUILD_AWAKENING_ALTAR' && this.world.isGuild && dist <= 82) {
+        prompt = 'Altar of Soul Awakening';
+        if (pressedInteract) {
+          this.bufferedActions.delete('INTERACT');
+          soundEngine.playUiClick(720);
+          this.callbacks.onOpenAwakening?.(this.saveData.selectedCharacter);
+          return;
+        }
       } else if (prop.kind === 'CHEST' && !prop.opened && dist <= 68) {
         prompt = 'Open Crypt Chest';
         if (pressedInteract || dist <= 34) {
@@ -13043,5 +13091,16 @@ export class GameEngine {
           )
         : null,
     });
+
+    if (this.phase === GamePhase.Dungeon || this.phase === GamePhase.GuildRoam) {
+      this.ctx.save();
+      this.ctx.translate(this.stageWidth / 2 + shakeX, this.stageHeight / 2 + shakeY);
+      const zoom = this.getWorldZoom();
+      this.ctx.scale(zoom, zoom);
+      this.ctx.translate(-this.cameraX, -this.cameraY);
+      awakeningEngine.renderUnderlay(this.ctx, this.elapsedTime);
+      awakeningEngine.renderOverlay(this.ctx, this.player, this.elapsedTime);
+      this.ctx.restore();
+    }
   }
 }

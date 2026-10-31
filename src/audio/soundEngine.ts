@@ -94,6 +94,10 @@ class SoundEngine {
     osc.stop(now + (heavy ? 0.16 : 0.09));
   }
 
+  public playCrit(): void {
+    this.playHit(true);
+  }
+
   public playBoneBreak(): void {
     const ctx = this.ensureContext();
     if (!ctx) return;

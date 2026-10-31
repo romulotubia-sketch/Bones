@@ -28,8 +28,8 @@ export interface DifficultyConfig {
   bgGrad: string;
   borderClass: string;
   accentText: string;
-  stages: number; // Easy=1, Normal=1, Hard=2, Torment=3, Nightmare=4
-  maxFloors: number; // stages * 3 (e.g. 3, 3, 6, 9, 12)
+  stages: number; // Easy=1, Normal=2, Hard=3, Torment=4, Nightmare=5
+  maxFloors: number; // stages * 3 (e.g. 3, 6, 9, 12, 15)
   victoryShards: number;
   enemyHpMult: number;
   enemyDmgMult: number;
@@ -210,15 +210,26 @@ export type UpgradeNodeSlot = 'pathA' | 'pathB' | 'pathC' | 'pathD' | 'pathE';
 
 export type CharacterUpgradeRanks = Record<UpgradeNodeSlot, number>;
 
+export type AwakenedPathKey = 'NONE' | 'PATH_A' | 'PATH_B';
+
+export interface AwakeningStatus {
+  unlockedA: boolean;
+  unlockedB: boolean;
+  activePath: AwakenedPathKey;
+  pityCount: number;
+}
+
 export interface GuildSaveData {
   selectedCharacter: CharacterId;
   selectedDifficulty: DifficultyLevel;
   soulShards: number;
+  gems: number;
   totalRuns: number;
   victories: number;
   totalSkeletonsSlain: number;
   characterUpgrades: Record<CharacterId, CharacterUpgradeRanks>;
   loadouts: Record<CharacterId, EquippedLoadout>;
+  awakenedUltimates?: Partial<Record<CharacterId, Partial<Record<UltimateSkillId, AwakeningStatus>>>>;
   muted: boolean;
   joystickScale: number;
   skillButtonScale: number;
@@ -675,6 +686,7 @@ export interface RoomProp {
     | 'GUILD_COUCH'
     | 'GUILD_BOOKSHELF'
     | 'GUILD_CAULDRON'
+    | 'GUILD_AWAKENING_ALTAR'
     | 'GUILD_DOOR';
   x: number;
   y: number;

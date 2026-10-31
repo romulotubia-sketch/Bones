@@ -3321,6 +3321,104 @@ function drawProp(
       ctx.fill();
       break;
     }
+    case 'GUILD_AWAKENING_ALTAR': {
+      ctx.save();
+      // Octagonal carved runic dais
+      ctx.fillStyle = '#1E1B2E';
+      ctx.strokeStyle = '#4C3B6E';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      const sides = 8;
+      const r = 38;
+      for (let s = 0; s < sides; s++) {
+        const a = (s * Math.PI * 2) / sides;
+        const px = Math.cos(a) * r;
+        const py = Math.sin(a) * (r * 0.72) + 6;
+        if (s === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Glowing rune ring on dais
+      ctx.strokeStyle = 'rgba(192, 132, 252, 0.75)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(0, 6, 26, 18, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Four small corner soul torches
+      for (let i = 0; i < 4; i++) {
+        const ta = (i * Math.PI * 2) / 4 + 0.35;
+        const tx = Math.cos(ta) * 29;
+        const ty = Math.sin(ta) * 20 + 6;
+        ctx.fillStyle = '#2D223E';
+        ctx.fillRect(tx - 3, ty - 6, 6, 10);
+        const tflicker = Math.sin(time * 8 + i * 2) * 2;
+        ctx.fillStyle = '#C084FC';
+        ctx.beginPath();
+        ctx.arc(tx, ty - 7 + tflicker * 0.4, 4 + tflicker * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Central hovering celestial awakening crystal
+      const hoverY = Math.sin(time * 3.2) * 6 - 22;
+      const pulse = 0.88 + Math.sin(time * 4.8) * 0.12;
+
+      // Celestial radial aura
+      const aura = ctx.createRadialGradient(0, hoverY, 4, 0, hoverY, 42 * pulse);
+      aura.addColorStop(0, 'rgba(192, 132, 252, 0.45)');
+      aura.addColorStop(0.5, 'rgba(56, 189, 248, 0.2)');
+      aura.addColorStop(1, 'rgba(192, 132, 252, 0)');
+      ctx.fillStyle = aura;
+      ctx.beginPath();
+      ctx.arc(0, hoverY, 42 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Rotating celestial crystal gem
+      ctx.save();
+      ctx.translate(0, hoverY);
+      ctx.rotate(time * 0.85);
+      ctx.fillStyle = '#E879F9';
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(0, -18);
+      ctx.lineTo(13, -5);
+      ctx.lineTo(8, 14);
+      ctx.lineTo(-8, 14);
+      ctx.lineTo(-13, -5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Inner refraction facet
+      ctx.fillStyle = '#BAE6FD';
+      ctx.beginPath();
+      ctx.moveTo(0, -14);
+      ctx.lineTo(9, -4);
+      ctx.lineTo(0, 10);
+      ctx.lineTo(-9, -4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      // Floating ethereal spark motes
+      for (let m = 0; m < 5; m++) {
+        const ma = time * 2.2 + (m * Math.PI * 2) / 5;
+        const mr = 20 + Math.sin(time * 4 + m) * 6;
+        const mx = Math.cos(ma) * mr;
+        const my = hoverY + Math.sin(ma) * 10;
+        ctx.fillStyle = m % 2 === 0 ? '#38BDF8' : '#F472B6';
+        ctx.beginPath();
+        ctx.arc(mx, my, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+      break;
+    }
     case 'PORTAL_ARCH': {
       ctx.fillStyle = '#3F4759';
       drawRoundedRect(ctx, -52, -32, 104, 58, 26);
@@ -9091,6 +9189,16 @@ function drawWarmLightPools(
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.arc(prop.x, prop.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (prop.kind === 'GUILD_AWAKENING_ALTAR') {
+      const r = 180 + Math.sin(time * 4) * 12;
+      const g = ctx.createRadialGradient(prop.x, prop.y - 12, 10, prop.x, prop.y - 12, r);
+      g.addColorStop(0, 'rgba(192, 132, 252, 0.28)');
+      g.addColorStop(0.5, 'rgba(56, 189, 248, 0.12)');
+      g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(prop.x, prop.y - 12, r, 0, Math.PI * 2);
       ctx.fill();
     } else if (prop.kind === 'GUILD_DOOR') {
       const r = 135;

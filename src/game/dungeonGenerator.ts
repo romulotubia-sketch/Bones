@@ -218,14 +218,14 @@ export function createProceduralSkeleton(
 }
 
 export function buildGuildWorld(): GeneratedWorld {
-  const roomW = 920;
-  const roomH = 600;
+  const roomW = 1440;
+  const roomH = 860;
   const guildRoom: DungeonRoom = {
     id: 0,
     gridX: 0,
     gridY: 0,
     x: -roomW / 2,
-    y: -280,
+    y: -430,
     w: roomW,
     h: roomH,
     kind: RoomKind.Start,
@@ -238,47 +238,59 @@ export function buildGuildWorld(): GeneratedWorld {
 
   // Walkable outdoor moonlit porch beyond the North Guild Door
   const outdoorThreshold: WalkableZone = {
-    x: -72,
-    y: -395,
-    w: 144,
-    h: 135,
+    x: -80,
+    y: -545,
+    w: 160,
+    h: 125,
     isCorridor: true,
     roomA: 0,
     roomB: 0,
   };
 
   const props: RoomProp[] = [
-    // Cozy fireplace hearth on left wall
+    // Grand Hearth Fireplace on far West Wall
     {
       id: allocEntityId(),
       kind: 'HEARTH_FIRE',
-      x: -365,
-      y: -70,
-      w: 84,
-      h: 96,
+      x: -610,
+      y: -90,
+      w: 96,
+      h: 110,
       solid: true,
       destructible: false,
       hp: 999,
     },
-    // Cozy bench/couch by the hearth rug where Zombie rests
+    // Cozy Couch by the hearth rug
     {
       id: allocEntityId(),
       kind: 'GUILD_COUCH',
-      x: -210,
-      y: -115,
-      w: 112,
-      h: 48,
+      x: -440,
+      y: -130,
+      w: 120,
+      h: 52,
       solid: true,
       destructible: false,
       hp: 999,
     },
-    // Bookshelves along upper-left & upper-right North wall
+    // Second lounge couch / bench on hearth side
+    {
+      id: allocEntityId(),
+      kind: 'GUILD_COUCH',
+      x: -440,
+      y: -30,
+      w: 120,
+      h: 52,
+      solid: true,
+      destructible: false,
+      hp: 999,
+    },
+    // Grand Bookcases along North Wall
     {
       id: allocEntityId(),
       kind: 'GUILD_BOOKSHELF',
-      x: -265,
-      y: -252,
-      w: 110,
+      x: -460,
+      y: -400,
+      w: 120,
       h: 46,
       solid: true,
       destructible: false,
@@ -287,33 +299,67 @@ export function buildGuildWorld(): GeneratedWorld {
     {
       id: allocEntityId(),
       kind: 'GUILD_BOOKSHELF',
-      x: 265,
-      y: -252,
-      w: 110,
+      x: -280,
+      y: -400,
+      w: 120,
       h: 46,
       solid: true,
       destructible: false,
       hp: 999,
     },
-    // Alchemy & Soul Shard Progression Cauldron on right
+    {
+      id: allocEntityId(),
+      kind: 'GUILD_BOOKSHELF',
+      x: 280,
+      y: -400,
+      w: 120,
+      h: 46,
+      solid: true,
+      destructible: false,
+      hp: 999,
+    },
+    {
+      id: allocEntityId(),
+      kind: 'GUILD_BOOKSHELF',
+      x: 460,
+      y: -400,
+      w: 120,
+      h: 46,
+      solid: true,
+      destructible: false,
+      hp: 999,
+    },
+    // Alchemy & Soul Shard Cauldron Station in East Conservatory
     {
       id: allocEntityId(),
       kind: 'GUILD_CAULDRON',
-      x: 285,
-      y: -85,
-      w: 64,
-      h: 64,
+      x: 310,
+      y: -180,
+      w: 68,
+      h: 68,
       solid: true,
       destructible: false,
       hp: 999,
     },
-    // Heavy Oak Guild Double-Doorway leading outside to the Whispering Graveyard
+    // Celestial Soul Awakening Altar in East Conservatory
+    {
+      id: allocEntityId(),
+      kind: 'GUILD_AWAKENING_ALTAR',
+      x: 520,
+      y: -180,
+      w: 84,
+      h: 84,
+      solid: true,
+      destructible: false,
+      hp: 999,
+    },
+    // Heavy Oak Guild Double-Doorway leading outside to the Graveyard
     {
       id: allocEntityId(),
       kind: 'GUILD_DOOR',
       x: 0,
-      y: -280,
-      w: 148,
+      y: -430,
+      w: 160,
       h: 64,
       solid: false,
       destructible: false,
@@ -323,8 +369,8 @@ export function buildGuildWorld(): GeneratedWorld {
     {
       id: allocEntityId(),
       kind: 'LANTERN_POST',
-      x: -102,
-      y: -236,
+      x: -110,
+      y: -385,
       w: 26,
       h: 26,
       solid: true,
@@ -334,20 +380,77 @@ export function buildGuildWorld(): GeneratedWorld {
     {
       id: allocEntityId(),
       kind: 'LANTERN_POST',
-      x: 102,
-      y: -236,
+      x: 110,
+      y: -385,
       w: 26,
       h: 26,
       solid: true,
       destructible: false,
       hp: 999,
     },
-    // Cozy wooden crates near bottom-left
+    // Ambient Lantern posts in the side halls
+    {
+      id: allocEntityId(),
+      kind: 'LANTERN_POST',
+      x: -610,
+      y: 160,
+      w: 26,
+      h: 26,
+      solid: true,
+      destructible: false,
+      hp: 999,
+    },
+    {
+      id: allocEntityId(),
+      kind: 'LANTERN_POST',
+      x: 610,
+      y: 160,
+      w: 26,
+      h: 26,
+      solid: true,
+      destructible: false,
+      hp: 999,
+    },
+    // Southwest Vault / Trophy Storage
     {
       id: allocEntityId(),
       kind: 'WOOD_CRATE',
-      x: -365,
-      y: 205,
+      x: -600,
+      y: 280,
+      w: 48,
+      h: 48,
+      solid: true,
+      destructible: false,
+      hp: 999,
+    },
+    {
+      id: allocEntityId(),
+      kind: 'WOOD_CRATE',
+      x: -540,
+      y: 310,
+      w: 44,
+      h: 44,
+      solid: true,
+      destructible: false,
+      hp: 999,
+    },
+    {
+      id: allocEntityId(),
+      kind: 'BONE_URN',
+      x: -620,
+      y: 350,
+      w: 36,
+      h: 36,
+      solid: true,
+      destructible: false,
+      hp: 999,
+    },
+    // Southeast Sparring Props
+    {
+      id: allocEntityId(),
+      kind: 'WOOD_CRATE',
+      x: 620,
+      y: 320,
       w: 44,
       h: 44,
       solid: true,
@@ -357,8 +460,8 @@ export function buildGuildWorld(): GeneratedWorld {
     {
       id: allocEntityId(),
       kind: 'WOOD_CRATE',
-      x: -312,
-      y: 225,
+      x: 560,
+      y: 345,
       w: 40,
       h: 40,
       solid: true,
@@ -367,19 +470,20 @@ export function buildGuildWorld(): GeneratedWorld {
     },
   ];
 
-  // Training Dummy in the bottom-right sparring mat
-  const dummy = createProceduralSkeleton(EnemyKind.TrainingDummy, 250, 145, 0, 1);
+  // Training Dummies in the expanded sparring arena
+  const dummyA = createProceduralSkeleton(EnemyKind.TrainingDummy, 380, 220, 0, 1);
+  const dummyB = createProceduralSkeleton(EnemyKind.TrainingDummy, 520, 220, 0, 1);
 
   return {
     isGuild: true,
     floorNumber: 0,
-    floorLabel: 'Sanctuary · Cozy Guild Hall',
+    floorLabel: 'Sanctuary · Grand Guild Hall',
     rooms: [guildRoom],
     corridors: [outdoorThreshold],
     props,
-    enemies: [dummy],
-    spawnX: -210,
-    spawnY: -35,
+    enemies: [dummyA, dummyB],
+    spawnX: -180,
+    spawnY: -40,
   };
 }
 
@@ -426,6 +530,12 @@ export const STAGE_THEMES: Record<
     floors: ['Void Ossuary', 'River of Styx Gateway', 'Throne of Eternal Doom'],
     bossName: 'Supreme Sovereign of Doom',
     bossTitle: 'Death Incarnate · God of the Netherworld',
+  },
+  5: {
+    name: 'Elysian Netherfield',
+    floors: ['Elysian Netherfield', 'Sanctum of the Primordial', 'The Throne of Final Eternity'],
+    bossName: 'Primordial King of Death',
+    bossTitle: 'The True End of All Things',
   },
 };
 
