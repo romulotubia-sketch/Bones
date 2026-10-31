@@ -129,6 +129,7 @@ export default function App() {
   const [loadoutModalOpen, setLoadoutModalOpen] = useState(false);
   const [difficultyModalOpen, setDifficultyModalOpen] = useState(false);
   const [blessingChoices, setBlessingChoices] = useState<RunBlessing[]>([]);
+  const [blessingSource, setBlessingSource] = useState<'STATUE' | 'STAGE_CLEAR'>('STAGE_CLEAR');
   const [endSummary, setEndSummary] = useState({
     shardsEarned: 0,
     kills: 0,
@@ -212,8 +213,9 @@ export default function App() {
       onOpenLoadout: (charId) => {
         handleOpenLoadout(charId);
       },
-      onOfferBlessings: (choices) => {
+      onOfferBlessings: (choices, source = 'STAGE_CLEAR') => {
         setBlessingChoices(choices);
+        setBlessingSource(source);
       },
       onRunFinished: (victory, shardsEarned, kills, damageDealt) => {
         setEndSummary({ shardsEarned, kills, damageDealt });
@@ -456,6 +458,11 @@ export default function App() {
         <BlessingModal
           activeCharacter={hud.activeCharacter}
           choices={blessingChoices}
+          source={blessingSource}
+          currentFloor={hud.floorNumber}
+          currentStageFloor={
+            hud.maxStages > 1 ? `${hud.currentStage}-${hud.stageFloor}` : `F${hud.stageFloor}`
+          }
           onPickBlessing={handleSelectBlessing}
         />
       )}

@@ -62,7 +62,7 @@ import { renderGameWorld } from './renderer';
 export interface EngineCallbacks {
   onHudUpdate: (snapshot: HudSnapshot) => void;
   onOpenLoadout: (charId?: CharacterId) => void;
-  onOfferBlessings: (choices: RunBlessing[]) => void;
+  onOfferBlessings: (choices: RunBlessing[], source?: 'STATUE' | 'STAGE_CLEAR') => void;
   onRunFinished: (victory: boolean, shardsEarned: number, kills: number, damageDealt: number) => void;
   onRequestDifficultySelect?: () => void;
 }
@@ -525,16 +525,16 @@ export class GameEngine {
     this.activeBlessingIds.add(blessingId);
     if (blessingId === 'zombie_bloated_carcass') {
       this.recomputePlayerStats(false);
-      this.healPlayer(45);
+      this.healPlayer(22);
     } else if (blessingId === 'skel_fortified_ribs') {
       this.recomputePlayerStats(false);
-      this.healPlayer(32);
+      this.healPlayer(18);
     } else if (blessingId === 'gnome_bedrock_plating') {
       this.recomputePlayerStats(false);
-      this.healPlayer(48);
+      this.healPlayer(24);
     } else if (blessingId === 'ghost_ethereal_veil') {
       this.recomputePlayerStats(false);
-      this.healPlayer(24);
+      this.healPlayer(14);
     } else {
       this.recomputePlayerStats(false);
     }
@@ -671,10 +671,10 @@ export class GameEngine {
       ? ranks.pathA * 9
       : ranks.pathA * 24;
     const statueHp =
-      (this.activeBlessingIds.has('zombie_bloated_carcass') ? 45 : 0) +
-      (this.activeBlessingIds.has('skel_fortified_ribs') ? 32 : 0) +
-      (this.activeBlessingIds.has('gnome_bedrock_plating') ? 48 : 0) +
-      (this.activeBlessingIds.has('ghost_ethereal_veil') ? 24 : 0);
+      (this.activeBlessingIds.has('zombie_bloated_carcass') ? 22 : 0) +
+      (this.activeBlessingIds.has('skel_fortified_ribs') ? 18 : 0) +
+      (this.activeBlessingIds.has('gnome_bedrock_plating') ? 24 : 0) +
+      (this.activeBlessingIds.has('ghost_ethereal_veil') ? 14 : 0);
     const levelBonus = (this.runLevel - 1) * 10;
     const newMaxHp = profile.baseHp + upgHp + statueHp + levelBonus;
 
@@ -695,13 +695,13 @@ export class GameEngine {
         ? 1 + ranks.pathE * 0.055
         : 1.0;
     const statueSpeedMult =
-      (this.activeBlessingIds.has('skel_phantom_stride') ? 1.18 : 1.0) *
-      (this.activeBlessingIds.has('gob_quicksilver_boots') ? 1.2 : 1.0);
+      (this.activeBlessingIds.has('skel_phantom_stride') ? 1.1 : 1.0) *
+      (this.activeBlessingIds.has('gob_quicksilver_boots') ? 1.1 : 1.0);
     this.player.speed = profile.baseSpeed * upgSpeedMult * statueSpeedMult;
 
     const pathCdStep = isSkel || isGob || isGhost ? 0.07 : 0.06;
     const upgCdMult = 1 - ranks.pathE * pathCdStep;
-    const normalBlessCdMult = this.activeBlessingIds.has('skel_phantom_stride') ? 0.8 : 1.0;
+    const normalBlessCdMult = this.activeBlessingIds.has('skel_phantom_stride') ? 0.9 : 1.0;
 
     const s0 = NORMAL_SKILLS[loadout.normalSkills[0]];
     const s1 = NORMAL_SKILLS[loadout.normalSkills[1]];
@@ -722,7 +722,7 @@ export class GameEngine {
       return 1.0;
     }
     const ranks = this.getActiveUpgrades();
-    const echoBonus = this.activeBlessingIds.has('ghost_restless_echo') ? 0.14 : 0;
+    const echoBonus = this.activeBlessingIds.has('ghost_restless_echo') ? 0.07 : 0;
     return 1.32 + ranks.pathE * 0.08 + echoBonus;
   }
 
@@ -732,10 +732,10 @@ export class GameEngine {
     const ranks = this.getActiveUpgrades();
     const hasEcho = this.activeBlessingIds.has('ghost_restless_echo');
     const wasReady = p.restlessTimer <= 0.15;
-    p.restlessTimer = 4.0 + (hasEcho ? 2.5 : 0);
+    p.restlessTimer = 4.0 + (hasEcho ? 1.2 : 0);
     p.ultCharge = Math.min(100, p.ultCharge + 7 * (1 + ranks.pathE * 0.14));
     if (hasEcho) {
-      this.healPlayer(7);
+      this.healPlayer(3);
     }
     this.slashes.push({
       x: p.x,
@@ -781,19 +781,19 @@ export class GameEngine {
     const upg = 1 + ranks.pathB * pathBStep;
     const necroTalons =
       charId === CharacterId.Zombie && this.activeBlessingIds.has('zombie_necrotic_claws')
-        ? 1.25
+        ? 1.12
         : 1.0;
     const concussive =
       charId === CharacterId.Gnome && this.activeBlessingIds.has('gnome_concussive_gauntlets')
-        ? 1.25
+        ? 1.12
         : 1.0;
     const gritOffense =
       charId === CharacterId.Gnome && this.activeBlessingIds.has('gnome_undying_grit')
-        ? 1 + Math.max(0, 1 - this.player.hp / Math.max(1, this.player.maxHp)) * 0.35
+        ? 1 + Math.max(0, 1 - this.player.hp / Math.max(1, this.player.maxHp)) * 0.18
         : 1.0;
     const ghostWisp =
       charId === CharacterId.Ghost && this.activeBlessingIds.has('ghost_ectoplasm_wisp')
-        ? 1.2
+        ? 1.1
         : 1.0;
     const ghostRestless = this.getGhostRestlessMultiplier();
     const ghostNightmare =
@@ -879,8 +879,8 @@ export class GameEngine {
     const isGhost = profile.id === CharacterId.Ghost;
 
     const upgCrit = isSkel || isGob || isGhost ? ranks.pathC * 0.04 : 0;
-    const ivoryCrit = this.activeBlessingIds.has('skel_ivory_edge') ? 0.2 : 0;
-    const heartseekerCrit = this.activeBlessingIds.has('gob_throat_seeker') ? 0.22 : 0;
+    const ivoryCrit = this.activeBlessingIds.has('skel_ivory_edge') ? 0.1 : 0;
+    const heartseekerCrit = this.activeBlessingIds.has('gob_throat_seeker') ? 0.12 : 0;
     const colossusCrit = this.player.colossusTimer > 0 ? 0.25 : 0;
 
     const totalCritChance = Math.min(
@@ -899,9 +899,9 @@ export class GameEngine {
     }
 
     const skelPrecisionMult = isSkel ? ranks.pathC * 0.12 : 0;
-    const ivoryMult = this.activeBlessingIds.has('skel_ivory_edge') ? 0.35 : 0;
+    const ivoryMult = this.activeBlessingIds.has('skel_ivory_edge') ? 0.18 : 0;
     const heartseekerMult =
-      isOpportunisticHit && this.activeBlessingIds.has('gob_throat_seeker') ? 0.4 : 0;
+      isOpportunisticHit && this.activeBlessingIds.has('gob_throat_seeker') ? 0.2 : 0;
 
     const critMult = profile.critMultiplier + skelPrecisionMult + ivoryMult + heartseekerMult;
     return {
@@ -1127,7 +1127,12 @@ export class GameEngine {
           if (this.world.floorNumber >= maxFloors) {
             this.finishRun(true);
           } else {
-            this.offerBlessingsAndAdvanceFloor(this.world.floorNumber + 1);
+            const nextFloor = this.world.floorNumber + 1;
+            if (this.world.floorNumber > 7) {
+              this.loadDungeonFloor(nextFloor);
+            } else {
+              this.offerBlessingsAndAdvanceFloor(nextFloor, 'STAGE_CLEAR');
+            }
           }
           return;
         }
@@ -1485,7 +1490,7 @@ export class GameEngine {
       }
       p.colossusShockTick -= dt;
       if (p.colossusShockTick <= 0) {
-        p.colossusShockTick = this.activeBlessingIds.has('skel_ult_colossus') ? 0.9 : 1.35;
+        p.colossusShockTick = this.activeBlessingIds.has('skel_ult_colossus') ? 1.1 : 1.35;
         this.slashes.push({
           x: p.x,
           y: p.y,
@@ -1889,8 +1894,8 @@ export class GameEngine {
       p.soulDrainTick -= dt;
       if (p.soulDrainTick <= 0) {
         const siphonBless = this.activeBlessingIds.has('ghost_skill_soul_drain');
-        p.soulDrainTick = siphonBless ? 0.32 : 0.42;
-        const maxTargets = siphonBless ? 6 : 4;
+        p.soulDrainTick = siphonBless ? 0.36 : 0.42;
+        const maxTargets = siphonBless ? 5 : 4;
         const drainRange = 180;
         const targets = [...this.world.enemies]
           .filter((e) => e && e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) <= drainRange + e.radius)
@@ -1924,7 +1929,7 @@ export class GameEngine {
           });
           this.damageEnemy(target, tickDmg, false, p.x, p.y);
           this.applyGhostChillIfActive(target);
-          totalHealed += siphonBless ? 5 : 3;
+          totalHealed += siphonBless ? 4 : 3;
           if (this.particles.length < 238) {
             const ta = Math.atan2(p.y - target.y, p.x - target.x);
             this.particles.push({
@@ -2122,11 +2127,11 @@ export class GameEngine {
             id: allocEntityId(),
             x: p.x,
             y: p.y,
-            radius: wakeBless ? 62 : 46,
-            life: wakeBless ? 3.2 : 2.2,
-            maxLife: wakeBless ? 3.2 : 2.2,
+            radius: wakeBless ? 54 : 46,
+            life: wakeBless ? 2.7 : 2.2,
+            maxLife: wakeBless ? 2.7 : 2.2,
             tickTimer: 0.12,
-            damagePerTick: Math.round(10 * (wakeBless ? 1.35 : 1.0) * this.getPlagueOrSkillMultiplier()),
+            damagePerTick: Math.round(10 * (wakeBless ? 1.18 : 1.0) * this.getPlagueOrSkillMultiplier()),
           });
         }
 
@@ -2159,7 +2164,7 @@ export class GameEngine {
               p.dashHitIds.add(enemy.id);
               const wakeBless = this.activeBlessingIds.has('ghost_skill_phantom_dash');
               const roll = this.rollPhysicalAttack(
-                28 * (wakeBless ? 1.3 : 1.0) * this.getPlagueOrSkillMultiplier(),
+                28 * (wakeBless ? 1.15 : 1.0) * this.getPlagueOrSkillMultiplier(),
                 0.22
               );
               this.damageEnemy(enemy, roll.damage, false, p.x, p.y, false, roll.isCrit);
@@ -2180,7 +2185,7 @@ export class GameEngine {
               this.triggerRestlessSpirit();
               if (wakeBless && !p.dashRefunded) {
                 p.dashRefunded = true;
-                p.normalCooldowns[p.dashSlotIndex] *= 0.65;
+                p.normalCooldowns[p.dashSlotIndex] *= 0.82;
               }
             }
           }
@@ -2243,8 +2248,8 @@ export class GameEngine {
                 const phantomDash = this.activeBlessingIds.has('skel_skill_skeletal_rush');
                 const roll = this.rollPhysicalAttack(
                   35 * this.getPhysicalDamageMultiplier(),
-                  0.3,
-                  phantomDash
+                  phantomDash ? 0.55 : 0.3,
+                  false
                 );
                 this.damageEnemy(enemy, roll.damage, true, p.x, p.y, true, roll.isCrit);
                 this.slashes.push({
@@ -2288,13 +2293,13 @@ export class GameEngine {
                   p.dashRefunded = true;
                   p.normalCooldowns[p.dashSlotIndex] = Math.max(
                     0,
-                    p.normalCooldowns[p.dashSlotIndex] - 1.5
+                    p.normalCooldowns[p.dashSlotIndex] - 0.8
                   );
                 }
               } else {
                 const goreLunge = this.activeBlessingIds.has('zombie_skill_flesh_ripper');
                 const roll = this.rollPhysicalAttack(
-                  34 * (goreLunge ? 1.35 : 1.0) * this.getPhysicalDamageMultiplier()
+                  34 * (goreLunge ? 1.15 : 1.0) * this.getPhysicalDamageMultiplier()
                 );
                 this.damageEnemy(enemy, roll.damage, true, p.x, p.y, true, roll.isCrit);
                 this.applyInfectiousTouch(enemy, 1);
@@ -2326,7 +2331,7 @@ export class GameEngine {
                   isCrit: goreLunge,
                 });
                 if (goreLunge) {
-                  this.healPlayer(6);
+                  this.healPlayer(3);
                 }
               }
               this.hitstopTimer = 0.04;
@@ -2403,7 +2408,7 @@ export class GameEngine {
 
     let cd = profile.baseAttackCooldown;
     if (isSkel) {
-      cd /= (1 + ranks.pathE * 0.05) * (this.activeBlessingIds.has('skel_phantom_stride') ? 1.18 : 1);
+      cd /= (1 + ranks.pathE * 0.05) * (this.activeBlessingIds.has('skel_phantom_stride') ? 1.1 : 1);
     } else if (isGob) {
       cd /= 1 + ranks.pathB * 0.06;
     } else if (isGhost) {
@@ -2960,18 +2965,18 @@ export class GameEngine {
         p.zombieClawStrikeCount = 0;
         const puffX = p.x + Math.cos(p.aimAngle) * 34;
         const puffY = p.y + Math.sin(p.aimAngle) * 34;
-        const puffRadius = Math.round(70 * (1 + ranks.pathC * 0.08));
+        const puffRadius = Math.round(58 * (1 + ranks.pathC * 0.06));
         this.poisonClouds.push({
           id: allocEntityId(),
           x: puffX,
           y: puffY,
           radius: puffRadius,
-          life: 2.4,
-          maxLife: 2.4,
-          tickTimer: 0.15,
-          damagePerTick: Math.round(8 * this.getPlagueOrSkillMultiplier()),
+          life: 1.8,
+          maxLife: 1.8,
+          tickTimer: 0.18,
+          damagePerTick: Math.round(6 * this.getPlagueOrSkillMultiplier()),
         });
-        this.spawnBurst(puffX, puffY, '#A3E635', 8, 70);
+        this.spawnBurst(puffX, puffY, '#A3E635', 6, 60);
       }
     }
   }
@@ -2997,8 +3002,8 @@ export class GameEngine {
         this.player.squashX = 1.28;
         this.player.squashY = 0.76;
         this.shakeMag = Math.max(this.shakeMag, 6.5);
-        const radius = Math.round(128 * (1 + ranks.pathC * 0.08) * (miasma ? 1.35 : 1.0));
-        const duration = miasma ? 6.5 : 4.5;
+        const radius = Math.round(128 * (1 + ranks.pathC * 0.08) * (miasma ? 1.18 : 1.0));
+        const duration = miasma ? 5.5 : 4.5;
         this.poisonClouds.push({
           id: allocEntityId(),
           x: this.player.x,
@@ -3121,7 +3126,7 @@ export class GameEngine {
       case NormalSkillId.UndyingFlesh: {
         soundEngine.playHeal();
         const spined = this.activeBlessingIds.has('zombie_skill_undying_flesh');
-        this.player.undyingTimer = spined ? 7.5 : 5.0;
+        this.player.undyingTimer = spined ? 6.2 : 5.0;
         this.player.undyingHealTick = 0.15;
         this.player.squashX = 1.2;
         this.player.squashY = 0.82;
@@ -3170,7 +3175,7 @@ export class GameEngine {
       case NormalSkillId.GraveCall: {
         soundEngine.playSummon();
         const ranks = this.getActiveUpgrades();
-        const extra = this.activeBlessingIds.has('zombie_skill_grave_call') ? 2 : 0;
+        const extra = this.activeBlessingIds.has('zombie_skill_grave_call') ? 1 : 0;
         const count = 2 + extra;
         const life = 15 + ranks.pathD * 1.5;
         this.player.squashX = 1.22;
@@ -3255,7 +3260,7 @@ export class GameEngine {
           });
         }
 
-        const rawDmg = 30 * (crescent ? 1.28 : 1.0) * this.getPhysicalDamageMultiplier();
+        const rawDmg = 30 * (crescent ? 1.14 : 1.0) * this.getPhysicalDamageMultiplier();
         this.hitEnemiesInArc(
           this.player.x,
           this.player.y,
@@ -3368,7 +3373,7 @@ export class GameEngine {
         const ranks = this.getActiveUpgrades();
         const extraCharges =
           (ranks.pathD >= 6 ? 2 : ranks.pathD >= 3 ? 1 : 0) +
-          (this.activeBlessingIds.has('skel_skill_ribcage_shield') ? 2 : 0);
+          (this.activeBlessingIds.has('skel_skill_ribcage_shield') ? 1 : 0);
         this.player.ribcageTimer = 6.5;
         this.player.ribcageCharges = 3 + extraCharges;
         this.player.squashX = 1.18;
@@ -3457,8 +3462,8 @@ export class GameEngine {
       case NormalSkillId.BoneStorm: {
         soundEngine.playSummon();
         const maelstrom = this.activeBlessingIds.has('skel_skill_bone_storm');
-        const stormR = maelstrom ? 102 : 82;
-        this.player.boneStormTimer = maelstrom ? 8.5 : 5.5;
+        const stormR = maelstrom ? 92 : 82;
+        this.player.boneStormTimer = maelstrom ? 7.0 : 5.5;
         this.player.boneStormTick = 0.05;
         this.player.squashX = 1.22;
         this.player.squashY = 0.8;
@@ -3511,7 +3516,7 @@ export class GameEngine {
 
       // === GOBLIN NORMAL SKILLS ===
       case NormalSkillId.DaggerFlurry: {
-        const hits = this.activeBlessingIds.has('gob_skill_dagger_flurry') ? 7 : 5;
+        const hits = this.activeBlessingIds.has('gob_skill_dagger_flurry') ? 6 : 5;
         this.player.flurryTotal = hits;
         this.player.flurryRemaining = hits;
         this.player.flurryTimer = 0;
@@ -3612,7 +3617,7 @@ export class GameEngine {
           this.damageEnemy(target, roll.damage, true, p.x, p.y, true, roll.isCrit);
           this.applyGoblinPoisonIfActive(target);
           if (umbral) {
-            p.normalCooldowns[slotIndex] = Math.max(0, p.normalCooldowns[slotIndex] - 2.0);
+            p.normalCooldowns[slotIndex] = Math.max(0, p.normalCooldowns[slotIndex] - 1.0);
           }
           this.spawnPopup(p.x, p.y - 30, 'BACKSTAB!', '#FDE047', 1.0);
         } else {
@@ -3682,7 +3687,7 @@ export class GameEngine {
       case NormalSkillId.ExplosiveTrap: {
         soundEngine.playPickup();
         const ranks = this.getActiveUpgrades();
-        const kegBless = this.activeBlessingIds.has('gob_skill_explosive_trap') ? 1.45 : 1.0;
+        const kegBless = this.activeBlessingIds.has('gob_skill_explosive_trap') ? 1.20 : 1.0;
         const trapDmg = Math.round(
           48 * this.getPhysicalDamageMultiplier() * this.getPlagueOrSkillMultiplier() * kegBless
         );
@@ -3711,7 +3716,7 @@ export class GameEngine {
       case NormalSkillId.Windrunner: {
         soundEngine.playDash();
         this.player.windrunnerTimer = this.activeBlessingIds.has('gob_skill_windrunner')
-          ? 7.5
+          ? 6.2
           : 5.0;
         this.player.squashX = 1.2;
         this.player.squashY = 0.82;
@@ -3753,7 +3758,7 @@ export class GameEngine {
       case NormalSkillId.PoisonedBlades: {
         soundEngine.playPlague();
         this.player.poisonBladesTimer = this.activeBlessingIds.has('gob_skill_poisoned_blades')
-          ? 9.5
+          ? 8.0
           : 6.5;
         this.player.squashX = 1.2;
         this.player.squashY = 0.82;
@@ -3867,8 +3872,8 @@ export class GameEngine {
         }
 
         const rawFistDmg =
-          35 * (tectonic ? 1.35 : 1.0) * this.getPhysicalDamageMultiplier();
-        const stunDur = 1.1 + ranks.pathC * 0.25 + (tectonic ? 0.7 : 0);
+          35 * (tectonic ? 1.16 : 1.0) * this.getPhysicalDamageMultiplier();
+        const stunDur = 1.1 + ranks.pathC * 0.25 + (tectonic ? 0.3 : 0);
 
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
@@ -3898,12 +3903,12 @@ export class GameEngine {
         const p = this.player;
         const ranks = this.getActiveUpgrades();
         const aegis = this.activeBlessingIds.has('gnome_skill_fortress_stance');
-        p.fortressTimer = 5.5 + ranks.pathD * 0.4 + (aegis ? 2.5 : 0);
+        p.fortressTimer = 5.5 + ranks.pathD * 0.4 + (aegis ? 1.2 : 0);
         p.fortressTremorTick = 0.25;
         p.squashX = 1.18;
         p.squashY = 0.84;
         if (aegis) {
-          this.healPlayer(Math.round(p.maxHp * 0.3));
+          this.healPlayer(Math.round(p.maxHp * 0.15));
         }
         this.slashes.push({
           x: p.x,
@@ -3997,7 +4002,7 @@ export class GameEngine {
         const p = this.player;
         const ranks = this.getActiveUpgrades();
         const overcharged = this.activeBlessingIds.has('gnome_skill_magnetic_guard');
-        p.magneticTimer = 5.5 + ranks.pathD * 0.4 + (overcharged ? 2.5 : 0);
+        p.magneticTimer = 5.5 + ranks.pathD * 0.4 + (overcharged ? 1.2 : 0);
         p.magneticZapTick = 0.15;
         this.slashes.push({
           x: p.x,
@@ -4056,8 +4061,8 @@ export class GameEngine {
         p.gnomeLungeOffset = 9;
         this.shakeMag = Math.max(this.shakeMag, 7);
 
-        const rootDuration = 2.8 + ranks.pathC * 0.25 + (crushing ? 1.2 : 0);
-        const crushMult = (crushing ? 1.45 : 1.0) * this.getPlagueOrSkillMultiplier();
+        const rootDuration = 2.8 + ranks.pathC * 0.25 + (crushing ? 0.6 : 0);
+        const crushMult = (crushing ? 1.20 : 1.0) * this.getPlagueOrSkillMultiplier();
         const initialDmg = Math.round(18 * crushMult);
         const dotDmg = Math.round(9 * crushMult);
 
@@ -4146,7 +4151,7 @@ export class GameEngine {
         const boltSpeed = 610;
         const boltDamage =
           33 *
-          (twinLance ? 1.25 : 1.0) *
+          (twinLance ? 1.12 : 1.0) *
           this.getPhysicalDamageMultiplier() *
           this.getPlagueOrSkillMultiplier();
 
@@ -4246,7 +4251,7 @@ export class GameEngine {
         const p = this.player;
         const ranks = this.getActiveUpgrades();
         const devourer = this.activeBlessingIds.has('ghost_skill_soul_drain');
-        p.soulDrainTimer = devourer ? 4.4 : 3.2;
+        p.soulDrainTimer = devourer ? 3.8 : 3.2;
         p.soulDrainTick = 0.05;
         p.squashX = 1.24;
         p.squashY = 0.8;
@@ -4277,11 +4282,11 @@ export class GameEngine {
         p.squashX = 1.34;
         p.squashY = 0.72;
 
-        const screamRadius = Math.round((banshee ? 225 : 178) * (1 + ranks.pathD * 0.04));
-        const fearDur = (banshee ? 3.2 : 2.2) + ranks.pathD * 0.25;
+        const screamRadius = Math.round((banshee ? 205 : 178) * (1 + ranks.pathD * 0.04));
+        const fearDur = (banshee ? 2.8 : 2.2) + ranks.pathD * 0.25;
         const rawDmg =
           30 *
-          (banshee ? 1.3 : 1.0) *
+          (banshee ? 1.15 : 1.0) *
           this.getPhysicalDamageMultiplier() *
           this.getPlagueOrSkillMultiplier();
 
@@ -4350,7 +4355,7 @@ export class GameEngine {
 
         if (host && host.kind !== EnemyKind.TrainingDummy) {
           soundEngine.playSummon();
-          const dur = (puppeteer ? 3.5 : 2.3) + ranks.pathD * 0.22;
+          const dur = (puppeteer ? 2.9 : 2.3) + ranks.pathD * 0.22;
           p.possessedEnemyId = host.id;
           p.possessionTimer = dur;
           p.possessionPulseTick = 0.08;
@@ -4417,8 +4422,8 @@ export class GameEngine {
   private applyGhostChillIfActive(enemy: EnemyEntity): void {
     if (this.player.characterId !== CharacterId.Ghost) return;
     if (this.activeBlessingIds.has('ghost_chilling_touch')) {
-      enemy.slowTimer = Math.max(enemy.slowTimer, 2.6);
-      enemy.slowFactor = Math.min(enemy.slowFactor, 0.68);
+      enemy.slowTimer = Math.max(enemy.slowTimer, 1.6);
+      enemy.slowFactor = Math.min(enemy.slowFactor, 0.84);
     }
   }
 
@@ -4432,7 +4437,7 @@ export class GameEngine {
     this.shakeMag = Math.max(this.shakeMag, 8.5);
     this.triggerRestlessSpirit();
 
-    const blastR = puppeteer ? 148 : 118;
+    const blastR = puppeteer ? 132 : 118;
     this.slashes.push({
       x,
       y,
@@ -4455,7 +4460,7 @@ export class GameEngine {
     });
     const rawBlast =
       36 *
-      (puppeteer ? 1.45 : 1.0) *
+      (puppeteer ? 1.22 : 1.0) *
       this.getPhysicalDamageMultiplier() *
       this.getPlagueOrSkillMultiplier();
     for (const enemy of [...this.world.enemies]) {
@@ -4494,7 +4499,7 @@ export class GameEngine {
     p.squashY = 0.68;
 
     const crashRadius = Math.round(
-      138 * (1 + ranks.pathB * 0.04) * (faultline ? 1.35 : 1.0)
+      138 * (1 + ranks.pathB * 0.04) * (faultline ? 1.18 : 1.0)
     );
     this.slashes.push({
       x: p.x,
@@ -4507,7 +4512,7 @@ export class GameEngine {
       maxLife: 0.4,
       flip: false,
       kind: 'GNOME_CRATER_SLAM',
-      scale: faultline ? 1.25 : 1.0,
+      scale: faultline ? 1.12 : 1.0,
     });
     this.shockwaves.push({
       x: p.x,
@@ -4553,10 +4558,10 @@ export class GameEngine {
 
     const rawCrash =
       38 *
-      (faultline ? 1.35 : 1.0) *
+      (faultline ? 1.18 : 1.0) *
       this.getPhysicalDamageMultiplier() *
       this.getPlagueOrSkillMultiplier();
-    const stunDur = 0.95 + ranks.pathC * 0.25 + (faultline ? 0.55 : 0);
+    const stunDur = 0.95 + ranks.pathC * 0.25 + (faultline ? 0.3 : 0);
 
     for (const enemy of [...this.world.enemies]) {
       if (!enemy || enemy.hp <= 0) continue;
@@ -4935,7 +4940,7 @@ export class GameEngine {
     this.applyGoblinPoisonIfActive(target);
     this.healPlayer(8);
     if (!this.world.isGuild) {
-      this.runCoins += this.activeBlessingIds.has('gob_ult_thieves') ? 4 : 2;
+      this.runCoins += this.activeBlessingIds.has('gob_ult_thieves') ? 3 : 2;
     }
   }
 
@@ -4996,7 +5001,7 @@ export class GameEngine {
       });
     }
 
-    const rawDmg = 16 * (festering ? 1.25 : 1.0) * this.getPhysicalDamageMultiplier();
+    const rawDmg = 16 * (festering ? 1.12 : 1.0) * this.getPhysicalDamageMultiplier();
     const slowDuration = 3.5 + ranks.pathB * 0.4;
     for (const enemy of [...this.world.enemies]) {
       if (!enemy || enemy.hp <= 0) continue;
@@ -5037,13 +5042,13 @@ export class GameEngine {
       case UltimateSkillId.AbominationForm: {
         soundEngine.playBossSlam();
         const behemoth = this.activeBlessingIds.has('zombie_ult_abomination');
-        p.abominationTimer = behemoth ? 14.0 : 10.0;
+        p.abominationTimer = behemoth ? 12.0 : 10.0;
         p.abomStompTick = 0.8;
         p.squashX = 1.38;
         p.squashY = 0.7;
         this.hitstopTimer = 0.055;
         this.shakeMag = 10;
-        this.healPlayer(Math.round(p.maxHp * (behemoth ? 0.45 : 0.25)));
+        this.healPlayer(Math.round(p.maxHp * (behemoth ? 0.35 : 0.25)));
         if (behemoth) {
           p.normalCooldowns = [0, 0];
         }
@@ -5116,7 +5121,7 @@ export class GameEngine {
         this.shakeMag = 9;
         p.squashX = 1.3;
         p.squashY = 0.74;
-        const hordeCount = 7 + (lordGraves ? 3 : 0);
+        const hordeCount = 7 + (lordGraves ? 1 : 0);
         const hordeLife = 14 + ranks.pathD * 1.5;
         if (lordGraves) {
           p.normalCooldowns = [0, 0];
@@ -5180,7 +5185,7 @@ export class GameEngine {
 
         let totalDrain = 0;
         const waveDmg = Math.round(
-          58 * (ravenous ? 1.4 : 1.0) * this.getPlagueOrSkillMultiplier()
+          58 * (ravenous ? 1.2 : 1.0) * this.getPlagueOrSkillMultiplier()
         );
         for (const enemy of [...this.world.enemies]) {
           if (!enemy || enemy.hp <= 0) continue;
@@ -5194,7 +5199,7 @@ export class GameEngine {
             });
             this.damageEnemy(enemy, waveDmg, false, p.x, p.y, true);
             this.applyInfectiousTouch(enemy, 3);
-            totalDrain += ravenous ? 24 : 14;
+            totalDrain += ravenous ? 19 : 14;
           }
         }
         embraceEffect.totalDrain = totalDrain;
@@ -5206,7 +5211,7 @@ export class GameEngine {
       case UltimateSkillId.BoneColossus: {
         soundEngine.playBossSlam();
         const dread = this.activeBlessingIds.has('skel_ult_colossus');
-        p.colossusTimer = dread ? 14.0 : 10.0;
+        p.colossusTimer = dread ? 12.0 : 10.0;
         p.colossusShockTick = 0.75;
         p.squashX = 1.38;
         p.squashY = 0.7;
@@ -5284,7 +5289,7 @@ export class GameEngine {
         this.shakeMag = 9;
         p.squashX = 1.28;
         p.squashY = 0.76;
-        const legionCount = phalanx ? 9 : 6;
+        const legionCount = phalanx ? 7 : 6;
         if (phalanx) {
           p.normalCooldowns = [0, 0];
         }
@@ -5330,7 +5335,7 @@ export class GameEngine {
         p.skelLungeOffset = 14;
         if (harvest) {
           p.normalCooldowns = [0, 0];
-          this.healPlayer(25);
+          this.healPlayer(12);
         }
 
         const angle = p.aimAngle;
@@ -5437,14 +5442,14 @@ export class GameEngine {
       case UltimateSkillId.PhantomFrenzy: {
         soundEngine.playDash();
         const mirage = this.activeBlessingIds.has('gob_ult_phantom');
-        const total = mirage ? 11 : 8;
+        const total = mirage ? 9 : 8;
         p.phantomTotal = total;
         p.phantomRemaining = total;
         p.phantomTimer = 0;
         p.invulnTimer = Math.max(p.invulnTimer, mirage ? 1.25 : 0.95);
         if (mirage) {
           p.normalCooldowns = [0, 0];
-          this.healPlayer(24);
+          this.healPlayer(12);
         }
         this.shakeMag = 8;
         this.shockwaves.push({
@@ -5463,7 +5468,7 @@ export class GameEngine {
         soundEngine.playSummon();
         const plunder = this.activeBlessingIds.has('gob_ult_thieves');
         p.stolenMightTimer = 8.0;
-        p.kingThievesRemaining = plunder ? 8 : 6;
+        p.kingThievesRemaining = plunder ? 7 : 6;
         p.kingThievesTimer = 0;
         p.invulnTimer = Math.max(p.invulnTimer, plunder ? 1.15 : 0.9);
         if (plunder) {
@@ -5552,13 +5557,13 @@ export class GameEngine {
       case UltimateSkillId.MountainsHeart: {
         soundEngine.playBossSlam();
         const livingMtn = this.activeBlessingIds.has('gnome_ult_mountain');
-        p.mountainHeartTimer = livingMtn ? 14.0 : 10.0;
+        p.mountainHeartTimer = livingMtn ? 12.0 : 10.0;
         p.mountainTremorTick = 0.7;
         p.squashX = 1.4;
         p.squashY = 0.68;
         this.hitstopTimer = 0.065;
         this.shakeMag = 12;
-        this.healPlayer(Math.round(p.maxHp * (livingMtn ? 0.35 : 0.25)));
+        this.healPlayer(Math.round(p.maxHp * (livingMtn ? 0.30 : 0.25)));
         if (livingMtn) {
           p.normalCooldowns = [0, 0];
         }
@@ -5636,7 +5641,7 @@ export class GameEngine {
 
         const ringRadius = 165;
         const wallCount = 8;
-        const wallLife = 6.5 + ranks.pathD * 0.4 + (citadel ? 3.0 : 0);
+        const wallLife = 6.5 + ranks.pathD * 0.4 + (citadel ? 1.5 : 0);
         this.stoneRamparts = [];
         for (let i = 0; i < wallCount; i++) {
           const ang = (i / wallCount) * Math.PI * 2;
@@ -5738,7 +5743,7 @@ export class GameEngine {
         soundEngine.playBossSlam();
         const ranks = this.getActiveUpgrades();
         const dread = this.activeBlessingIds.has('ghost_ult_nightmare');
-        const dur = (dread ? 10.0 : 7.0) + ranks.pathD * 0.4;
+        const dur = (dread ? 8.5 : 7.0) + ranks.pathD * 0.4;
         p.nightmareTimer = dur;
         p.nightmareFearTick = 0.65;
         p.invulnTimer = Math.max(p.invulnTimer, 1.0);
@@ -5748,7 +5753,7 @@ export class GameEngine {
           p.normalCooldowns = [0, 0];
         }
 
-        const appCount = dread ? 6 : 4;
+        const appCount = dread ? 5 : 4;
         for (let i = 0; i < appCount; i++) {
           const ang = (i / appCount) * Math.PI * 2;
           this.spawnMinion(
@@ -5805,10 +5810,10 @@ export class GameEngine {
         p.squashY = 0.74;
         if (hostBless) {
           p.normalCooldowns = [0, 0];
-          this.healPlayer(20);
+          this.healPlayer(10);
         }
 
-        const spiritCount = hostBless ? 14 : 10;
+        const spiritCount = hostBless ? 12 : 10;
         const orbDmg =
           25 *
           this.getPhysicalDamageMultiplier() *
@@ -5871,7 +5876,7 @@ export class GameEngine {
         const focusTarget = this.findNearestEnemy(p.x, p.y, 290);
         const rx = focusTarget ? focusTarget.x : p.x + Math.cos(p.aimAngle) * 84;
         const ry = focusTarget ? focusTarget.y : p.y + Math.sin(p.aimAngle) * 84;
-        const riftRadius = Math.round((horizon ? 236 : 192) * (1 + ranks.pathD * 0.04));
+        const riftRadius = Math.round((horizon ? 212 : 192) * (1 + ranks.pathD * 0.04));
         const riftLife = 2.25;
 
         this.deathsPassageRifts.push({
@@ -5886,7 +5891,7 @@ export class GameEngine {
           pullDamage: Math.round(12 * this.getPlagueOrSkillMultiplier()),
           explosionDamage: Math.round(
             74 *
-              (horizon ? 1.28 : 1.0) *
+              (horizon ? 1.15 : 1.0) *
               this.getPhysicalDamageMultiplier() *
               this.getPlagueOrSkillMultiplier()
           ),
@@ -6155,8 +6160,8 @@ export class GameEngine {
         if (e.infectionTimer <= 0) {
           e.infectionTimer = 0.75;
           const strainMult =
-            (this.activeBlessingIds.has('zombie_virulent_strain') ? 1.35 : 1.0) *
-            (this.activeBlessingIds.has('gob_skill_poisoned_blades') ? 1.4 : 1.0);
+            (this.activeBlessingIds.has('zombie_virulent_strain') ? 1.15 : 1.0) *
+            (this.activeBlessingIds.has('gob_skill_poisoned_blades') ? 1.18 : 1.0);
           const infDmg =
             e.infectionStacks * Math.round(5 * this.getPlagueOrSkillMultiplier() * strainMult);
           const plagueDmg =
@@ -6623,7 +6628,7 @@ export class GameEngine {
       const baseEvade =
         0.25 +
         ranks.pathA * 0.03 +
-        (this.activeBlessingIds.has('gob_shadow_clone') ? 0.12 : 0);
+        (this.activeBlessingIds.has('gob_shadow_clone') ? 0.06 : 0);
       const evadeChance = Math.min(
         0.88,
         baseEvade + (p.windrunnerTimer > 0 && moving ? 0.45 : 0)
@@ -6657,7 +6662,7 @@ export class GameEngine {
             maxLife: 0.2,
             flip: false,
           });
-          const counterRaw = 24 * this.getPhysicalDamageMultiplier();
+          const counterRaw = 14 * this.getPhysicalDamageMultiplier();
           for (const enemy of [...this.world.enemies]) {
             if (!enemy || enemy.hp <= 0) continue;
             if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 84 + enemy.radius) {
@@ -6682,7 +6687,7 @@ export class GameEngine {
 
     // Ghost Passive 1: Ethereal Body (phase evasion + Restless Spirit surge!)
     if (p.characterId === CharacterId.Ghost) {
-      const astralVeil = this.activeBlessingIds.has('ghost_ethereal_veil') ? 0.12 : 0;
+      const astralVeil = this.activeBlessingIds.has('ghost_ethereal_veil') ? 0.06 : 0;
       const evadeChance = Math.min(
         0.78,
         0.24 + ranks.pathA * 0.025 + astralVeil + (p.nightmareTimer > 0 ? 0.1 : 0)
@@ -6718,7 +6723,7 @@ export class GameEngine {
         0.52,
         0.2 +
           ranks.pathA * 0.03 +
-          (this.activeBlessingIds.has('ghost_ethereal_veil') ? 0.12 : 0)
+          (this.activeBlessingIds.has('ghost_ethereal_veil') ? 0.06 : 0)
       );
       dmg *= 1 - etherealGuard;
     }
@@ -6785,7 +6790,7 @@ export class GameEngine {
     }
 
     if (isProjectile && this.activeBlessingIds.has('skel_fortified_ribs')) {
-      dmg *= 0.75;
+      dmg *= 0.85;
     }
 
     // Gnome Passive 1: Unbreakable Foundation + Granite Core pathA + Bedrock Plating
@@ -6794,7 +6799,7 @@ export class GameEngine {
         0.48,
         0.22 +
           ranks.pathA * 0.025 +
-          (this.activeBlessingIds.has('gnome_bedrock_plating') ? 0.1 : 0)
+          (this.activeBlessingIds.has('gnome_bedrock_plating') ? 0.05 : 0)
       );
       dmg *= 1 - foundationArmor;
       // Gnome Passive 2: Lasting Resolve (scales up to 42% extra DR as HP drops)
@@ -7050,7 +7055,7 @@ export class GameEngine {
             const spearTwinBonus =
               pr.kind === 'PLAYER_BONE_SPEAR' &&
               this.activeBlessingIds.has('skel_skill_bone_spear')
-                ? 0.25
+                ? 0.12
                 : 0;
             const bonusCrit =
               (pr.kind === 'PLAYER_BONE_SPEAR' ? 0.15 + spearTwinBonus : 0.22) + opp.bonusCrit;
@@ -7182,7 +7187,7 @@ export class GameEngine {
         this.player.boneStormTimer > 0 &&
         pr.kind === 'BONE_ARROW' &&
         Math.hypot(pr.x - this.player.x, pr.y - this.player.y) <=
-          (this.activeBlessingIds.has('skel_skill_bone_storm') ? 76 : 58)
+          (this.activeBlessingIds.has('skel_skill_bone_storm') ? 66 : 58)
       ) {
         soundEngine.playBoneBreak();
         this.slashes.push({
@@ -7402,9 +7407,9 @@ export class GameEngine {
         id: allocEntityId(),
         x: trap.x,
         y: trap.y,
-        radius: 95,
-        life: 3.4,
-        maxLife: 3.4,
+        radius: 82,
+        life: 2.6,
+        maxLife: 2.6,
         tickTimer: 0.12,
         damagePerTick: Math.round(10 * this.getPlagueOrSkillMultiplier()),
       });
@@ -7665,10 +7670,11 @@ export class GameEngine {
     const hasNightshade = this.activeBlessingIds.has('gob_viper_toxin');
     const hasCorrosive = this.activeBlessingIds.has('gob_skill_poisoned_blades');
     if (this.player.poisonBladesTimer <= 0 && !hasNightshade) return;
+    if (this.player.poisonBladesTimer <= 0 && hasNightshade && Math.random() >= 0.5) return;
 
     const stacksToAdd =
       (this.player.poisonBladesTimer > 0 && hasNightshade ? 2 : 1) + (hasCorrosive ? 1 : 0);
-    enemy.infectionStacks = Math.min(hasCorrosive ? 5 : 4, enemy.infectionStacks + stacksToAdd);
+    enemy.infectionStacks = Math.min(hasCorrosive ? 4 : 3, enemy.infectionStacks + stacksToAdd);
     enemy.plagueTimer = Math.max(enemy.plagueTimer, 3.6);
     if (enemy.infectionTimer <= 0) {
       enemy.infectionTimer = 0.6;
@@ -7680,7 +7686,7 @@ export class GameEngine {
   private applyInfectiousTouch(enemy: EnemyEntity, stacksToAdd: number): void {
     // Infectious Touch is the Zombie's innate passive
     if (this.player.characterId !== CharacterId.Zombie) return;
-    const maxStacks = this.activeBlessingIds.has('zombie_virulent_strain') ? 6 : 3;
+    const maxStacks = this.activeBlessingIds.has('zombie_virulent_strain') ? 4 : 3;
     enemy.infectionStacks = Math.min(maxStacks, enemy.infectionStacks + stacksToAdd);
     if (enemy.infectionTimer <= 0) {
       enemy.infectionTimer = 0.65;
@@ -8013,7 +8019,7 @@ export class GameEngine {
         life: 0.22,
         maxLife: 0.22,
       });
-      const splashDmg = Math.max(5, Math.round(actual * 0.38));
+      const splashDmg = Math.max(5, Math.round(actual * 0.2));
       for (const other of [...this.world.enemies]) {
         if (!other || other.id === enemy.id || other.hp <= 0) continue;
         if (Math.hypot(other.x - enemy.x, other.y - enemy.y) <= splinterR + other.radius) {
@@ -8045,17 +8051,17 @@ export class GameEngine {
     this.corpseBloomCounter++;
     this.spawnBurst(enemy.x, enemy.y, '#EAE4D7', 12, 130);
 
-    // Goblin Statue Blessing: Quicksilver Step — slaying an enemy cuts Normal Skill cooldowns by 1.2s!
+    // Goblin Statue Blessing: Quicksilver Step — slaying an enemy cuts Normal Skill cooldowns by 0.6s!
     if (
       this.player.characterId === CharacterId.Goblin &&
       this.activeBlessingIds.has('gob_quicksilver_boots')
     ) {
-      this.player.normalCooldowns[0] = Math.max(0, this.player.normalCooldowns[0] - 1.2);
-      this.player.normalCooldowns[1] = Math.max(0, this.player.normalCooldowns[1] - 1.2);
+      this.player.normalCooldowns[0] = Math.max(0, this.player.normalCooldowns[0] - 0.6);
+      this.player.normalCooldowns[1] = Math.max(0, this.player.normalCooldowns[1] - 0.6);
     }
 
     if (enemy.infectionStacks > 0) {
-      const splashRadius = this.activeBlessingIds.has('zombie_virulent_strain') ? 168 : 112;
+      const splashRadius = this.activeBlessingIds.has('zombie_virulent_strain') ? 135 : 112;
       this.shockwaves.push({
         x: enemy.x,
         y: enemy.y,
@@ -8079,7 +8085,7 @@ export class GameEngine {
       const healVal =
         8 +
         ranks.pathA * 3 +
-        (this.activeBlessingIds.has('zombie_feast_of_rot') ? 10 : 0);
+        (this.activeBlessingIds.has('zombie_feast_of_rot') ? 5 : 0);
       this.spawnOrb('ESSENCE_HEAL', enemy.x, enemy.y, healVal);
     }
 
@@ -8166,7 +8172,7 @@ export class GameEngine {
         soundEngine.playPickup();
         if (orb.kind === 'ESSENCE_HEAL') {
           this.healPlayer(orb.value);
-          const bonusUlt = this.activeBlessingIds.has('zombie_feast_of_rot') ? 22 : 13;
+          const bonusUlt = this.activeBlessingIds.has('zombie_feast_of_rot') ? 17 : 13;
           this.player.ultCharge = Math.min(100, this.player.ultCharge + bonusUlt);
         } else if (orb.kind === 'SOUL_SHARD') {
           this.runShardsEarned += orb.value;
@@ -8354,8 +8360,10 @@ export class GameEngine {
           this.bufferedActions.delete('INTERACT');
           if (isRunVictory) {
             this.finishRun(true);
+          } else if (this.world.floorNumber > 7) {
+            this.loadDungeonFloor(nextFloor);
           } else {
-            this.offerBlessingsAndAdvanceFloor(nextFloor);
+            this.offerBlessingsAndAdvanceFloor(nextFloor, 'STAGE_CLEAR');
           }
           return;
         }
@@ -8373,7 +8381,10 @@ export class GameEngine {
           this.openChestProp(prop);
         }
       } else if (prop.kind === 'SHRINE_ALTAR' && !prop.opened && dist <= 82) {
-        prompt = 'Pray at Lantern Statue';
+        prompt =
+          this.world.floorNumber > 7
+            ? 'Pray at Lantern Statue (+25% HP)'
+            : 'Pray at Lantern Statue';
         if (pressedInteract) {
           this.activateShrineStatue(prop);
           return;
@@ -8406,7 +8417,8 @@ export class GameEngine {
     this.bufferedActions.delete('INTERACT');
     prop.opened = true;
     this.interactPrompt = null;
-    this.healPlayer(Math.round(this.player.maxHp * 0.4));
+    soundEngine.playHeal();
+    this.healPlayer(Math.round(this.player.maxHp * 0.25));
     const burstColor =
       this.player.characterId === CharacterId.Skeleton
         ? '#38BDF8'
@@ -8418,35 +8430,66 @@ export class GameEngine {
         ? '#C084FC'
         : '#4ADE80';
     this.spawnBurst(prop.x, prop.y - 20, burstColor, 14, 95);
-    this.offerBlessingsAndAdvanceFloor(null);
+
+    if (this.world.floorNumber > 7) {
+      this.spawnPopup(prop.x, prop.y - 28, 'Vitality Restored (+25% HP)', burstColor, 1.05);
+      this.roomBannerText = 'Lantern Statue · Vitality Restored (Blessings End After Stage 3-1)';
+      this.roomBannerTimer = 3.2;
+      this.emitHudSnapshot();
+      return;
+    }
+
+    const eligiblePool = getEligibleStatueBlessings(
+      this.player.characterId,
+      this.getActiveLoadout()
+    );
+    const unpicked = eligiblePool.filter((b) => !this.activeBlessingIds.has(b.id));
+    if (unpicked.length === 0) {
+      this.spawnPopup(prop.x, prop.y - 28, 'All Blessings Mastered (+25% HP)', '#FBBF24', 1.05);
+      this.emitHudSnapshot();
+      return;
+    }
+
+    this.offerBlessingsAndAdvanceFloor(null, 'STATUE');
   }
 
-  private offerBlessingsAndAdvanceFloor(nextFloor: number | null): void {
-    this.pendingNextFloor = nextFloor;
+  private offerBlessingsAndAdvanceFloor(
+    nextFloor: number | null,
+    source: 'STATUE' | 'STAGE_CLEAR' = 'STAGE_CLEAR'
+  ): void {
+    if (this.world.floorNumber > 7) {
+      if (nextFloor !== null) {
+        this.loadDungeonFloor(nextFloor);
+      }
+      return;
+    }
+
     // Strictly filter to ONLY blessings matching the hero's equipped 2 Normal + 1 Ultimate skills (plus core passives)
     const eligiblePool = getEligibleStatueBlessings(
       this.player.characterId,
       this.getActiveLoadout()
     );
     const unpicked = eligiblePool.filter((b) => !this.activeBlessingIds.has(b.id));
-    let choices: RunBlessing[];
-    if (unpicked.length >= 3) {
-      choices = unpicked
-        .slice()
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 3);
-    } else {
-      // Never pull from unequipped skills — top up strictly from eligiblePool if nearly all 7 eligible blessings were taken
-      const pickedEligible = eligiblePool
-        .filter((b) => this.activeBlessingIds.has(b.id))
-        .sort(() => Math.random() - 0.5);
-      choices = [...unpicked, ...pickedEligible].slice(0, 3);
+    if (unpicked.length === 0) {
+      if (nextFloor !== null) {
+        this.loadDungeonFloor(nextFloor);
+      } else {
+        this.spawnPopup(this.player.x, this.player.y - 32, 'All Blessings Mastered', '#FBBF24', 1.0);
+      }
+      return;
     }
+
+    const choices = unpicked
+      .slice()
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3);
+
+    this.pendingNextFloor = nextFloor;
     this.phase = GamePhase.BlessingSelect;
     this.joyX = 0;
     this.joyY = 0;
     this.attackHeld = false;
-    this.callbacks.onOfferBlessings(choices);
+    this.callbacks.onOfferBlessings(choices, source);
     this.emitHudSnapshot();
   }
 

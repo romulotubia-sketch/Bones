@@ -124,12 +124,18 @@ export const TitleScreenOverlay: React.FC<TitleScreenOverlayProps> = ({
 interface BlessingModalProps {
   activeCharacter: CharacterId;
   choices: RunBlessing[];
+  source?: 'STATUE' | 'STAGE_CLEAR';
+  currentFloor?: number;
+  currentStageFloor?: string;
   onPickBlessing: (id: string) => void;
 }
 
 export const BlessingModal: React.FC<BlessingModalProps> = ({
   activeCharacter,
   choices,
+  source = 'STAGE_CLEAR',
+  currentFloor,
+  currentStageFloor,
   onPickBlessing,
 }) => {
   const openedAtRef = React.useRef<number>(performance.now());
@@ -157,11 +163,20 @@ export const BlessingModal: React.FC<BlessingModalProps> = ({
     ? 'active:border-[#C084FC]'
     : 'active:border-[#4ADE80]';
 
+  const isFinalStage = currentStageFloor === '3-1' || currentFloor === 7;
+
   const handleSelect = (id: string) => {
     if (performance.now() - openedAtRef.current < 280) return;
     soundEngine.playUiClick(620);
     onPickBlessing(id);
   };
+
+  const gridColsClass =
+    choices.length === 1
+      ? 'grid-cols-1 max-w-sm mx-auto'
+      : choices.length === 2
+      ? 'grid-cols-2 max-w-xl mx-auto'
+      : 'grid-cols-3';
 
   return (
     <div
@@ -170,19 +185,21 @@ export const BlessingModal: React.FC<BlessingModalProps> = ({
     >
       <div
         role="dialog"
-        aria-label="Lantern Statue Blessing"
+        aria-label="Run Blessing Choice"
         className="w-full max-w-2xl bg-[#17141F] border border-[#352F46] rounded-2xl p-3 sm:p-4 shadow-2xl"
       >
         <div className="flex items-baseline justify-between gap-3 mb-2.5">
           <h2 className="font-display text-base sm:text-lg font-bold text-[#F5F0E6] whitespace-nowrap">
-            Lantern Statue · {profile.archetypeName}
+            {source === 'STATUE' ? 'Lantern Statue' : 'Stage Clear Blessing'} · {profile.archetypeName}
           </h2>
           <span className="text-[11px] text-[#A39BB5] truncate">
-            Choose 1 blessing for your equipped loadout
+            {isFinalStage
+              ? 'Stage 3-1 · Final blessing opportunity (Capped after 3-1)'
+              : 'Choose 1 blessing · Blessings end after Stage 3-1'}
           </span>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 sm:gap-2.5 items-stretch">
+        <div className={`grid ${gridColsClass} gap-2 sm:gap-2.5 items-stretch`}>
           {choices.map((b) => (
             <button
               key={b.id}
