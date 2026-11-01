@@ -341,18 +341,6 @@ export function buildGuildWorld(): GeneratedWorld {
       destructible: false,
       hp: 999,
     },
-    // Celestial Soul Awakening Altar in East Conservatory
-    {
-      id: allocEntityId(),
-      kind: 'GUILD_AWAKENING_ALTAR',
-      x: 520,
-      y: -180,
-      w: 84,
-      h: 84,
-      solid: true,
-      destructible: false,
-      hp: 999,
-    },
     // Heavy Oak Guild Double-Doorway leading outside to the Graveyard
     {
       id: allocEntityId(),

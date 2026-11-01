@@ -13,7 +13,6 @@ import {
 } from './components/GameModals';
 import { HudOverlay } from './components/HudOverlay';
 import { LoadoutModal } from './components/LoadoutModal';
-import { AwakeningModal } from './components/AwakeningModal';
 import { MultiplayerLobbyModal } from './components/MultiplayerLobbyModal';
 import { SettingsModal } from './components/SettingsModal';
 import { NetworkManager } from './multiplayer/NetworkManager';
@@ -25,15 +24,8 @@ import {
   MAX_RUN_BLESSINGS,
   persistGuildSave,
 } from './data/zombieData';
-import {
-  AWAKENING_BASE_SUCCESS_CHANCE,
-  AWAKENING_COST_GEMS,
-  TRANSMUTE_GEMS_YIELD,
-  TRANSMUTE_SHARDS_COST,
-} from './data/awakeningData';
 import { GameEngine } from './game/GameEngine';
 import {
-  AwakenedPathKey,
   CharacterId,
   DifficultyLevel,
   EquippedLoadout,
@@ -148,7 +140,6 @@ export default function App() {
     activeCharacter: saveData.selectedCharacter,
   }));
   const [loadoutModalOpen, setLoadoutModalOpen] = useState(false);
-  const [awakeningModalOpen, setAwakeningModalOpen] = useState(false);
   const [difficultyModalOpen, setDifficultyModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [blessingChoices, setBlessingChoices] = useState<RunBlessing[]>([]);
@@ -242,10 +233,6 @@ export default function App() {
       },
       onOpenLoadout: (charId) => {
         handleOpenLoadout(charId);
-      },
-      onOpenAwakening: (charId) => {
-        if (charId) handleSelectCharacter(charId);
-        setAwakeningModalOpen(true);
       },
       onOfferBlessings: (choices, source = 'STAGE_CLEAR') => {
         setBlessingChoices(choices);
@@ -386,125 +373,6 @@ export default function App() {
     []
   );
 
-  const handleAttemptAwakening = useCallback(
-    (charId: CharacterId, ultId: UltimateSkillId) => {
-      const currentGems = saveDataRef.current.gems ?? 100;
-      if (currentGems < AWAKENING_COST_GEMS) {
-        return { success: false, message: 'Not enough Awakening Gems (requires 25 💎).' };
-      }
-
-      const existingAwakened = saveDataRef.current.awakenedUltimates?.[charId]?.[ultId] ?? {
-        unlockedA: false,
-        unlockedB: false,
-        activePath: 'NONE',
-        pityCount: 0,
-      };
-
-      if (existingAwakened.unlockedA && existingAwakened.unlockedB) {
-        return { success: false, message: 'Both paths are already unlocked!' };
-      }
-
-      const pityBonus = existingAwakened.pityCount * 0.16;
-      const effectiveChance = AWAKENING_BASE_SUCCESS_CHANCE + pityBonus;
-      const isPityGuaranteed = existingAwakened.pityCount >= 4;
-      const rollSuccess = isPityGuaranteed || Math.random() < effectiveChance;
-
-      let pathUnlocked: 'PATH_A' | 'PATH_B' | undefined;
-
-      if (rollSuccess) {
-        if (!existingAwakened.unlockedA && !existingAwakened.unlockedB) {
-          pathUnlocked = Math.random() < 0.5 ? 'PATH_A' : 'PATH_B';
-        } else if (!existingAwakened.unlockedA) {
-          pathUnlocked = 'PATH_A';
-        } else {
-          pathUnlocked = 'PATH_B';
-        }
-      }
-
-      setSaveData((prev) => {
-        const charAwakened = { ...(prev.awakenedUltimates?.[charId] ?? {}) };
-        const prevStatus = charAwakened[ultId] ?? {
-          unlockedA: false,
-          unlockedB: false,
-          activePath: 'NONE',
-          pityCount: 0,
-        };
-
-        const updatedStatus = {
-          unlockedA: rollSuccess && pathUnlocked === 'PATH_A' ? true : prevStatus.unlockedA,
-          unlockedB: rollSuccess && pathUnlocked === 'PATH_B' ? true : prevStatus.unlockedB,
-          activePath: rollSuccess && pathUnlocked ? pathUnlocked : prevStatus.activePath,
-          pityCount: rollSuccess ? 0 : prevStatus.pityCount + 1,
-        };
-
-        charAwakened[ultId] = updatedStatus;
-
-        const updated: GuildSaveData = {
-          ...prev,
-          gems: Math.max(0, (prev.gems ?? 100) - AWAKENING_COST_GEMS),
-          awakenedUltimates: {
-            ...prev.awakenedUltimates,
-            [charId]: charAwakened,
-          },
-        };
-        persistGuildSave(updated);
-        engineRef.current?.updateSaveData(updated);
-        return updated;
-      });
-
-      return {
-        success: rollSuccess,
-        pathUnlocked,
-        message: rollSuccess ? 'Awakening Ascension Succeeded!' : 'Awakening Resonance Dissipated...',
-      };
-    },
-    []
-  );
-
-  const handleToggleAwakenedPath = useCallback(
-    (charId: CharacterId, ultId: UltimateSkillId, path: AwakenedPathKey) => {
-      setSaveData((prev) => {
-        const charAwakened = { ...(prev.awakenedUltimates?.[charId] ?? {}) };
-        const prevStatus = charAwakened[ultId] ?? {
-          unlockedA: false,
-          unlockedB: false,
-          activePath: 'NONE',
-          pityCount: 0,
-        };
-        charAwakened[ultId] = {
-          ...prevStatus,
-          activePath: path,
-        };
-        const updated: GuildSaveData = {
-          ...prev,
-          awakenedUltimates: {
-            ...prev.awakenedUltimates,
-            [charId]: charAwakened,
-          },
-        };
-        persistGuildSave(updated);
-        engineRef.current?.updateSaveData(updated);
-        return updated;
-      });
-    },
-    []
-  );
-
-  const handleTransmuteShards = useCallback(() => {
-    if ((saveDataRef.current.soulShards ?? 0) < TRANSMUTE_SHARDS_COST) return false;
-    setSaveData((prev) => {
-      const updated: GuildSaveData = {
-        ...prev,
-        soulShards: prev.soulShards - TRANSMUTE_SHARDS_COST,
-        gems: (prev.gems ?? 100) + TRANSMUTE_GEMS_YIELD,
-      };
-      persistGuildSave(updated);
-      engineRef.current?.updateSaveData(updated);
-      return updated;
-    });
-    return true;
-  }, []);
-
   const handleStartFromTitle = useCallback(() => {
     engineRef.current?.enterGuildPicking();
   }, []);
@@ -637,7 +505,6 @@ export default function App() {
         hud.phase === GamePhase.GuildRoam ||
         hud.phase === GamePhase.Dungeon) &&
         !loadoutModalOpen &&
-        !awakeningModalOpen &&
         !difficultyModalOpen &&
         !multiplayerModalOpen &&
         !settingsModalOpen && (
@@ -656,7 +523,6 @@ export default function App() {
             onOpenSettings={() => setSettingsModalOpen(true)}
             onPause={handlePause}
             onOpenLoadout={handleOpenLoadout}
-            onOpenAwakening={() => setAwakeningModalOpen(true)}
             onOpenMultiplayer={() => setMultiplayerModalOpen(true)}
             onSelectDifficulty={handleSelectDifficulty}
             onJoystickMove={handleJoystickMove}
@@ -681,19 +547,6 @@ export default function App() {
           onUpdateLoadout={handleUpdateLoadout}
           onPurchaseUpgrade={handlePurchaseUpgrade}
           onConfirmAndRoam={handleConfirmLoadoutAndRoam}
-        />
-      )}
-
-      {/* Hero Awakening Altar Modal */}
-      {awakeningModalOpen && (
-        <AwakeningModal
-          isOpen={awakeningModalOpen}
-          saveData={saveData}
-          initialCharacterId={saveData.selectedCharacter}
-          onClose={() => setAwakeningModalOpen(false)}
-          onAttemptAwakening={handleAttemptAwakening}
-          onTogglePath={handleToggleAwakenedPath}
-          onTransmuteShards={handleTransmuteShards}
         />
       )}
 

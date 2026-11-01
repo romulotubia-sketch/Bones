@@ -55,7 +55,6 @@ interface HudOverlayProps {
   onOpenSettings?: () => void;
   onPause: () => void;
   onOpenLoadout: (charId?: CharacterId) => void;
-  onOpenAwakening?: () => void;
   onOpenMultiplayer?: () => void;
   onSelectDifficulty?: (diff: DifficultyLevel) => void;
   onJoystickMove: (nx: number, ny: number) => void;
@@ -88,7 +87,6 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
   onOpenSettings,
   onPause,
   onOpenLoadout,
-  onOpenAwakening,
   onOpenMultiplayer,
   onSelectDifficulty: _onSelectDifficulty,
   onJoystickMove,
@@ -299,11 +297,6 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                 <span className="flex items-center gap-1 text-[#7DD3FC]" title="Soul Shards">
                   <SoulShardIcon className="w-2.5 h-2.5" />
                   {totalSavedShards}
-                </span>
-                <span>·</span>
-                <span className="flex items-center gap-1 text-[#E9D5FF]" title="Awakening Gems">
-                  <span>💎</span>
-                  {totalGems ?? 100}
                 </span>
               </div>
             </div>
@@ -683,22 +676,6 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
               >
                 {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
               </button>
-
-              {onOpenAwakening && (hud.phase === GamePhase.GuildRoam || hud.floorNumber === 0) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick(720);
-                    onOpenAwakening();
-                  }}
-                  aria-label="Altar of Soul Awakening"
-                  className="min-h-[44px] px-2.5 rounded-xl bg-[#2E184D]/90 border border-[#A855F7]/60 text-[#E9D5FF] active:scale-95 flex items-center gap-1.5 shadow-md shadow-purple-950/50"
-                  title="Altar of Soul Awakening"
-                >
-                  <span className="text-sm">💎</span>
-                  <span className="text-xs font-bold font-display hidden sm:inline">Awaken</span>
-                </button>
-              )}
 
               {onOpenSettings && (
                 <button

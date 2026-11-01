@@ -2728,7 +2728,6 @@ export const DEFAULT_SAVE_DATA: GuildSaveData = {
     [CharacterId.Ghost]: structuredClone(CHARACTER_ROSTER[CharacterId.Ghost].defaultLoadout),
     [CharacterId.Kobold]: structuredClone(CHARACTER_ROSTER[CharacterId.Kobold].defaultLoadout),
   },
-  awakenedUltimates: {},
   muted: false,
   joystickScale: 1.0,
   skillButtonScale: 1.0,
@@ -2903,10 +2902,6 @@ export function loadGuildSave(): GuildSaveData {
         [CharacterId.Ghost]: ghostLoadout,
         [CharacterId.Kobold]: koboldLoadout,
       },
-      awakenedUltimates:
-        parsed.awakenedUltimates && typeof parsed.awakenedUltimates === 'object'
-          ? parsed.awakenedUltimates
-          : {},
       muted: Boolean(parsed.muted),
       joystickScale: clampUiScale(parsed.joystickScale),
       skillButtonScale: clampUiScale(parsed.skillButtonScale),

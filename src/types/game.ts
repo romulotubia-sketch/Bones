@@ -210,15 +210,6 @@ export type UpgradeNodeSlot = 'pathA' | 'pathB' | 'pathC' | 'pathD' | 'pathE';
 
 export type CharacterUpgradeRanks = Record<UpgradeNodeSlot, number>;
 
-export type AwakenedPathKey = 'NONE' | 'PATH_A' | 'PATH_B';
-
-export interface AwakeningStatus {
-  unlockedA: boolean;
-  unlockedB: boolean;
-  activePath: AwakenedPathKey;
-  pityCount: number;
-}
-
 export interface GuildSaveData {
   selectedCharacter: CharacterId;
   selectedDifficulty: DifficultyLevel;
@@ -229,7 +220,6 @@ export interface GuildSaveData {
   totalSkeletonsSlain: number;
   characterUpgrades: Record<CharacterId, CharacterUpgradeRanks>;
   loadouts: Record<CharacterId, EquippedLoadout>;
-  awakenedUltimates?: Partial<Record<CharacterId, Partial<Record<UltimateSkillId, AwakeningStatus>>>>;
   muted: boolean;
   joystickScale: number;
   skillButtonScale: number;
@@ -686,7 +676,6 @@ export interface RoomProp {
     | 'GUILD_COUCH'
     | 'GUILD_BOOKSHELF'
     | 'GUILD_CAULDRON'
-    | 'GUILD_AWAKENING_ALTAR'
     | 'GUILD_DOOR';
   x: number;
   y: number;
