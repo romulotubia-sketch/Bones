@@ -844,3 +844,118 @@ export function getActiveAwakenedDef(
   }
   return null;
 }
+
+export type AwakenedFormKey =
+  // Zombie
+  | 'PLAGUE_BEHEMOTH'
+  | 'FLESH_COLOSSUS'
+  | 'UNDYING_KINGDOM'
+  | 'GRAVEYARD_AWAKENING'
+  | 'PLAGUE_REBIRTH'
+  | 'SOUL_DEVOURER'
+  // Skeleton
+  | 'BONE_TITAN'
+  | 'BONE_DRAGON'
+  | 'FOUR_GENERALS'
+  | 'BONE_FORTRESS'
+  | 'SOUL_SEVERANCE'
+  | 'BLACK_REAPER'
+  // Goblin
+  | 'THOUSAND_REFLECTIONS'
+  | 'PHANTOM_EXECUTIONER'
+  | 'STOLEN_IDENTITY'
+  | 'TREASURE_SOULS'
+  | 'BLADE_CYCLONE'
+  | 'DAGGER_CONSTELLATION'
+  // Gnome
+  | 'WORLDBREAKER'
+  | 'ETERNAL_MOUNTAIN'
+  | 'GREAT_DIVIDE'
+  | 'COLOSSAL_GUARDIAN'
+  | 'VOLCANIC_CATACLYSM'
+  | 'GRAVITY_COLLAPSE'
+  // Ghost
+  | 'FACELESS_NIGHTMARE'
+  | 'HAUNTED_DIMENSION'
+  | 'ANCIENT_MONARCHS'
+  | 'SPIRIT_POSSESSION'
+  | 'UNDERWORLD_GATE'
+  | 'SOUL_CATACLYSM'
+  // Kobold
+  | 'DRAGONS_BREATH'
+  | 'SKYFALL_ARSENAL'
+  | 'MECHA_ARTILLERY'
+  | 'CLOCKWORK_DOMINION'
+  | 'FORBIDDEN_WEAPONRY'
+  | 'PERFECT_SHOT'
+  | 'NONE';
+
+export function getAwakenedFormKey(
+  charId: CharacterId,
+  ultId: UltimateSkillId,
+  path: 'PATH_A' | 'PATH_B'
+): AwakenedFormKey {
+  if (charId === CharacterId.Zombie) {
+    if (ultId === UltimateSkillId.AbominationForm) {
+      return path === 'PATH_A' ? 'PLAGUE_BEHEMOTH' : 'FLESH_COLOSSUS';
+    }
+    if (ultId === UltimateSkillId.KingdomOfTheDead) {
+      return path === 'PATH_A' ? 'UNDYING_KINGDOM' : 'GRAVEYARD_AWAKENING';
+    }
+    if (ultId === UltimateSkillId.DeathsEmbrace) {
+      return path === 'PATH_A' ? 'PLAGUE_REBIRTH' : 'SOUL_DEVOURER';
+    }
+  } else if (charId === CharacterId.Skeleton) {
+    if (ultId === UltimateSkillId.BoneColossus) {
+      return path === 'PATH_A' ? 'BONE_TITAN' : 'BONE_DRAGON';
+    }
+    if (ultId === UltimateSkillId.ArmyOfBones) {
+      return path === 'PATH_A' ? 'FOUR_GENERALS' : 'BONE_FORTRESS';
+    }
+    if (ultId === UltimateSkillId.ReapersJudgment) {
+      return path === 'PATH_A' ? 'SOUL_SEVERANCE' : 'BLACK_REAPER';
+    }
+  } else if (charId === CharacterId.Goblin) {
+    if (ultId === UltimateSkillId.PhantomFrenzy) {
+      return path === 'PATH_A' ? 'THOUSAND_REFLECTIONS' : 'PHANTOM_EXECUTIONER';
+    }
+    if (ultId === UltimateSkillId.KingOfThieves) {
+      return path === 'PATH_A' ? 'STOLEN_IDENTITY' : 'TREASURE_SOULS';
+    }
+    if (ultId === UltimateSkillId.ThousandDaggers) {
+      return path === 'PATH_A' ? 'BLADE_CYCLONE' : 'DAGGER_CONSTELLATION';
+    }
+  } else if (charId === CharacterId.Gnome) {
+    if (ultId === UltimateSkillId.MountainsHeart) {
+      return path === 'PATH_A' ? 'WORLDBREAKER' : 'ETERNAL_MOUNTAIN';
+    }
+    if (ultId === UltimateSkillId.TitansRampart) {
+      return path === 'PATH_A' ? 'GREAT_DIVIDE' : 'COLOSSAL_GUARDIAN';
+    }
+    if (ultId === UltimateSkillId.CataclysmicSlam) {
+      return path === 'PATH_A' ? 'VOLCANIC_CATACLYSM' : 'GRAVITY_COLLAPSE';
+    }
+  } else if (charId === CharacterId.Ghost) {
+    if (ultId === UltimateSkillId.EternalNightmare) {
+      return path === 'PATH_A' ? 'FACELESS_NIGHTMARE' : 'HAUNTED_DIMENSION';
+    }
+    if (ultId === UltimateSkillId.SpiritLegion) {
+      return path === 'PATH_A' ? 'ANCIENT_MONARCHS' : 'SPIRIT_POSSESSION';
+    }
+    if (ultId === UltimateSkillId.DeathsPassage) {
+      return path === 'PATH_A' ? 'UNDERWORLD_GATE' : 'SOUL_CATACLYSM';
+    }
+  } else if (charId === CharacterId.Kobold) {
+    if (ultId === UltimateSkillId.DragonsBarrage) {
+      return path === 'PATH_A' ? 'DRAGONS_BREATH' : 'SKYFALL_ARSENAL';
+    }
+    if (ultId === UltimateSkillId.MasterArtificer) {
+      return path === 'PATH_A' ? 'MECHA_ARTILLERY' : 'CLOCKWORK_DOMINION';
+    }
+    if (ultId === UltimateSkillId.KoboldsDeadlyArsenal) {
+      return path === 'PATH_A' ? 'FORBIDDEN_WEAPONRY' : 'PERFECT_SHOT';
+    }
+  }
+  return 'NONE';
+}
+

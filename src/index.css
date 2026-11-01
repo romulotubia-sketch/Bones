@@ -103,3 +103,44 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+@keyframes awakeningShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px) rotate(-1deg); }
+  40% { transform: translateX(8px) rotate(1deg); }
+  60% { transform: translateX(-5px) rotate(-0.5deg); }
+  80% { transform: translateX(5px) rotate(0.5deg); }
+}
+
+@keyframes celestialStarburst {
+  0% { transform: scale(0.6); opacity: 0; filter: brightness(2); }
+  50% { transform: scale(1.15); opacity: 1; filter: brightness(2.5); }
+  100% { transform: scale(1); opacity: 1; filter: brightness(1); }
+}
+
+@keyframes rayRotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes celestialRunePulse {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(192, 132, 252, 0.4)); }
+  50% { transform: scale(1.05); filter: drop-shadow(0 0 20px rgba(192, 132, 252, 0.9)); }
+}
+
+.animate-awakeningShake {
+  animation: awakeningShake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.animate-celestialStarburst {
+  animation: celestialStarburst 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-rayRotate {
+  animation: rayRotate 12s linear infinite;
+}
+
+.animate-celestialRunePulse {
+  animation: celestialRunePulse 2.5s ease-in-out infinite;
+}
+

@@ -68,6 +68,7 @@ import { NetworkManager } from '../multiplayer/NetworkManager';
 import { EnemySyncState, PlayerTransformSync } from '../multiplayer/networkTypes';
 import { RemoteRenderPlayer, renderGameWorld } from './renderer';
 import { awakeningEngine } from './awakeningEngine';
+import { AwakenedFormKey, getAwakenedFormKey } from '../data/awakeningData';
 
 export interface EngineCallbacks {
   onHudUpdate: (snapshot: HudSnapshot) => void;
@@ -278,6 +279,7 @@ export class GameEngine {
     manualPriorityTargetId: null as number | null,
 
     hoveredInGuild: false,
+    awakenedForm: 'NONE' as AwakenedFormKey,
   };
 
   // Run stats & blessings
@@ -5101,6 +5103,92 @@ export class GameEngine {
         }
       }
     }
+
+    // === AWAKENED ULTIMATE BASIC ATTACK ENHANCEMENTS ===
+    // 1. Zombie Plague Behemoth: Toxic Puddles & virulent spore bursts on basic strikes
+    if (awakeningEngine.plagueBehemothTimer > 0) {
+      awakeningEngine.toxicPuddles.push({
+        x: originX,
+        y: originY,
+        radius: 28,
+        life: 3.5,
+        maxLife: 3.5,
+        damageTick: 0.35,
+      });
+      this.spawnBurst(originX, originY, '#4ADE80', 6, 85);
+    }
+    // 2. Zombie Orbiting Souls: Launch soul missile homing on basic attack
+    if (awakeningEngine.orbitingSouls.length > 0) {
+      awakeningEngine.orbitingSouls.pop();
+      const soulSpeed = 520;
+      this.projectiles.push({
+        id: allocEntityId(),
+        fromPlayer: true,
+        x: p.x,
+        y: p.y,
+        vx: Math.cos(p.aimAngle) * soulSpeed,
+        vy: Math.sin(p.aimAngle) * soulSpeed,
+        radius: 8,
+        damage: 24 * this.getPhysicalDamageMultiplier(),
+        life: 1.2,
+        color: '#2DD4BF',
+        kind: 'PLAYER_SPIRIT_ORB',
+        angle: p.aimAngle,
+        pierce: false,
+        homing: true,
+        hitEnemyIds: new Set<number>(),
+      });
+    }
+    // 3. Skeleton Bone Dragon: Concussive Soul-Fire Breath Burst on basic attacks
+    if (awakeningEngine.boneDragonTimer > 0) {
+      const breathSpeed = 560;
+      this.projectiles.push({
+        id: allocEntityId(),
+        fromPlayer: true,
+        x: originX,
+        y: originY,
+        vx: Math.cos(p.aimAngle) * breathSpeed,
+        vy: Math.sin(p.aimAngle) * breathSpeed,
+        radius: 10,
+        damage: 28 * this.getPhysicalDamageMultiplier(),
+        life: 0.75,
+        color: '#7DD3FC',
+        kind: 'PLAYER_SPECTRAL_BOLT',
+        angle: p.aimAngle,
+        pierce: true,
+        hitEnemyIds: new Set<number>(),
+      });
+    }
+    // 4. Gnome Worldbreaker: Volcanic Magma Pools erupting from ground strikes
+    if (awakeningEngine.worldbreakerTimer > 0) {
+      awakeningEngine.volcanicMagmaPools.push({
+        x: originX,
+        y: originY,
+        radius: 30,
+        life: 3.0,
+      });
+      this.spawnBurst(originX, originY, '#F97316', 7, 95);
+    }
+    // 5. Goblin Blade Cyclone: Fling razor daggers from cyclone
+    if (awakeningEngine.bladeCycloneTimer > 0) {
+      const dSpeed = 620;
+      this.projectiles.push({
+        id: allocEntityId(),
+        fromPlayer: true,
+        x: originX,
+        y: originY,
+        vx: Math.cos(p.aimAngle) * dSpeed,
+        vy: Math.sin(p.aimAngle) * dSpeed,
+        radius: 7,
+        damage: 22 * this.getPhysicalDamageMultiplier(),
+        life: 0.65,
+        color: '#F59E0B',
+        kind: 'PLAYER_ENCHANTED_DAGGER',
+        angle: p.aimAngle,
+        pierce: false,
+        hitEnemyIds: new Set<number>(),
+      });
+    }
   }
 
   private castNormalSkill(slotIndex: 0 | 1): void {
@@ -7961,6 +8049,11 @@ export class GameEngine {
 
     const awakened = this.saveData.awakenedUltimates?.[this.saveData.selectedCharacter]?.[ultId];
     if (awakened && (awakened.activePath === 'PATH_A' || awakened.activePath === 'PATH_B')) {
+      p.awakenedForm = getAwakenedFormKey(
+        this.saveData.selectedCharacter,
+        ultId,
+        awakened.activePath
+      );
       awakeningEngine.triggerAwakened(
         this.saveData.selectedCharacter,
         ultId,

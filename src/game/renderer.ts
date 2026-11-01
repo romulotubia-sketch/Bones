@@ -31,6 +31,8 @@ import {
 } from '../types/game';
 import { PvpBaseSyncState, PvpMatchSyncState, PvpMinionSyncState, PvpTeam } from '../multiplayer/networkTypes';
 import { WalkableZone } from './dungeonGenerator';
+import { awakeningEngine } from './awakeningEngine';
+import { AwakenedFormKey } from '../data/awakeningData';
 
 export interface RenderPlayerState {
   characterId: CharacterId;
@@ -79,6 +81,7 @@ export interface RenderPlayerState {
   isDowned?: boolean;
   bleedoutTimer?: number;
   reviveProgress?: number;
+  awakenedForm?: AwakenedFormKey;
 }
 
 export interface RemoteRenderPlayer extends RenderPlayerState {
@@ -3505,13 +3508,2355 @@ function drawProp(
   ctx.restore();
 }
 
-function drawHeroCharacter(
+// =========================================================================
+// DISTINCT VISUAL TRANSFORMATION MODELS FOR AWAKENED ULTIMATES
+// =========================================================================
+
+function drawAwakenedPlagueBehemoth(
   ctx: CanvasRenderingContext2D,
   player: RenderPlayerState,
   phase: GamePhase,
   time: number,
   isControlled: boolean
 ): void {
+  const scale = 1.82;
+  const bob = Math.sin(time * 3.2) * 2;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Toxic pool underlay
+  ctx.save();
+  const auraPulse = Math.sin(time * 6) * 0.15 + 0.85;
+  const grad = ctx.createRadialGradient(0, 14, 5, 0, 14, 46 * auraPulse);
+  grad.addColorStop(0, 'rgba(74, 222, 128, 0.45)');
+  grad.addColorStop(0.65, 'rgba(20, 83, 45, 0.25)');
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.ellipse(0, 14, 46 * auraPulse, 24 * auraPulse, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Hunched massive plague torso
+  ctx.fillStyle = '#14532D';
+  ctx.strokeStyle = '#052E16';
+  ctx.lineWidth = 2.4;
+  drawRoundedRect(ctx, -18, -12, 36, 26, 9);
+  ctx.fill();
+  ctx.stroke();
+
+  // Spiked bone horns on shoulders
+  ctx.fillStyle = '#D6D3D1';
+  ctx.beginPath();
+  ctx.moveTo(-16, -10);
+  ctx.lineTo(-26, -26 + Math.sin(time * 4) * 2);
+  ctx.lineTo(-10, -14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(16, -10);
+  ctx.lineTo(26, -26 + Math.sin(time * 4) * 2);
+  ctx.lineTo(10, -14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Pulsing green bioluminescent boils
+  for (let i = -1; i <= 1; i++) {
+    const boilPulse = Math.sin(time * 8 + i) * 1.5 + 3.5;
+    ctx.fillStyle = '#4ADE80';
+    ctx.beginPath();
+    ctx.arc(i * 9, -2, boilPulse, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Mutated Monstrous Skull
+  ctx.fillStyle = '#22543D';
+  drawRoundedRect(ctx, -14, -30, 28, 20, 7);
+  ctx.fill();
+  ctx.stroke();
+
+  // Radioactive glowing yellow eyes
+  ctx.fillStyle = '#FACC15';
+  ctx.beginPath();
+  ctx.arc(-5, -22, 3, 0, Math.PI * 2);
+  ctx.arc(5, -22, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Dripping jade-bone claws
+  ctx.fillStyle = '#15803D';
+  ctx.strokeStyle = '#86EFAC';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(14, 4, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  for (let c = -1; c <= 1; c++) {
+    ctx.beginPath();
+    ctx.moveTo(17, 4 + c * 3.5);
+    ctx.lineTo(28, 4 + c * 5);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawAwakenedFleshColossus(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.78;
+  const bob = Math.sin(time * 2.8) * 2;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Ground shadow
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.beginPath();
+  ctx.ellipse(0, 15, 38, 18, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Deep crimson muscle tissue
+  ctx.fillStyle = '#7F1D1D';
+  ctx.strokeStyle = '#450A0A';
+  ctx.lineWidth = 2.4;
+  drawRoundedRect(ctx, -16, -10, 32, 24, 8);
+  ctx.fill();
+  ctx.stroke();
+
+  // Interlocking white ribcage armor plates over the flesh
+  ctx.strokeStyle = '#E2E8F0';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  for (let r = -2; r <= 2; r++) {
+    ctx.beginPath();
+    ctx.moveTo(-12, -4 + r * 4);
+    ctx.quadraticCurveTo(0, -2 + r * 4, 12, -4 + r * 4);
+    ctx.stroke();
+  }
+
+  // Left heavy bone launcher pauldron
+  ctx.fillStyle = '#CBD5E1';
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(-16, -8, 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Head with bone crest
+  ctx.fillStyle = '#F1F5F9';
+  drawRoundedRect(ctx, -11, -26, 22, 18, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Glowing emerald & crimson dual eyes
+  ctx.fillStyle = '#10B981';
+  ctx.beginPath();
+  ctx.arc(-4, -18, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#EF4444';
+  ctx.beginPath();
+  ctx.arc(4, -18, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // RIGHT ARM: Colossal curved Bone Cleaver Scythe
+  ctx.save();
+  ctx.translate(16, 2);
+  ctx.rotate(0.2 + Math.sin(time * 5) * 0.15);
+  ctx.strokeStyle = '#F8FAFC';
+  ctx.lineWidth = 4.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(34, -4);
+  ctx.stroke();
+  // Curved Scythe Cleaver tip
+  ctx.strokeStyle = '#34D399';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(34, -18, 16, 0.4, 2.2);
+  ctx.stroke();
+  ctx.restore();
+
+  // 3 Orbiting bone plates
+  for (let i = 0; i < 3; i++) {
+    const ang = time * 3 + (i * Math.PI * 2) / 3;
+    const ox = Math.cos(ang) * 28;
+    const oy = Math.sin(ang) * 12 - 4;
+    ctx.fillStyle = '#E2E8F0';
+    ctx.strokeStyle = '#64748B';
+    ctx.lineWidth = 1.2;
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.rotate(ang);
+    ctx.fillRect(-4, -2, 8, 4);
+    ctx.strokeRect(-4, -2, 8, 4);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawAwakenedAncientBoneTitan(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.85;
+  const bob = Math.sin(time * 3) * 2;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Ground runic blue seal
+  ctx.save();
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 6]);
+  ctx.lineDashOffset = -time * 20;
+  ctx.beginPath();
+  ctx.ellipse(0, 16, 44, 22, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Heavy bone ribcage torso with flaming blue soul fire core
+  ctx.fillStyle = '#0F172A';
+  drawRoundedRect(ctx, -14, -8, 28, 24, 6);
+  ctx.fill();
+
+  // Blazing azure soul fire in chest cavity
+  const firePulse = Math.sin(time * 9) * 2 + 6;
+  ctx.fillStyle = '#38BDF8';
+  ctx.beginPath();
+  ctx.arc(0, 2, firePulse, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Ancient Horned Titan Skull
+  ctx.fillStyle = '#F8FAFC';
+  ctx.strokeStyle = '#0F172A';
+  ctx.lineWidth = 2.4;
+  drawRoundedRect(ctx, -13, -28, 26, 20, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Piercing blue flaming eye sockets
+  ctx.fillStyle = '#38BDF8';
+  ctx.beginPath();
+  ctx.arc(-4, -20, 3, 0, Math.PI * 2);
+  ctx.arc(4, -20, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Titan Crown Horns
+  ctx.fillStyle = '#CBD5E1';
+  ctx.beginPath();
+  ctx.moveTo(-10, -26);
+  ctx.lineTo(-18, -38);
+  ctx.lineTo(-6, -28);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(10, -26);
+  ctx.lineTo(18, -38);
+  ctx.lineTo(6, -28);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // ============================================
+  // SIX ANIMATED ARMS WEILDING DIFFERENT WEAPONS
+  // ============================================
+  const armWeapons = [
+    { ang: -0.85 + Math.sin(time * 4) * 0.15, len: 34, color: '#38BDF8', name: 'GREATSWORD' },
+    { ang: -0.35 + Math.sin(time * 4 + 1) * 0.15, len: 32, color: '#7DD3FC', name: 'SCYTHE' },
+    { ang: 0.15 + Math.sin(time * 4 + 2) * 0.15, len: 38, color: '#93C5FD', name: 'LANCE' },
+    { ang: 0.65 + Math.sin(time * 4 + 3) * 0.15, len: 28, color: '#38BDF8', name: 'FLAIL' },
+    { ang: 1.15 + Math.sin(time * 4 + 4) * 0.15, len: 26, color: '#60A5FA', name: 'CLEAVER' },
+    { ang: 1.65 + Math.sin(time * 4 + 5) * 0.15, len: 22, color: '#E0F2FE', name: 'DAGGER' },
+  ];
+
+  for (let i = 0; i < 6; i++) {
+    const w = armWeapons[i];
+    ctx.save();
+    ctx.translate(i < 3 ? 12 : -12, -4 + (i % 3) * 6);
+    ctx.rotate(w.ang);
+    ctx.strokeStyle = '#F1F5F9';
+    ctx.lineWidth = 3.2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(w.len, 0);
+    ctx.stroke();
+
+    // Weapon head
+    ctx.strokeStyle = w.color;
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.moveTo(w.len * 0.6, 0);
+    ctx.lineTo(w.len, 0);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawAwakenedBoneDragon(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.8;
+  const hoverY = Math.sin(time * 3.5) * 5;
+  ctx.save();
+  ctx.translate(player.x, player.y + hoverY);
+
+  // Shadow on floor stays on ground
+  ctx.save();
+  ctx.translate(0, -hoverY);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+  ctx.beginPath();
+  ctx.ellipse(0, 20, 48, 18, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.scale(player.facingX * scale, scale);
+
+  // Segmented skeletal serpentine tail
+  ctx.strokeStyle = '#E2E8F0';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-14, 4);
+  const tailSway = Math.sin(time * 5) * 8;
+  ctx.quadraticCurveTo(-28 + tailSway, 8, -40, 2 + tailSway);
+  ctx.stroke();
+
+  // Ribcage spine
+  ctx.fillStyle = '#CBD5E1';
+  ctx.strokeStyle = '#0F172A';
+  ctx.lineWidth = 2.4;
+  drawRoundedRect(ctx, -14, -8, 28, 18, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Outstretched Draconic Wings with ethereal cyan membranes (flapping at 60fps)
+  const wingFlap = Math.sin(time * 6.5) * 16;
+  for (let side = -1; side <= 1; side += 2) {
+    ctx.save();
+    ctx.translate(0, -4);
+    // Upper wing bone
+    ctx.strokeStyle = '#F8FAFC';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(side * 22, -32 + wingFlap * side);
+    ctx.lineTo(side * 48, -18 + wingFlap * side * 0.6);
+    ctx.stroke();
+
+    // Ethereal translucent cyan flight membrane
+    ctx.fillStyle = 'rgba(125, 211, 252, 0.45)';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(side * 22, -32 + wingFlap * side);
+    ctx.lineTo(side * 48, -18 + wingFlap * side * 0.6);
+    ctx.lineTo(side * 32, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Draconic Horned Skull
+  ctx.fillStyle = '#F8FAFC';
+  drawRoundedRect(ctx, -12, -26, 26, 18, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Curved dragon horns
+  ctx.fillStyle = '#94A3B8';
+  ctx.beginPath();
+  ctx.moveTo(-8, -24);
+  ctx.lineTo(-22, -38);
+  ctx.lineTo(-4, -26);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(8, -24);
+  ctx.lineTo(22, -38);
+  ctx.lineTo(4, -26);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Glowing soul-fire dragon jaw
+  ctx.fillStyle = '#38BDF8';
+  ctx.beginPath();
+  ctx.arc(6, -18, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedWorldbreaker(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.78;
+  const bob = Math.sin(time * 3) * 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Magma glow under feet
+  ctx.save();
+  const mGrad = ctx.createRadialGradient(0, 14, 4, 0, 14, 42);
+  mGrad.addColorStop(0, 'rgba(249, 115, 22, 0.6)');
+  mGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = mGrad;
+  ctx.beginPath();
+  ctx.ellipse(0, 14, 42, 20, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Obsidian rock torso with glowing orange magma fissures
+  ctx.fillStyle = '#1C1917';
+  ctx.strokeStyle = '#44403C';
+  ctx.lineWidth = 2.4;
+  drawRoundedRect(ctx, -16, -10, 32, 24, 7);
+  ctx.fill();
+  ctx.stroke();
+
+  // Molten magma cracks through stone
+  ctx.strokeStyle = '#F97316';
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(-10, -6);
+  ctx.lineTo(0, 2);
+  ctx.lineTo(10, -4);
+  ctx.moveTo(0, 2);
+  ctx.lineTo(-4, 10);
+  ctx.stroke();
+
+  // Magma boulders on shoulders
+  ctx.fillStyle = '#EA580C';
+  ctx.beginPath();
+  ctx.arc(-14, -8, 8, 0, Math.PI * 2);
+  ctx.arc(14, -8, 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Stone mask with burning volcanic eyes
+  ctx.fillStyle = '#292524';
+  drawRoundedRect(ctx, -12, -26, 24, 18, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#FDE047';
+  ctx.beginPath();
+  ctx.arc(-4, -18, 3, 0, Math.PI * 2);
+  ctx.arc(4, -18, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Heavy molten granite warhammer in right hand
+  ctx.fillStyle = '#78716C';
+  ctx.fillRect(16, -2, 6, 22);
+  ctx.fillStyle = '#F97316';
+  ctx.fillRect(12, -12, 14, 12);
+
+  ctx.restore();
+}
+
+function drawAwakenedEternalMountain(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.75;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.scale(player.facingX * scale, scale);
+
+  // Living stone fortress ramparts
+  ctx.fillStyle = '#334155';
+  ctx.strokeStyle = '#64748B';
+  ctx.lineWidth = 2.4;
+  drawRoundedRect(ctx, -18, -14, 36, 28, 8);
+  ctx.fill();
+  ctx.stroke();
+
+  // Central gravity singularity core (swirling violet/black hole)
+  const corePulse = Math.sin(time * 6) * 2 + 7;
+  const coreGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, corePulse);
+  coreGrad.addColorStop(0, '#A855F7');
+  coreGrad.addColorStop(0.7, '#3B0764');
+  coreGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = coreGrad;
+  ctx.beginPath();
+  ctx.arc(0, 0, corePulse, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 4 Orbiting levitating rune monoliths
+  for (let i = 0; i < 4; i++) {
+    const ang = time * 2.5 + (i * Math.PI) / 2;
+    const mx = Math.cos(ang) * 28;
+    const my = Math.sin(ang) * 16;
+    ctx.fillStyle = '#475569';
+    ctx.strokeStyle = '#94A3B8';
+    ctx.lineWidth = 1.4;
+    ctx.save();
+    ctx.translate(mx, my);
+    ctx.rotate(ang);
+    ctx.fillRect(-3, -7, 6, 14);
+    ctx.strokeRect(-3, -7, 6, 14);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawAwakenedMechaArtillery(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.8;
+  const bob = Math.sin(time * 4) * 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Hydraulic robotic walking legs
+  ctx.strokeStyle = '#475569';
+  ctx.lineWidth = 3.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-8, 6);
+  ctx.lineTo(-12, 18);
+  ctx.moveTo(8, 6);
+  ctx.lineTo(12, 18);
+  ctx.stroke();
+
+  // Armored Mecha Cabin
+  ctx.fillStyle = '#7C2D12';
+  ctx.strokeStyle = '#F97316';
+  ctx.lineWidth = 2.4;
+  drawRoundedRect(ctx, -16, -14, 32, 24, 7);
+  ctx.fill();
+  ctx.stroke();
+
+  // Glass Cockpit Dome showing pilot
+  ctx.fillStyle = '#38BDF8';
+  drawRoundedRect(ctx, -8, -10, 16, 12, 4);
+  ctx.fill();
+
+  // Twin Heavy Gatling Laser Cannons on arms
+  ctx.fillStyle = '#1E293B';
+  ctx.fillRect(16, -6, 18, 5);
+  ctx.fillRect(16, 2, 18, 5);
+  ctx.fillStyle = '#F87171';
+  ctx.fillRect(32, -6, 4, 5);
+  ctx.fillRect(32, 2, 4, 5);
+
+  ctx.restore();
+}
+
+function drawAwakenedUndyingKingdom(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.6;
+  const bob = Math.sin(time * 3.2) * 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Royal Consecrated Dais
+  ctx.save();
+  ctx.fillStyle = 'rgba(74, 222, 128, 0.2)';
+  ctx.strokeStyle = '#22C55E';
+  ctx.lineWidth = 1.8;
+  ctx.setLineDash([6, 5]);
+  ctx.lineDashOffset = -time * 18;
+  ctx.beginPath();
+  ctx.ellipse(0, 14, 38, 18, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Royal Undead Mantle
+  ctx.fillStyle = '#14532D';
+  ctx.strokeStyle = '#052E16';
+  ctx.lineWidth = 2.2;
+  drawRoundedRect(ctx, -14, -8, 28, 22, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Regal gold trim & bone brooches
+  ctx.fillStyle = '#FBBF24';
+  ctx.fillRect(-12, -4, 24, 3);
+
+  // Skull with majestic Bone Crown
+  ctx.fillStyle = '#22543D';
+  drawRoundedRect(ctx, -12, -26, 24, 18, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Bone Crown with emerald gems
+  ctx.fillStyle = '#F59E0B';
+  ctx.beginPath();
+  ctx.moveTo(-11, -25);
+  ctx.lineTo(-14, -34);
+  ctx.lineTo(-6, -28);
+  ctx.lineTo(0, -36);
+  ctx.lineTo(6, -28);
+  ctx.lineTo(14, -34);
+  ctx.lineTo(11, -25);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Glowing Royal Emerald Eyes
+  ctx.fillStyle = '#4ADE80';
+  ctx.beginPath();
+  ctx.arc(-4, -18, 2.8, 0, Math.PI * 2);
+  ctx.arc(4, -18, 2.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 3 Mini Spectral Commanders marching alongside!
+  const commanders = [
+    { x: -24, y: 4, col: '#86EFAC', icon: '⚔️' }, // Blades
+    { x: 0, y: -26, col: '#4ADE80', icon: '💀' },  // Graves
+    { x: 24, y: 4, col: '#34D399', icon: '🗡️' },  // Shadows
+  ];
+  for (let i = 0; i < 3; i++) {
+    const cmd = commanders[i];
+    const cBob = Math.sin(time * 5 + i * 2) * 2;
+    ctx.save();
+    ctx.translate(cmd.x, cmd.y + cBob);
+    ctx.fillStyle = 'rgba(20, 83, 45, 0.85)';
+    ctx.strokeStyle = cmd.col;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '8px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(cmd.icon, 0, 0);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawAwakenedGraveyardAwakening(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.55;
+  const bob = Math.sin(time * 2.8) * 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Consecrated Graveyard Soil Dais
+  ctx.fillStyle = '#1C1917';
+  ctx.strokeStyle = '#10B981';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(0, 14, 42, 20, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Ancient Mossy Headstone behind hero
+  ctx.save();
+  ctx.translate(0, -6);
+  ctx.fillStyle = '#44403C';
+  ctx.strokeStyle = '#292524';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-16, -32, 32, 38, [12, 12, 0, 0]);
+  ctx.fill();
+  ctx.stroke();
+  // R.I.P. Inscription
+  ctx.fillStyle = '#10B981';
+  ctx.font = 'bold 8px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('† R.I.P †', 0, -18);
+  ctx.restore();
+
+  // 4 Skeletal Hands grasping upward from the soil around feet!
+  for (let i = 0; i < 4; i++) {
+    const a = (i * Math.PI) / 2 + time * 0.4;
+    const hx = Math.cos(a) * 26;
+    const hy = 12 + Math.sin(a) * 10;
+    const reach = Math.sin(time * 4 + i) * 3 + 6;
+    ctx.save();
+    ctx.translate(hx, hy);
+    ctx.strokeStyle = '#F1F5F9';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -reach);
+    ctx.lineTo(-3, -reach - 4);
+    ctx.moveTo(0, -reach);
+    ctx.lineTo(0, -reach - 5);
+    ctx.moveTo(0, -reach);
+    ctx.lineTo(3, -reach - 4);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Zombie Shambler in mossy wraps
+  ctx.fillStyle = '#2E4C38';
+  drawRoundedRect(ctx, -12, -8, 24, 20, 6);
+  ctx.fill();
+  ctx.fillStyle = '#34D399';
+  drawRoundedRect(ctx, -11, -24, 22, 16, 6);
+  ctx.fill();
+  ctx.fillStyle = '#6EE7B7';
+  ctx.beginPath();
+  ctx.arc(-4, -16, 2.5, 0, Math.PI * 2);
+  ctx.arc(4, -16, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedPlagueRebirth(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.6;
+  const bob = Math.sin(time * 3.5) * 2;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Toxic Hazard Shockwave Aura
+  ctx.save();
+  const auraPulse = Math.sin(time * 6) * 4 + 36;
+  const aGrad = ctx.createRadialGradient(0, 10, 5, 0, 10, auraPulse);
+  aGrad.addColorStop(0, 'rgba(163, 230, 53, 0.55)');
+  aGrad.addColorStop(0.7, 'rgba(234, 179, 8, 0.2)');
+  aGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = aGrad;
+  ctx.beginPath();
+  ctx.ellipse(0, 10, auraPulse, auraPulse * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Pandemic Core Armor with acid vents
+  ctx.fillStyle = '#3F6212';
+  ctx.strokeStyle = '#A3E635';
+  ctx.lineWidth = 2.4;
+  drawRoundedRect(ctx, -14, -8, 28, 22, 7);
+  ctx.fill();
+  ctx.stroke();
+
+  // Acid Exhaust chimneys on shoulders
+  ctx.fillStyle = '#65A30D';
+  ctx.fillRect(-16, -16, 5, 10);
+  ctx.fillRect(11, -16, 5, 10);
+
+  // Boiling Spores
+  ctx.fillStyle = '#FACC15';
+  ctx.beginPath();
+  ctx.arc(-2, -2, 4.5, 0, Math.PI * 2);
+  ctx.arc(4, 4, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Glowing Yellow-Lime Eyes
+  ctx.fillStyle = '#FACC15';
+  drawRoundedRect(ctx, -11, -26, 22, 18, 6);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.arc(-4, -18, 3, 0, Math.PI * 2);
+  ctx.arc(4, -18, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 2 Mini Jumping Zombie Runners
+  for (let i = -1; i <= 1; i += 2) {
+    const jump = Math.abs(Math.sin(time * 6 + i)) * 10;
+    ctx.save();
+    ctx.translate(i * 24, 6 - jump);
+    ctx.fillStyle = '#84CC16';
+    ctx.beginPath();
+    ctx.arc(0, 0, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawAwakenedSoulDevourer(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.55;
+  const bob = Math.sin(time * 3) * 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Massive Spectral Maw Portal behind hero
+  ctx.save();
+  ctx.translate(0, -10);
+  ctx.rotate(time * 1.8);
+  const portalR = 34 + Math.sin(time * 5) * 3;
+  const pGrad = ctx.createRadialGradient(0, 0, 4, 0, 0, portalR);
+  pGrad.addColorStop(0, '#042F2E');
+  pGrad.addColorStop(0.6, '#0D9488');
+  pGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = pGrad;
+  ctx.beginPath();
+  ctx.arc(0, 0, portalR, 0, Math.PI * 2);
+  ctx.fill();
+  // Spirit fangs inside maw
+  ctx.strokeStyle = '#2DD4BF';
+  ctx.lineWidth = 2;
+  for (let f = 0; f < 8; f++) {
+    const fa = (f * Math.PI) / 4;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(fa) * 16, Math.sin(fa) * 16);
+    ctx.lineTo(Math.cos(fa) * 28, Math.sin(fa) * 28);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 6 Luminous Orbiting Soul Wisps in an astral circle
+  for (let i = 0; i < 6; i++) {
+    const a = time * 3.5 + (i * Math.PI * 2) / 6;
+    const sx = Math.cos(a) * 32;
+    const sy = Math.sin(a) * 16;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.fillStyle = '#2DD4BF';
+    ctx.beginPath();
+    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(-1, -1, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Hero body in teal spectral shroud
+  ctx.fillStyle = '#115E59';
+  ctx.strokeStyle = '#2DD4BF';
+  ctx.lineWidth = 2.2;
+  drawRoundedRect(ctx, -13, -8, 26, 20, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#0F766E';
+  drawRoundedRect(ctx, -11, -24, 22, 16, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#5EEAD4';
+  ctx.beginPath();
+  ctx.arc(-4, -16, 2.8, 0, Math.PI * 2);
+  ctx.arc(4, -16, 2.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedFourGenerals(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.65;
+  const bob = Math.sin(time * 3.5) * 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Grand Phalanx Blue Seal
+  ctx.strokeStyle = '#38BDF8';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 6]);
+  ctx.lineDashOffset = -time * 24;
+  ctx.beginPath();
+  ctx.ellipse(0, 14, 44, 20, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Skeleton Grand Marshal in Roman Plumed Armor
+  ctx.fillStyle = '#1E3A8A';
+  ctx.strokeStyle = '#93C5FD';
+  ctx.lineWidth = 2.4;
+  drawRoundedRect(ctx, -13, -8, 26, 20, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Grand Marshall Helmet with Scarlet Plume
+  ctx.fillStyle = '#F8FAFC';
+  drawRoundedRect(ctx, -12, -26, 24, 18, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Roman Golden Helm Crest & Flowing Red Plume
+  ctx.fillStyle = '#EF4444';
+  ctx.beginPath();
+  ctx.moveTo(-10, -25);
+  ctx.quadraticCurveTo(0, -38, 12, -28);
+  ctx.lineTo(8, -25);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#38BDF8';
+  ctx.beginPath();
+  ctx.arc(-4, -18, 2.8, 0, Math.PI * 2);
+  ctx.arc(4, -18, 2.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 4 Elite Generals orbiting or guarding
+  const gens = [
+    { x: -28, y: -2, name: '⚔️' }, // Sword
+    { x: -14, y: 12, name: '🔱' }, // Spear
+    { x: 14, y: 12, name: '🏹' },  // Archer
+    { x: 28, y: -2, name: '🛡️' },  // Shield
+  ];
+  for (let g = 0; g < 4; g++) {
+    const gen = gens[g];
+    ctx.save();
+    ctx.translate(gen.x, gen.y);
+    ctx.fillStyle = '#1E293B';
+    ctx.strokeStyle = '#60A5FA';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 7.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '8.5px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(gen.name, 0, 0);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawAwakenedBoneFortress(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.82;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.scale(player.facingX * scale, scale);
+
+  // Towering Bone Citadel Body
+  ctx.fillStyle = '#334155';
+  ctx.strokeStyle = '#94A3B8';
+  ctx.lineWidth = 2.4;
+  drawRoundedRect(ctx, -18, -12, 36, 26, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Crenellated Battlements Cap
+  ctx.fillStyle = '#E2E8F0';
+  for (let b = -2; b <= 2; b++) {
+    ctx.fillRect(b * 7 - 2.5, -17, 5, 6);
+  }
+
+  // Skull Portcullis Gates on chest
+  ctx.fillStyle = '#0F172A';
+  ctx.fillRect(-8, -4, 16, 14);
+  ctx.fillStyle = '#38BDF8';
+  ctx.fillRect(-5, 0, 3, 3);
+  ctx.fillRect(2, 0, 3, 3);
+
+  // Dual Heavy Bone Cannons on shoulders pointing forward
+  ctx.fillStyle = '#475569';
+  ctx.strokeStyle = '#60A5FA';
+  ctx.lineWidth = 1.8;
+  ctx.fillRect(14, -8, 16, 6);
+  ctx.strokeRect(14, -8, 16, 6);
+  ctx.fillRect(14, 4, 16, 6);
+  ctx.strokeRect(14, 4, 16, 6);
+
+  ctx.restore();
+}
+
+function drawAwakenedSoulSeverance(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.65;
+  const hoverY = Math.sin(time * 3.2) * 3;
+  ctx.save();
+  ctx.translate(player.x, player.y + hoverY);
+  ctx.scale(player.facingX * scale, scale);
+
+  // Floating Death Bell Seal above head
+  ctx.save();
+  ctx.translate(0, -36);
+  ctx.fillStyle = '#BAE6FD';
+  ctx.strokeStyle = '#38BDF8';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(0, -2, 7, Math.PI, 0);
+  ctx.lineTo(8, 6);
+  ctx.lineTo(-8, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // Translucent Ethereal Grim Reaper Body
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = '#0C4A6E';
+  ctx.strokeStyle = '#38BDF8';
+  ctx.lineWidth = 2.2;
+  drawRoundedRect(ctx, -13, -8, 26, 22, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Skull inside cowl
+  ctx.fillStyle = '#F0F9FF';
+  drawRoundedRect(ctx, -11, -26, 22, 18, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Piercing Soul Eyes
+  ctx.fillStyle = '#38BDF8';
+  ctx.beginPath();
+  ctx.arc(-4, -18, 2.8, 0, Math.PI * 2);
+  ctx.arc(4, -18, 2.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  // GIGANTIC 74px Spectral Panoramic Soul Scythe
+  ctx.save();
+  ctx.translate(14, -6);
+  ctx.rotate(0.3 + Math.sin(time * 4) * 0.15);
+  // Scythe shaft
+  ctx.strokeStyle = '#BAE6FD';
+  ctx.lineWidth = 3.5;
+  ctx.beginPath();
+  ctx.moveTo(0, 20);
+  ctx.lineTo(0, -32);
+  ctx.stroke();
+  // Scythe colossal blade
+  ctx.fillStyle = 'rgba(56, 189, 248, 0.45)';
+  ctx.strokeStyle = '#E0F2FE';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, -32);
+  ctx.quadraticCurveTo(34, -40, 48, -14);
+  ctx.quadraticCurveTo(24, -26, 0, -26);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawAwakenedBlackReaper(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.6;
+  const bob = Math.sin(time * 4) * 2;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Midnight Shadow Smoke Tattered Cloak
+  ctx.fillStyle = '#090514';
+  ctx.strokeStyle = '#A855F7';
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(-14, -8);
+  ctx.lineTo(14, -8);
+  ctx.lineTo(18, 14);
+  ctx.lineTo(6, 10);
+  ctx.lineTo(0, 16);
+  ctx.lineTo(-8, 10);
+  ctx.lineTo(-16, 14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Hood & Crimson/Violet Eyes
+  ctx.fillStyle = '#1E1035';
+  drawRoundedRect(ctx, -12, -26, 24, 18, 7);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#C084FC';
+  ctx.beginPath();
+  ctx.arc(-4, -18, 2.6, 0, Math.PI * 2);
+  ctx.arc(4, -18, 2.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // DUAL Obsidian Shadow Scythes
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(side * 16, -2);
+    ctx.scale(side, 1);
+    ctx.strokeStyle = '#9333EA';
+    ctx.lineWidth = 2.8;
+    ctx.beginPath();
+    ctx.moveTo(-4, 14);
+    ctx.lineTo(0, -18);
+    ctx.quadraticCurveTo(18, -26, 22, -10);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawAwakenedThousandReflections(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.48;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // 2 Shimmering Mirage Clones beside the hero
+  for (let c = -1; c <= 1; c += 2) {
+    const cloneOffset = c * (26 + Math.sin(time * 6) * 4);
+    ctx.save();
+    ctx.translate(cloneOffset, 0);
+    ctx.globalAlpha = 0.45;
+    ctx.scale(player.facingX * scale, scale);
+    ctx.fillStyle = '#FBBF24';
+    drawRoundedRect(ctx, -10, -8, 20, 18, 5);
+    ctx.fill();
+    drawRoundedRect(ctx, -9, -22, 18, 14, 5);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Real Goblin
+  ctx.scale(player.facingX * scale, scale);
+  ctx.fillStyle = '#D97706';
+  ctx.strokeStyle = '#FDE047';
+  ctx.lineWidth = 2.2;
+  drawRoundedRect(ctx, -11, -8, 22, 18, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#15803D';
+  drawRoundedRect(ctx, -10, -22, 20, 14, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#FDE047';
+  ctx.beginPath();
+  ctx.arc(-3, -15, 2.5, 0, Math.PI * 2);
+  ctx.arc(3, -15, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedPhantomExecutioner(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.55;
+  const bob = Math.sin(time * 5) * 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Midnight Ninja Cowl & Shinobi Robe
+  ctx.fillStyle = '#18181B';
+  ctx.strokeStyle = '#EF4444';
+  ctx.lineWidth = 2.2;
+  drawRoundedRect(ctx, -11, -8, 22, 18, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#27272A';
+  drawRoundedRect(ctx, -10, -24, 20, 16, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  // Glowing Crimson Targeting Optic Eye + Crosshair Line
+  ctx.fillStyle = '#EF4444';
+  ctx.beginPath();
+  ctx.arc(3, -16, 3.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Laser target reticle forward
+  ctx.save();
+  ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(3, -16);
+  ctx.lineTo(38, -16);
+  ctx.stroke();
+  ctx.restore();
+
+  // Dual reverse-grip crimson Ninjato blades
+  ctx.strokeStyle = '#EF4444';
+  ctx.lineWidth = 2.8;
+  ctx.beginPath();
+  ctx.moveTo(12, 0);
+  ctx.lineTo(26, -14);
+  ctx.moveTo(-8, 6);
+  ctx.lineTo(-20, -6);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawAwakenedStolenIdentity(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // 3 Orbiting stolen monster masks
+  const masks = ['💀', '🧟', '👑'];
+  for (let i = 0; i < 3; i++) {
+    const a = time * 3 + (i * Math.PI * 2) / 3;
+    const mx = Math.cos(a) * 28;
+    const my = -12 + Math.sin(a) * 12;
+    ctx.save();
+    ctx.translate(mx, my);
+    ctx.fillStyle = '#FEF08A';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(masks[i], 0, 0);
+    ctx.restore();
+  }
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.fillStyle = '#CA8A04';
+  ctx.strokeStyle = '#FEF08A';
+  ctx.lineWidth = 2;
+  drawRoundedRect(ctx, -11, -8, 22, 18, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#15803D';
+  drawRoundedRect(ctx, -10, -22, 20, 14, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawAwakenedTreasureSouls(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Floating Gilded Cursed Chest overflowing with coins
+  ctx.save();
+  ctx.translate(24, 0);
+  ctx.fillStyle = '#78350F';
+  ctx.strokeStyle = '#FDE047';
+  ctx.lineWidth = 1.8;
+  drawRoundedRect(ctx, -8, -6, 16, 12, 2);
+  ctx.fill();
+  ctx.stroke();
+  // Open lid spilling gold
+  ctx.fillStyle = '#FBBF24';
+  ctx.beginPath();
+  ctx.arc(0, -6, 8, Math.PI, 0);
+  ctx.fill();
+  // Gold sparkle
+  ctx.fillStyle = '#FEF08A';
+  ctx.fillRect(-3, -12, 6, 4);
+  ctx.restore();
+
+  ctx.scale(player.facingX * scale, scale);
+  // Pirate King Goblin in gold-trimmed coat
+  ctx.fillStyle = '#854D0E';
+  ctx.strokeStyle = '#FACC15';
+  ctx.lineWidth = 2.2;
+  drawRoundedRect(ctx, -11, -8, 22, 18, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  // Tricorn Pirate Hat with gold skull
+  ctx.fillStyle = '#1C1917';
+  ctx.beginPath();
+  ctx.moveTo(-16, -20);
+  ctx.lineTo(16, -20);
+  ctx.lineTo(0, -32);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#15803D';
+  drawRoundedRect(ctx, -10, -20, 20, 12, 5);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedBladeCyclone(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // 8 Enchanted Orbiting Razor Daggers in hurricane
+  const daggerCount = 8;
+  for (let i = 0; i < daggerCount; i++) {
+    const a = time * 7.5 + (i * Math.PI * 2) / daggerCount;
+    const dx = Math.cos(a) * 32;
+    const dy = Math.sin(a) * 18;
+    ctx.save();
+    ctx.translate(dx, dy);
+    ctx.rotate(a + Math.PI / 2);
+    ctx.fillStyle = '#FDE047';
+    ctx.strokeStyle = '#F97316';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(0, -10);
+    ctx.lineTo(3.5, 0);
+    ctx.lineTo(0, 10);
+    ctx.lineTo(-3.5, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.fillStyle = '#C2410C';
+  drawRoundedRect(ctx, -11, -8, 22, 18, 5);
+  ctx.fill();
+  ctx.fillStyle = '#15803D';
+  drawRoundedRect(ctx, -10, -22, 20, 14, 5);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedDaggerConstellation(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Overhead Starlight Star Chart Constellation with Intersecting Lasers
+  ctx.save();
+  ctx.strokeStyle = 'rgba(251, 191, 36, 0.7)';
+  ctx.lineWidth = 1.4;
+  const nodes = [
+    { x: -28, y: -28 },
+    { x: 0, y: -42 },
+    { x: 28, y: -28 },
+    { x: -14, y: -14 },
+    { x: 14, y: -14 },
+  ];
+  ctx.beginPath();
+  ctx.moveTo(nodes[0].x, nodes[0].y);
+  ctx.lineTo(nodes[1].x, nodes[1].y);
+  ctx.lineTo(nodes[2].x, nodes[2].y);
+  ctx.lineTo(nodes[4].x, nodes[4].y);
+  ctx.lineTo(nodes[3].x, nodes[3].y);
+  ctx.lineTo(nodes[0].x, nodes[0].y);
+  ctx.stroke();
+
+  for (const n of nodes) {
+    ctx.fillStyle = '#FEF08A';
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.fillStyle = '#7C2D12';
+  drawRoundedRect(ctx, -11, -8, 22, 18, 5);
+  ctx.fill();
+  ctx.fillStyle = '#15803D';
+  drawRoundedRect(ctx, -10, -22, 20, 14, 5);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedGreatDivide(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.7;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Two Colossal Bedrock Monolith Shields flanking the Gnome like giant earthen wings
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(side * 28, -4);
+    ctx.fillStyle = '#57534E';
+    ctx.strokeStyle = '#A8A29E';
+    ctx.lineWidth = 2.4;
+    drawRoundedRect(ctx, -8, -26, 16, 40, 4);
+    ctx.fill();
+    ctx.stroke();
+    // Glowing orange magma fissure down the monolith
+    ctx.strokeStyle = '#F97316';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -20);
+    ctx.lineTo(0, 10);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.scale(player.facingX * scale, scale);
+  // Sturdy Gnome center
+  ctx.fillStyle = '#44403C';
+  drawRoundedRect(ctx, -12, -8, 24, 20, 5);
+  ctx.fill();
+  ctx.fillStyle = '#FDBA74';
+  drawRoundedRect(ctx, -11, -22, 22, 14, 5);
+  ctx.fill();
+  // White beard
+  ctx.fillStyle = '#F8FAFC';
+  ctx.fillRect(-10, -12, 20, 8);
+
+  ctx.restore();
+}
+
+function drawAwakenedColossalGuardian(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Towering 76px Stone Guardian Golem standing right behind the Gnome
+  ctx.save();
+  ctx.translate(0, -18);
+  ctx.fillStyle = '#475569';
+  ctx.strokeStyle = '#94A3B8';
+  ctx.lineWidth = 2.6;
+  drawRoundedRect(ctx, -24, -34, 48, 52, 8);
+  ctx.fill();
+  ctx.stroke();
+  // Golem glowing cyan rune eyes & mouth
+  ctx.fillStyle = '#38BDF8';
+  ctx.beginPath();
+  ctx.arc(-8, -22, 3.5, 0, Math.PI * 2);
+  ctx.arc(8, -22, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(-8, -14, 16, 3);
+  ctx.restore();
+
+  // Gnome Hero in foreground
+  ctx.scale(player.facingX * scale, scale);
+  ctx.fillStyle = '#292524';
+  drawRoundedRect(ctx, -11, -6, 22, 18, 5);
+  ctx.fill();
+  ctx.fillStyle = '#FDBA74';
+  drawRoundedRect(ctx, -10, -20, 20, 14, 5);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedVolcanicCataclysm(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.7;
+  const bob = Math.sin(time * 3.5) * 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Molten Obsidian armor with dual volcano chimney exhausts
+  ctx.fillStyle = '#1C1917';
+  ctx.strokeStyle = '#F97316';
+  ctx.lineWidth = 2.4;
+  drawRoundedRect(ctx, -14, -8, 28, 22, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Twin volcano exhaust chimneys on shoulders spewing fire sparks
+  ctx.fillStyle = '#EA580C';
+  ctx.fillRect(-16, -18, 6, 12);
+  ctx.fillRect(10, -18, 6, 12);
+  // Lava fire puff
+  ctx.fillStyle = '#FDE047';
+  ctx.beginPath();
+  ctx.arc(-13, -20, 4, 0, Math.PI * 2);
+  ctx.arc(13, -20, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#44403C';
+  drawRoundedRect(ctx, -11, -24, 22, 16, 6);
+  ctx.fill();
+
+  // Glowing molten magma beard
+  ctx.fillStyle = '#F97316';
+  ctx.fillRect(-9, -12, 18, 8);
+
+  ctx.restore();
+}
+
+function drawAwakenedGravityCollapse(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.65;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Miniature Event Horizon Black Hole orbiting warhammer
+  ctx.save();
+  ctx.translate(22, 0);
+  const holeR = 12 + Math.sin(time * 8) * 2;
+  const hGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, holeR);
+  hGrad.addColorStop(0, '#000000');
+  hGrad.addColorStop(0.7, '#6366F1');
+  hGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = hGrad;
+  ctx.beginPath();
+  ctx.arc(0, 0, holeR, 0, Math.PI * 2);
+  ctx.fill();
+  // Accretion disk
+  ctx.strokeStyle = '#A5B4FC';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, holeR * 1.5, holeR * 0.5, time * 4, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.scale(player.facingX * scale, scale);
+  // Cosmic Indigo Plate Armor
+  ctx.fillStyle = '#1E1B4B';
+  ctx.strokeStyle = '#818CF8';
+  ctx.lineWidth = 2.4;
+  drawRoundedRect(ctx, -13, -8, 26, 20, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#312E81';
+  drawRoundedRect(ctx, -11, -24, 22, 16, 6);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedFacelessNightmare(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.8;
+  const hoverY = Math.sin(time * 3.5) * 4;
+  ctx.save();
+  ctx.translate(player.x, player.y + hoverY);
+  ctx.scale(player.facingX * scale, scale);
+
+  // Towering Shapeshifting Nightmare Shadow Beast
+  ctx.fillStyle = '#180B2B';
+  ctx.strokeStyle = '#A855F7';
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(-16, -10);
+  ctx.quadraticCurveTo(-24, -30, -12, -38);
+  ctx.lineTo(0, -32);
+  ctx.quadraticCurveTo(24, -30, 16, -10);
+  ctx.lineTo(18, 16);
+  ctx.lineTo(6, 12);
+  ctx.lineTo(0, 20);
+  ctx.lineTo(-8, 12);
+  ctx.lineTo(-16, 16);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 4 Piercing Red Nightmare Eyes
+  ctx.fillStyle = '#EF4444';
+  ctx.beginPath();
+  ctx.arc(-6, -22, 2.5, 0, Math.PI * 2);
+  ctx.arc(6, -22, 2.5, 0, Math.PI * 2);
+  ctx.arc(-3, -16, 2.2, 0, Math.PI * 2);
+  ctx.arc(3, -16, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Shadow Claws
+  ctx.strokeStyle = '#C084FC';
+  ctx.lineWidth = 2.5;
+  for (let c = -1; c <= 1; c += 2) {
+    ctx.beginPath();
+    ctx.moveTo(c * 16, 2);
+    ctx.lineTo(c * 26, 8);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawAwakenedHauntedDimension(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.6;
+  const hoverY = Math.sin(time * 3) * 3;
+  ctx.save();
+  ctx.translate(player.x, player.y + hoverY);
+
+  // Inverted Netherworld Dimension Distortion Ring
+  ctx.save();
+  ctx.strokeStyle = '#E879F9';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 6]);
+  ctx.lineDashOffset = time * 24;
+  ctx.beginPath();
+  ctx.ellipse(0, 14, 46, 22, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // 2 Floating Cursed Candelabras with blue soul flames
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(side * 28, -14 + Math.sin(time * 4 + side) * 3);
+    ctx.fillStyle = '#3B0764';
+    ctx.fillRect(-2, 0, 4, 14);
+    ctx.fillStyle = '#67E8F9';
+    ctx.beginPath();
+    ctx.arc(0, -4, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.fillStyle = '#581C87';
+  drawRoundedRect(ctx, -12, -8, 24, 20, 6);
+  ctx.fill();
+  ctx.fillStyle = '#3B0764';
+  drawRoundedRect(ctx, -11, -24, 22, 16, 6);
+  ctx.fill();
+  ctx.fillStyle = '#E879F9';
+  ctx.beginPath();
+  ctx.arc(-4, -16, 2.8, 0, Math.PI * 2);
+  ctx.arc(4, -16, 2.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedAncientMonarchs(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.55;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Flanked by 3 Spirit Monarchs with Royal Halos
+  const monarchs = [
+    { x: -28, y: -4, col: '#D8B4FE', icon: '🐺' }, // Beast Monarch
+    { x: 0, y: -34, col: '#C084FC', icon: '⚔️' },  // Warlord Monarch
+    { x: 28, y: -4, col: '#E879F9', icon: '🔮' },  // Sovereign
+  ];
+  for (let m = 0; m < 3; m++) {
+    const mon = monarchs[m];
+    ctx.save();
+    ctx.translate(mon.x, mon.y + Math.sin(time * 4 + m) * 2);
+    ctx.fillStyle = 'rgba(88, 28, 135, 0.85)';
+    ctx.strokeStyle = mon.col;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(0, 0, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(mon.icon, 0, 0);
+    ctx.restore();
+  }
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.fillStyle = '#6B21A8';
+  drawRoundedRect(ctx, -12, -8, 24, 20, 6);
+  ctx.fill();
+  ctx.fillStyle = '#4C1D95';
+  drawRoundedRect(ctx, -10, -22, 20, 14, 6);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedSpiritPossession(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.55;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Pure Incorporeal Cyan Spirit Flame Form
+  ctx.save();
+  ctx.globalAlpha = 0.75 + Math.sin(time * 8) * 0.2;
+  const fGrad = ctx.createRadialGradient(0, 0, 4, 0, 0, 28);
+  fGrad.addColorStop(0, '#FFFFFF');
+  fGrad.addColorStop(0.5, '#67E8F9');
+  fGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = fGrad;
+  ctx.beginPath();
+  ctx.arc(0, -6, 28, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Puppet master spectral tether lines
+  ctx.strokeStyle = '#38BDF8';
+  ctx.lineWidth = 1.6;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(side * 8, 0);
+    ctx.lineTo(side * 28, 16 + Math.sin(time * 6 + side) * 4);
+    ctx.stroke();
+  }
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.fillStyle = '#0E7490';
+  drawRoundedRect(ctx, -10, -8, 20, 18, 5);
+  ctx.fill();
+  ctx.fillStyle = '#67E8F9';
+  ctx.beginPath();
+  ctx.arc(-3, -14, 2.5, 0, Math.PI * 2);
+  ctx.arc(3, -14, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedUnderworldGate(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.6;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Towering 78px Obsidian Stygian Gate Archway
+  ctx.save();
+  ctx.translate(0, -18);
+  ctx.fillStyle = '#1E112A';
+  ctx.strokeStyle = '#7C3AED';
+  ctx.lineWidth = 2.6;
+  // Arch pillars
+  ctx.fillRect(-22, -26, 8, 50);
+  ctx.strokeRect(-22, -26, 8, 50);
+  ctx.fillRect(14, -26, 8, 50);
+  ctx.strokeRect(14, -26, 8, 50);
+  // Keystone arch
+  ctx.fillRect(-24, -34, 48, 10);
+  ctx.strokeRect(-24, -34, 48, 10);
+  // Demonic skull keystone
+  ctx.fillStyle = '#C084FC';
+  ctx.beginPath();
+  ctx.arc(0, -29, 6, 0, Math.PI * 2);
+  ctx.fill();
+  // Netherworld portal void inside
+  const gGrad = ctx.createRadialGradient(0, -6, 2, 0, -6, 18);
+  gGrad.addColorStop(0, '#581C87');
+  gGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = gGrad;
+  ctx.beginPath();
+  ctx.ellipse(0, -6, 16, 24, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Ethereal Chains reaching out
+  ctx.strokeStyle = '#C084FC';
+  ctx.lineWidth = 1.8;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(-18, 0);
+  ctx.lineTo(-34, 14);
+  ctx.moveTo(18, 0);
+  ctx.lineTo(34, 14);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Ghost Hero in center
+  ctx.scale(player.facingX * scale, scale);
+  ctx.fillStyle = '#4C1D95';
+  drawRoundedRect(ctx, -11, -8, 22, 18, 5);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedSoulCataclysm(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.55;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // 8 Harvested Souls Circling Overhead like Stars
+  for (let s = 0; s < 8; s++) {
+    const sa = time * 3.5 + (s * Math.PI * 2) / 8;
+    const sx = Math.cos(sa) * 34;
+    const sy = -32 + Math.sin(sa) * 14;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.fillStyle = '#F472B6';
+    ctx.beginPath();
+    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(-1, -1, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.fillStyle = '#831843';
+  drawRoundedRect(ctx, -11, -8, 22, 18, 5);
+  ctx.fill();
+  ctx.fillStyle = '#9D174D';
+  drawRoundedRect(ctx, -10, -22, 20, 14, 5);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedDragonsBreath(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.6;
+  const bob = Math.sin(time * 3.5) * 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.scale(player.facingX * scale, scale);
+  ctx.translate(0, -bob);
+
+  // Kobold Artificer
+  ctx.fillStyle = '#9A3412';
+  drawRoundedRect(ctx, -11, -8, 22, 18, 5);
+  ctx.fill();
+  ctx.fillStyle = '#EA580C';
+  drawRoundedRect(ctx, -10, -22, 20, 14, 5);
+  ctx.fill();
+
+  // Dragon Carved Heavy Crossbow Launcher with Wyrm coiling barrel
+  ctx.save();
+  ctx.translate(14, 0);
+  ctx.fillStyle = '#C2410C';
+  ctx.strokeStyle = '#F97316';
+  ctx.lineWidth = 2;
+  // Dragon head snout
+  ctx.beginPath();
+  ctx.moveTo(0, -6);
+  ctx.lineTo(24, -4);
+  ctx.lineTo(28, 0);
+  ctx.lineTo(24, 4);
+  ctx.lineTo(0, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Soaring Translucent Dragon Wyrm Spirit emerging from muzzle
+  ctx.strokeStyle = 'rgba(251, 146, 60, 0.75)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(28, 0);
+  const wWave = Math.sin(time * 8) * 4;
+  ctx.quadraticCurveTo(38, -6 + wWave, 48, wWave);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawAwakenedSkyfallArsenal(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.55;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // Massive Mechanical Airship Shadow Overhead
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.beginPath();
+  ctx.ellipse(0, -38, 48, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Spinning propeller blades
+  ctx.strokeStyle = '#EA580C';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, -38, 14, 0, Math.PI * 2);
+  ctx.stroke();
+  // 3 Aerial Target Lasers pointing down
+  ctx.strokeStyle = 'rgba(239, 68, 68, 0.65)';
+  ctx.lineWidth = 1.4;
+  for (let l = -1; l <= 1; l++) {
+    ctx.beginPath();
+    ctx.moveTo(l * 18, -38);
+    ctx.lineTo(l * 28, 14);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.fillStyle = '#7C2D12';
+  drawRoundedRect(ctx, -11, -8, 22, 18, 5);
+  ctx.fill();
+  ctx.fillStyle = '#EA580C';
+  drawRoundedRect(ctx, -10, -22, 20, 14, 5);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedClockworkDominion(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.5;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+
+  // 4 Popup Clockwork Pillbox Turrets with Electric Cables
+  const turrets = [
+    { x: -32, y: -16 },
+    { x: 32, y: -16 },
+    { x: -28, y: 16 },
+    { x: 28, y: 16 },
+  ];
+  ctx.strokeStyle = '#FACC15';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(turrets[0].x, turrets[0].y);
+  ctx.lineTo(turrets[1].x, turrets[1].y);
+  ctx.lineTo(turrets[3].x, turrets[3].y);
+  ctx.lineTo(turrets[2].x, turrets[2].y);
+  ctx.closePath();
+  ctx.stroke();
+
+  for (const t of turrets) {
+    ctx.save();
+    ctx.translate(t.x, t.y);
+    ctx.fillStyle = '#78350F';
+    ctx.strokeStyle = '#F59E0B';
+    ctx.lineWidth = 1.8;
+    drawRoundedRect(ctx, -6, -6, 12, 12, 3);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#FDE047';
+    ctx.beginPath();
+    ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.scale(player.facingX * scale, scale);
+  ctx.fillStyle = '#713F12';
+  drawRoundedRect(ctx, -11, -8, 22, 18, 5);
+  ctx.fill();
+  ctx.fillStyle = '#EA580C';
+  drawRoundedRect(ctx, -10, -22, 20, 14, 5);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedForbiddenWeaponry(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.55;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.scale(player.facingX * scale, scale);
+
+  // Arcane Rail-Crossbow with Tachyon Coils
+  ctx.save();
+  ctx.translate(14, 0);
+  ctx.fillStyle = '#2E1065';
+  ctx.strokeStyle = '#C084FC';
+  ctx.lineWidth = 2.4;
+  drawRoundedRect(ctx, 0, -4, 28, 8, 3);
+  ctx.fill();
+  ctx.stroke();
+  // 3 Pulsing Arcane Energy Rings on barrel
+  for (let r = 0; r < 3; r++) {
+    ctx.strokeStyle = r % 2 === 0 ? '#C084FC' : '#38BDF8';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(8 + r * 7, 0, 3, 6, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.fillStyle = '#4C1D95';
+  drawRoundedRect(ctx, -11, -8, 22, 18, 5);
+  ctx.fill();
+  ctx.fillStyle = '#EA580C';
+  drawRoundedRect(ctx, -10, -22, 20, 14, 5);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawAwakenedPerfectShot(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const scale = 1.55;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.scale(player.facingX * scale, scale);
+
+  // Heavy Antimatter Precision Sniper Chassis
+  ctx.save();
+  ctx.translate(12, 0);
+  ctx.fillStyle = '#18181B';
+  ctx.strokeStyle = '#EF4444';
+  ctx.lineWidth = 2.2;
+  drawRoundedRect(ctx, 0, -3.5, 36, 7, 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Holographic Sniper Scope
+  ctx.fillStyle = '#EF4444';
+  ctx.fillRect(8, -8, 12, 4);
+
+  // Crimson laser tracking line extending forward
+  ctx.strokeStyle = '#EF4444';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(36, 0);
+  ctx.lineTo(80, 0);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.fillStyle = '#7F1D1D';
+  drawRoundedRect(ctx, -11, -8, 22, 18, 5);
+  ctx.fill();
+  ctx.fillStyle = '#EA580C';
+  drawRoundedRect(ctx, -10, -22, 20, 14, 5);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+export function drawHeroCharacter(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  // Check for awakened transformation appearances
+  const form = player.awakenedForm;
+  if (form === 'PLAGUE_BEHEMOTH' || awakeningEngine.plagueBehemothTimer > 0) {
+    drawAwakenedPlagueBehemoth(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'FLESH_COLOSSUS' || awakeningEngine.fleshColossusTimer > 0) {
+    drawAwakenedFleshColossus(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'UNDYING_KINGDOM') {
+    drawAwakenedUndyingKingdom(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'GRAVEYARD_AWAKENING') {
+    drawAwakenedGraveyardAwakening(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'PLAGUE_REBIRTH') {
+    drawAwakenedPlagueRebirth(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'SOUL_DEVOURER') {
+    drawAwakenedSoulDevourer(ctx, player, phase, time, isControlled);
+    return;
+  }
+
+  if (form === 'BONE_TITAN' || awakeningEngine.ancientBoneTitanTimer > 0) {
+    drawAwakenedAncientBoneTitan(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'BONE_DRAGON' || awakeningEngine.boneDragonTimer > 0) {
+    drawAwakenedBoneDragon(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'FOUR_GENERALS') {
+    drawAwakenedFourGenerals(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'BONE_FORTRESS') {
+    drawAwakenedBoneFortress(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'SOUL_SEVERANCE') {
+    drawAwakenedSoulSeverance(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'BLACK_REAPER') {
+    drawAwakenedBlackReaper(ctx, player, phase, time, isControlled);
+    return;
+  }
+
+  if (form === 'THOUSAND_REFLECTIONS') {
+    drawAwakenedThousandReflections(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'PHANTOM_EXECUTIONER') {
+    drawAwakenedPhantomExecutioner(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'STOLEN_IDENTITY') {
+    drawAwakenedStolenIdentity(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'TREASURE_SOULS') {
+    drawAwakenedTreasureSouls(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'BLADE_CYCLONE') {
+    drawAwakenedBladeCyclone(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'DAGGER_CONSTELLATION') {
+    drawAwakenedDaggerConstellation(ctx, player, phase, time, isControlled);
+    return;
+  }
+
+  if (form === 'WORLDBREAKER' || awakeningEngine.worldbreakerTimer > 0) {
+    drawAwakenedWorldbreaker(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'ETERNAL_MOUNTAIN' || awakeningEngine.eternalMountainTimer > 0) {
+    drawAwakenedEternalMountain(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'GREAT_DIVIDE') {
+    drawAwakenedGreatDivide(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'COLOSSAL_GUARDIAN') {
+    drawAwakenedColossalGuardian(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'VOLCANIC_CATACLYSM') {
+    drawAwakenedVolcanicCataclysm(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'GRAVITY_COLLAPSE') {
+    drawAwakenedGravityCollapse(ctx, player, phase, time, isControlled);
+    return;
+  }
+
+  if (form === 'FACELESS_NIGHTMARE') {
+    drawAwakenedFacelessNightmare(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'HAUNTED_DIMENSION') {
+    drawAwakenedHauntedDimension(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'ANCIENT_MONARCHS') {
+    drawAwakenedAncientMonarchs(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'SPIRIT_POSSESSION') {
+    drawAwakenedSpiritPossession(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'UNDERWORLD_GATE') {
+    drawAwakenedUnderworldGate(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'SOUL_CATACLYSM') {
+    drawAwakenedSoulCataclysm(ctx, player, phase, time, isControlled);
+    return;
+  }
+
+  if (form === 'DRAGONS_BREATH') {
+    drawAwakenedDragonsBreath(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'SKYFALL_ARSENAL') {
+    drawAwakenedSkyfallArsenal(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'MECHA_ARTILLERY') {
+    drawAwakenedMechaArtillery(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'CLOCKWORK_DOMINION') {
+    drawAwakenedClockworkDominion(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'FORBIDDEN_WEAPONRY') {
+    drawAwakenedForbiddenWeaponry(ctx, player, phase, time, isControlled);
+    return;
+  }
+  if (form === 'PERFECT_SHOT') {
+    drawAwakenedPerfectShot(ctx, player, phase, time, isControlled);
+    return;
+  }
+
   if (player.characterId === CharacterId.Skeleton) {
     drawSkeletonPlayer(ctx, player, phase, time, isControlled);
   } else if (player.characterId === CharacterId.Goblin) {
