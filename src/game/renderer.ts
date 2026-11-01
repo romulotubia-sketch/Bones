@@ -1,16 +1,22 @@
 import {
   AfterimageEntity,
+  AncientHunterSpirit,
+  ArcanePrisonZone,
+  AstralSingularityZone,
   CharacterId,
   CrossbowTurretEntity,
   DaggerRainZone,
   DragonsBarrageZone,
   DungeonRoom,
   EarthenGraspZone,
+  ElementalCascadeZone,
+  ElementalSpiritEntity,
   EnemyEntity,
   EnemyKind,
   ExplosiveTrapEntity,
   FloatingPopup,
   GamePhase,
+  GravityWellZone,
   GuildCompanionRenderState,
   MinionEntity,
   Particle,
@@ -20,6 +26,7 @@ import {
   PickupOrb,
   PoisonCloudEntity,
   ProjectileEntity,
+  RainOfJavelinsZone,
   RoomKind,
   RoomProp,
   ShockwaveRing,
@@ -27,6 +34,7 @@ import {
   SlashEffect,
   SnareTrapEntity,
   SoulTether,
+  SpearCycloneZone,
   StoneRampartEntity,
 } from '../types/game';
 import { PvpBaseSyncState, PvpMatchSyncState, PvpMinionSyncState, PvpTeam } from '../multiplayer/networkTypes';
@@ -76,6 +84,14 @@ export interface RenderPlayerState {
   tinkerHasteTimer?: number;
   rapidReloadRemaining?: number;
   arsenalRemaining?: number;
+  slimePulseOffset?: number;
+  slimeUnstableStacks?: number;
+  slimePrimordialTimer?: number;
+  slimeElementalConvergenceTimer?: number;
+  lizardSpearLungeOffset?: number;
+  lizardFocusStacks?: number;
+  lizardHuntSpiritTimer?: number;
+  lizardDragonfangTimer?: number;
   isDowned?: boolean;
   bleedoutTimer?: number;
   reviveProgress?: number;
@@ -121,6 +137,14 @@ export interface WorldRenderInput {
   stoneRamparts: StoneRampartEntity[];
   deathsPassageRifts?: DeathsPassageRift[];
   ghostMistZones?: GhostMistZone[];
+  gravityWells?: GravityWellZone[];
+  arcanePrisons?: ArcanePrisonZone[];
+  astralSingularities?: AstralSingularityZone[];
+  elementalCascades?: ElementalCascadeZone[];
+  spearCyclones?: SpearCycloneZone[];
+  rainOfJavelinsZones?: RainOfJavelinsZone[];
+  ancientHunterSpirits?: AncientHunterSpirit[];
+  elementalSpirits?: ElementalSpiritEntity[];
   pickups: PickupOrb[];
   minions: MinionEntity[];
   enemies: EnemyEntity[];
@@ -3424,6 +3448,10 @@ export function drawHeroCharacter(
     drawGhostPlayer(ctx, player, phase, time, isControlled);
   } else if (player.characterId === CharacterId.Kobold) {
     drawKoboldPlayer(ctx, player, phase, time, isControlled);
+  } else if (player.characterId === CharacterId.Slime) {
+    drawSlimePlayer(ctx, player, phase, time, isControlled);
+  } else if (player.characterId === CharacterId.Lizardfolk) {
+    drawLizardfolkPlayer(ctx, player, phase, time, isControlled);
   } else {
     drawZombiePlayer(ctx, player, phase, time, isControlled);
   }
@@ -4867,6 +4895,438 @@ function drawKoboldPlayer(
     ctx.lineTo(3, 1.4);
     ctx.closePath();
     ctx.fill();
+  }
+
+  ctx.restore();
+
+  ctx.restore();
+  ctx.restore();
+}
+
+function drawSlimePlayer(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const isPrimordial = (player.slimePrimordialTimer ?? 0) > 0;
+  const baseScale = isPrimordial ? 1.48 : 1.0;
+  const speed = Math.hypot(player.vx, player.vy);
+  const bob = speed > 10 ? Math.abs(Math.sin(player.walkPhase)) * 5.2 : Math.sin(time * 3.5) * 2.2;
+  const pulse = player.slimePulseOffset ?? 0;
+  const pulseX = Math.abs(pulse) > 0.05 ? Math.cos(player.aimAngle) * pulse * 0.45 : 0;
+  const pulseY = Math.abs(pulse) > 0.05 ? Math.sin(player.aimAngle) * pulse * 0.45 : 0;
+  const unstableStacks = player.slimeUnstableStacks ?? 0;
+
+  ctx.save();
+  ctx.translate(player.x + pulseX, player.y + pulseY);
+
+  // Guild selection highlight ring
+  if (phase === GamePhase.GuildPicking || player.hoveredInGuild) {
+    ctx.save();
+    ctx.strokeStyle = isControlled ? '#A855F7' : 'rgba(168, 85, 247, 0.65)';
+    ctx.lineWidth = isControlled ? 2.6 : 2;
+    ctx.setLineDash([6, 5]);
+    ctx.lineDashOffset = -time * 22;
+    ctx.beginPath();
+    ctx.ellipse(0, 14, 28, 15, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Primordial Overload: gigantic radiant celestial core & rotating crystal rings
+  if (isPrimordial) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const auraPulse = 0.88 + Math.sin(time * 8) * 0.12;
+    const auraR = 48 * auraPulse;
+    const auraGrad = ctx.createRadialGradient(0, 0, 8, 0, 0, auraR);
+    auraGrad.addColorStop(0, 'rgba(216, 180, 254, 0.55)');
+    auraGrad.addColorStop(0.5, 'rgba(168, 85, 247, 0.28)');
+    auraGrad.addColorStop(1, 'rgba(168, 85, 247, 0)');
+    ctx.fillStyle = auraGrad;
+    ctx.beginPath();
+    ctx.arc(0, -6, auraR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2 counter-rotating celestial glyph rings
+    ctx.strokeStyle = 'rgba(232, 121, 249, 0.75)';
+    ctx.lineWidth = 2.4;
+    ctx.setLineDash([8, 6]);
+    ctx.lineDashOffset = -time * 36;
+    ctx.beginPath();
+    ctx.arc(0, -6, 38, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(103, 232, 249, 0.7)';
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([12, 8]);
+    ctx.lineDashOffset = time * 28;
+    ctx.beginPath();
+    ctx.arc(0, -6, 44, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 4 orbiting primordial power crystals
+    for (let i = 0; i < 4; i++) {
+      const a = time * 4.2 + (i * Math.PI) / 2;
+      const cx = Math.cos(a) * 42;
+      const cy = -6 + Math.sin(a) * 22;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(a + Math.PI / 4);
+      ctx.fillStyle = i % 2 === 0 ? '#C084FC' : '#38BDF8';
+      ctx.beginPath();
+      ctx.moveTo(-5, 0);
+      ctx.lineTo(0, -9);
+      ctx.lineTo(5, 0);
+      ctx.lineTo(0, 9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // Unstable Mana electrical arcs crackling around body
+  if (unstableStacks > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = unstableStacks >= 2 ? '#F472B6' : '#C084FC';
+    ctx.lineWidth = 1.8;
+    const sparkCount = unstableStacks * 2;
+    for (let i = 0; i < sparkCount; i++) {
+      const a = time * 7.5 + (i * Math.PI * 2) / sparkCount;
+      const r = 24 * baseScale;
+      const sx = Math.cos(a) * r;
+      const sy = -4 + Math.sin(a) * (r * 0.7);
+      ctx.beginPath();
+      ctx.moveTo(sx * 0.6, sy * 0.6);
+      ctx.lineTo(sx, sy);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Ground shadow
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+  ctx.beginPath();
+  ctx.ellipse(0, 13 * baseScale, 18 * baseScale, 8.5 * baseScale, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  ctx.scale(player.facingX * player.squashX * baseScale, player.squashY * baseScale);
+  ctx.translate(0, -bob);
+
+  const flash = player.hitFlashTimer > 0;
+  ctx.strokeStyle = '#120F17';
+  ctx.lineWidth = 2.4;
+
+  // Translucent Gelatinous Slime Outer Hull (Amorphous squishy teardrop-dome)
+  const squish = Math.sin(time * 6) * 1.5;
+  ctx.fillStyle = flash ? '#FFFFFF' : isPrimordial ? '#7E22CE' : '#9333EA';
+  ctx.beginPath();
+  ctx.moveTo(-16 - squish, 8);
+  ctx.bezierCurveTo(-19 - squish, -4, -13, -22 - squish, 0, -25 - squish);
+  ctx.bezierCurveTo(13, -22 - squish, 19 + squish, -4, 16 + squish, 8);
+  ctx.bezierCurveTo(12, 13, -12, 13, -16 - squish, 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Gelatinous interior gradient sheen
+  if (!flash) {
+    const sheenGrad = ctx.createLinearGradient(0, -25, 0, 10);
+    sheenGrad.addColorStop(0, 'rgba(216, 180, 254, 0.45)');
+    sheenGrad.addColorStop(0.5, 'rgba(168, 85, 247, 0.25)');
+    sheenGrad.addColorStop(1, 'rgba(126, 34, 206, 0.6)');
+    ctx.fillStyle = sheenGrad;
+    ctx.beginPath();
+    ctx.moveTo(-14, 6);
+    ctx.bezierCurveTo(-17, -3, -11, -19, 0, -22);
+    ctx.bezierCurveTo(11, -19, 17, -3, 14, 6);
+    ctx.bezierCurveTo(10, 10, -10, 10, -14, 6);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Central Pulsating Arcane Core Crystal
+  const corePulse = 1 + Math.sin(time * 8.5) * 0.15;
+  const coreR = (isPrimordial ? 9.5 : 7.2) * corePulse;
+  ctx.save();
+  ctx.translate(0, -6);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = flash ? '#FFFFFF' : '#E9D5FF';
+  ctx.beginPath();
+  ctx.arc(0, 0, coreR, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.arc(-coreR * 0.28, -coreR * 0.28, coreR * 0.38, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Expressive Glowing Arcane Eyes
+  ctx.fillStyle = flash ? '#FFFFFF' : '#F5D0FE';
+  ctx.beginPath();
+  ctx.ellipse(-5.5, -9, 3.2, 4.2, 0, 0, Math.PI * 2);
+  ctx.ellipse(5.5, -9, 3.2, 4.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#3B0764';
+  ctx.beginPath();
+  ctx.arc(-5.2, -8.5, 1.8, 0, Math.PI * 2);
+  ctx.arc(5.8, -8.5, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  // White eye glints
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.arc(-6.2, -9.8, 1.0, 0, Math.PI * 2);
+  ctx.arc(4.8, -9.8, 1.0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Specular gel shine drops (upper left dome)
+  if (!flash) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+    ctx.beginPath();
+    ctx.ellipse(-7, -18, 4.5, 2.2, -0.45, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(-2, -21, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+  ctx.restore();
+}
+
+function drawLizardfolkPlayer(
+  ctx: CanvasRenderingContext2D,
+  player: RenderPlayerState,
+  phase: GamePhase,
+  time: number,
+  isControlled: boolean
+): void {
+  const speed = Math.hypot(player.vx, player.vy);
+  const bob = speed > 10 ? Math.abs(Math.sin(player.walkPhase)) * 4.4 : Math.sin(time * 3.2) * 1.6;
+  const lunge = player.lizardSpearLungeOffset ?? 0;
+  const lungeX = Math.abs(lunge) > 0.05 ? Math.cos(player.aimAngle) * lunge * 0.5 : 0;
+  const lungeY = Math.abs(lunge) > 0.05 ? Math.sin(player.aimAngle) * lunge * 0.5 : 0;
+  const isSpiritHunt = (player.lizardHuntSpiritTimer ?? 0) > 0;
+  const isDragonfang = (player.lizardDragonfangTimer ?? 0) > 0;
+  const focusStacks = player.lizardFocusStacks ?? 0;
+
+  ctx.save();
+  ctx.translate(player.x + lungeX, player.y + lungeY);
+
+  // Guild selection ring
+  if (phase === GamePhase.GuildPicking || player.hoveredInGuild) {
+    ctx.save();
+    ctx.strokeStyle = isControlled ? '#10B981' : 'rgba(16, 185, 129, 0.65)';
+    ctx.lineWidth = isControlled ? 2.6 : 2;
+    ctx.setLineDash([6, 5]);
+    ctx.lineDashOffset = -time * 22;
+    ctx.beginPath();
+    ctx.ellipse(0, 14, 28, 15, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Spirit of the Great Hunt: Primal emerald God Avatar aura & running spirit beasts
+  if (isSpiritHunt) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const huntAuraR = 36 + Math.sin(time * 9) * 4;
+    const huntGrad = ctx.createRadialGradient(0, 0, 6, 0, 0, huntAuraR);
+    huntGrad.addColorStop(0, 'rgba(110, 231, 183, 0.55)');
+    huntGrad.addColorStop(0.6, 'rgba(16, 185, 129, 0.25)');
+    huntGrad.addColorStop(1, 'rgba(16, 185, 129, 0)');
+    ctx.fillStyle = huntGrad;
+    ctx.beginPath();
+    ctx.arc(0, -4, huntAuraR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.75)';
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash([8, 6]);
+    ctx.lineDashOffset = -time * 42;
+    ctx.beginPath();
+    ctx.ellipse(0, 12, 34, 16, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Hunter's Focus aura at max stacks
+  if (focusStacks >= 5) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(245, 158, 11, 0.78)';
+    ctx.lineWidth = 2.4;
+    ctx.setLineDash([5, 5]);
+    ctx.lineDashOffset = -time * 30;
+    ctx.beginPath();
+    ctx.arc(0, -6, 26, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Ground shadow
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+  ctx.beginPath();
+  ctx.ellipse(0, 14, 16, 7.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  ctx.scale(player.facingX * player.squashX, player.squashY);
+  ctx.translate(0, -bob);
+
+  const flash = player.hitFlashTimer > 0;
+  ctx.strokeStyle = '#120F17';
+  ctx.lineWidth = 2.4;
+
+  // Counter-balancing muscular reptilian tail with dynamic swaying
+  const tailSway = Math.sin(time * 7 + (speed > 10 ? player.walkPhase : 0)) * 6;
+  ctx.fillStyle = flash ? '#FFFFFF' : '#047857';
+  ctx.beginPath();
+  ctx.moveTo(-10, 3);
+  ctx.quadraticCurveTo(-22, 5 + tailSway, -32, 1 + tailSway * 1.5);
+  ctx.quadraticCurveTo(-21, 12 + tailSway, -6, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Torso: Scaled emerald lizard chest with golden-yellow ventral belly plates
+  ctx.fillStyle = flash ? '#FFFFFF' : '#059669';
+  drawRoundedRect(ctx, -11, -5, 22, 17, 5.5);
+  ctx.fill();
+  ctx.stroke();
+
+  if (!flash) {
+    // Ventral belly plates
+    ctx.fillStyle = '#34D399';
+    drawRoundedRect(ctx, -4, -3, 11, 13, 3);
+    ctx.fill();
+
+    // Chest harness strap
+    ctx.strokeStyle = '#78350F';
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(-9, -4);
+    ctx.lineTo(8, 8);
+    ctx.stroke();
+  }
+
+  // Scaled reptilian shoulder pauldron
+  ctx.fillStyle = flash ? '#FFFFFF' : '#065F46';
+  ctx.beginPath();
+  ctx.arc(-10, -3, 6.8, Math.PI * 0.7, Math.PI * 2.1);
+  ctx.fill();
+  ctx.stroke();
+
+  // Hunter's feathered cloak cowl / hood
+  ctx.fillStyle = flash ? '#FFFFFF' : '#064E3B';
+  drawRoundedRect(ctx, -12, -8, 24, 6.5, 3);
+  ctx.fill();
+  ctx.stroke();
+
+  // Reptilian Head with pronounced jaw, snout ridge, and back horns
+  ctx.fillStyle = flash ? '#FFFFFF' : '#10B981';
+  drawRoundedRect(ctx, -12, -24, 25, 18, 7.5);
+  ctx.fill();
+  ctx.stroke();
+
+  // Back horn crests
+  ctx.fillStyle = flash ? '#FFFFFF' : '#047857';
+  ctx.beginPath();
+  ctx.moveTo(-10, -21);
+  ctx.lineTo(-20, -31);
+  ctx.lineTo(-4, -24);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Sharp amber reptilian eyes with slit pupils
+  ctx.fillStyle = flash ? '#FFFFFF' : '#F59E0B';
+  ctx.beginPath();
+  ctx.arc(-2, -14, 2.8, 0, Math.PI * 2);
+  ctx.arc(7, -14, 2.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#1C1917';
+  ctx.beginPath();
+  ctx.rect(-2.3, -16, 0.9, 4);
+  ctx.rect(6.7, -16, 0.9, 4);
+  ctx.fill();
+
+  // Articulated Hunting Spear / Javelin aimed toward aimAngle!
+  const localAim =
+    player.facingX >= 0
+      ? player.aimAngle
+      : Math.atan2(Math.sin(player.aimAngle), -Math.cos(player.aimAngle));
+  const clampedAim = Math.max(-1.15, Math.min(1.15, localAim));
+  const spearThrust = Math.max(-4, lunge * 0.9);
+
+  ctx.save();
+  ctx.translate(10 + spearThrust, 0);
+  ctx.rotate(clampedAim);
+
+  // Ash-wood spear shaft
+  ctx.fillStyle = flash ? '#FFFFFF' : '#78350F';
+  ctx.strokeStyle = '#120F17';
+  ctx.lineWidth = 1.8;
+  drawRoundedRect(ctx, -16, -2, 42, 4, 1.5);
+  ctx.fill();
+  ctx.stroke();
+
+  // Leather grip wrapping
+  if (!flash) {
+    ctx.fillStyle = '#D97706';
+    ctx.fillRect(-2, -2.4, 9, 4.8);
+  }
+
+  // Obsidian razor-barbed spearhead
+  ctx.fillStyle = flash ? '#FFFFFF' : isSpiritHunt ? '#34D399' : '#0F172A';
+  ctx.beginPath();
+  ctx.moveTo(26, 0);
+  ctx.lineTo(16, -5.5);
+  ctx.lineTo(19, 0);
+  ctx.lineTo(16, 5.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Dragonfang: flaming dragon maw spectral fire over spearhead
+  if (isDragonfang && !flash) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const flameFlicker = Math.sin(time * 24) * 3;
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.85)';
+    ctx.beginPath();
+    ctx.moveTo(34 + flameFlicker, 0);
+    ctx.lineTo(14, -8);
+    ctx.lineTo(20, 0);
+    ctx.lineTo(14, 8);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#FDE047';
+    ctx.beginPath();
+    ctx.arc(22, 0, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Hunter's Focus piercing tip glint
+  if (focusStacks >= 5 && !flash) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = '#FDE047';
+    ctx.beginPath();
+    ctx.arc(26, 0, 3.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   ctx.restore();

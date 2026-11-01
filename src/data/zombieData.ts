@@ -3,8 +3,10 @@ import gnomePortraitImg from '../assets/images/gnome_hero_portrait_1793315632139
 import goblinPortraitImg from '../assets/images/goblin_hero_portrait_1793313607661.jpg';
 import graveyardBiomeImg from '../assets/images/graveyard_biome_card_1793308236254.jpg';
 import koboldPortraitImg from '../assets/images/kobold_hero_portrait_1793440988933.jpg';
+import lizardfolkPortraitImg from '../assets/images/lizardfolk_hero_portrait_1793559735949.jpg';
 import skeletonBossImg from '../assets/images/skeleton_boss_portrait_1793308236655.jpg';
 import skeletonPortraitImg from '../assets/images/skeleton_hero_portrait_1793311951924.jpg';
+import slimePortraitImg from '../assets/images/slime_hero_portrait_1793559719531.jpg';
 import zombiePortraitImg from '../assets/images/zombie_hero_portrait_1793308234967.jpg';
 import {
   CharacterId,
@@ -29,6 +31,8 @@ export const GOBLIN_PORTRAIT_URL = goblinPortraitImg;
 export const GNOME_PORTRAIT_URL = gnomePortraitImg;
 export const GHOST_PORTRAIT_URL = ghostPortraitImg;
 export const KOBOLD_PORTRAIT_URL = koboldPortraitImg;
+export const SLIME_PORTRAIT_URL = slimePortraitImg;
+export const LIZARDFOLK_PORTRAIT_URL = lizardfolkPortraitImg;
 export const GRAVEYARD_BIOME_URL = graveyardBiomeImg;
 export const SKELETON_BOSS_URL = skeletonBossImg;
 
@@ -396,6 +400,120 @@ export const NORMAL_SKILLS: Record<NormalSkillId, NormalSkillDef> = {
     detailLine: 'Launches 7 bolts in a wide fan · Strikes surrounding foes & pushes close threats',
     accentColor: '#FDA4AF',
   },
+
+  // === SLIME NORMAL SKILLS (5) ===
+  [NormalSkillId.ArcaneOrb]: {
+    id: NormalSkillId.ArcaneOrb,
+    characterId: CharacterId.Slime,
+    name: 'Arcane Orb',
+    tag: 'Ranged · Arcane Blast',
+    cooldown: 3.2,
+    description:
+      'Creates and launches a concentrated sphere of magical energy that travels toward enemies and explodes upon impact.',
+    detailLine: 'High-density arcane projectile · Detonates in a high-damage AoE blast',
+    accentColor: '#A855F7',
+  },
+  [NormalSkillId.PrismaticShards]: {
+    id: NormalSkillId.PrismaticShards,
+    characterId: CharacterId.Slime,
+    name: 'Prismatic Shards',
+    tag: 'Pierce · Ricochet Crystals',
+    cooldown: 4.5,
+    description:
+      'Summons several magical crystals that shoot toward enemies. The crystals pierce through targets and can change direction to strike additional enemies.',
+    detailLine: '5 piercing crystalline shards · Homing ricochet vectors between foes',
+    accentColor: '#C084FC',
+  },
+  [NormalSkillId.GravityWell]: {
+    id: NormalSkillId.GravityWell,
+    characterId: CharacterId.Slime,
+    name: 'Gravity Well',
+    tag: 'Vortex · Crowd Control',
+    cooldown: 6.5,
+    description:
+      'Creates a magical sphere that generates gravitational force, pulling nearby enemies toward its center and restricting their movement.',
+    detailLine: '3.6s gravitational vortex · Continuously sucks enemies inward and slows them',
+    accentColor: '#818CF8',
+  },
+  [NormalSkillId.ElementalCascade]: {
+    id: NormalSkillId.ElementalCascade,
+    characterId: CharacterId.Slime,
+    name: 'Elemental Cascade',
+    tag: 'Sky Rain · Multi-Element',
+    cooldown: 5.8,
+    description:
+      'Summons a sequence of elemental projectiles that rain down over a selected area. Each projectile carries a different elemental effect.',
+    detailLine: 'Rains fire, ice, and lightning meteors · Burns, chills, and shocks enemies',
+    accentColor: '#38BDF8',
+  },
+  [NormalSkillId.ArcanePrison]: {
+    id: NormalSkillId.ArcanePrison,
+    characterId: CharacterId.Slime,
+    name: 'Arcane Prison',
+    tag: 'Barrier · Continuous Field',
+    cooldown: 7.2,
+    description:
+      'Creates a magical barrier around a targeted area, trapping enemies inside while continuously damaging them with unstable magical energy.',
+    detailLine: '4.5s boundary cage · Traps foes within & continuously deals unstable arcane DoT',
+    accentColor: '#E879F9',
+  },
+
+  // === LIZARDFOLK NORMAL SKILLS (5) ===
+  [NormalSkillId.PiercingJavelin]: {
+    id: NormalSkillId.PiercingJavelin,
+    characterId: CharacterId.Lizardfolk,
+    name: 'Piercing Javelin',
+    tag: 'Line Pierce · Returning',
+    cooldown: 3.5,
+    description:
+      'Throws a powerful spear in a straight line, piercing through multiple enemies before returning to the Lizardfolk.',
+    detailLine: 'Heavy piercing javelin · Deals double damage on the return flight',
+    accentColor: '#10B981',
+  },
+  [NormalSkillId.TripleSpearToss]: {
+    id: NormalSkillId.TripleSpearToss,
+    characterId: CharacterId.Lizardfolk,
+    name: 'Triple Spear Toss',
+    tag: 'Fan Spread · Multi-Direction',
+    cooldown: 4.2,
+    description:
+      'Rapidly throws three spears toward targeted enemies. Each spear follows a slightly different trajectory, allowing the Lizardfolk to attack multiple directions.',
+    detailLine: 'Throws 3 lethal spears in a spread · High critical puncture damage',
+    accentColor: '#34D399',
+  },
+  [NormalSkillId.ImpalingSpear]: {
+    id: NormalSkillId.ImpalingSpear,
+    characterId: CharacterId.Lizardfolk,
+    name: 'Impaling Spear',
+    tag: 'Heavy Pin · Root & Bleed',
+    cooldown: 5.5,
+    description:
+      'Throws a heavy spear that pins the first enemy it hits to the ground. The spear remains embedded temporarily, restricting the enemy’s movement.',
+    detailLine: 'Pins enemy for 3.0s · Inflicts heavy bleed and restricts all movement',
+    accentColor: '#059669',
+  },
+  [NormalSkillId.HuntingMark]: {
+    id: NormalSkillId.HuntingMark,
+    characterId: CharacterId.Lizardfolk,
+    name: 'Hunting Mark',
+    tag: 'Target Lock · Homing Spears',
+    cooldown: 6.0,
+    description:
+      'Marks a targeted enemy with a hunter’s symbol. The Lizardfolk’s subsequent spear attacks prioritize the marked target and can track its movement.',
+    detailLine: 'Places Hunter Brand for 8s · All spears curve & home into the marked target (+30% DMG)',
+    accentColor: '#F59E0B',
+  },
+  [NormalSkillId.SpearCyclone]: {
+    id: NormalSkillId.SpearCyclone,
+    characterId: CharacterId.Lizardfolk,
+    name: 'Spear Cyclone',
+    tag: 'Orbiting Blades · Whirlwind',
+    cooldown: 6.8,
+    description:
+      'Throws several spinning spears around a selected area. The weapons rotate through the battlefield, repeatedly striking enemies before returning to the Lizardfolk.',
+    detailLine: '4 spinning spears orbit for 4.2s · Repeatedly slashes and shreds nearby targets',
+    accentColor: '#14B8A6',
+  },
 };
 
 export const ULTIMATE_SKILLS: Record<UltimateSkillId, UltimateSkillDef> = {
@@ -626,6 +744,82 @@ export const ULTIMATE_SKILLS: Record<UltimateSkillId, UltimateSkillDef> = {
     detailLine: '9-volley mechanical sequence · Explosive, Piercing, Fire, Frost & Lightning bolts',
     accentColor: '#38BDF8',
   },
+
+  // === SLIME ULTIMATE SKILLS (3) ===
+  [UltimateSkillId.CataclysmOfElements]: {
+    id: UltimateSkillId.CataclysmOfElements,
+    characterId: CharacterId.Slime,
+    name: 'Cataclysm of Elements',
+    tag: 'Storm · Multi-Elemental',
+    cooldown: 20,
+    energyRequired: 100,
+    description:
+      'The Slime channels several elemental forces and unleashes a massive magical storm. Fire, ice, lightning, and arcane energy rain down across the battlefield.',
+    detailLine: 'Massive elemental storm · Fire, ice, lightning & arcane meteors blanket the room',
+    accentColor: '#A855F7',
+  },
+  [UltimateSkillId.AstralSingularity]: {
+    id: UltimateSkillId.AstralSingularity,
+    characterId: CharacterId.Slime,
+    name: 'Astral Singularity',
+    tag: 'Vortex · Catastrophic Collapse',
+    cooldown: 22,
+    energyRequired: 100,
+    description:
+      'Creates an enormous magical singularity that continuously pulls enemies toward its center. As the singularity grows, it absorbs magical energy before releasing a devastating explosion.',
+    detailLine: '5.0s massive gravitational pull · Expands while devouring foes, then collapses in a huge blast',
+    accentColor: '#6366F1',
+  },
+  [UltimateSkillId.PrimordialOverload]: {
+    id: UltimateSkillId.PrimordialOverload,
+    characterId: CharacterId.Slime,
+    name: 'Primordial Overload',
+    tag: 'Transform · Arcane Core',
+    cooldown: 21,
+    energyRequired: 100,
+    description:
+      'The Slime transforms into a gigantic floating magical core surrounded by rotating arcane crystals. It unleashes continuous waves of magical projectiles, beams, and explosive energy attacks across the battlefield.',
+    detailLine: '9.0s gigantic floating core · Unleashes continuous arcane laser sweeps & crystal barrages',
+    accentColor: '#C084FC',
+  },
+
+  // === LIZARDFOLK ULTIMATE SKILLS (3) ===
+  [UltimateSkillId.RainOfJavelins]: {
+    id: UltimateSkillId.RainOfJavelins,
+    characterId: CharacterId.Lizardfolk,
+    name: 'Rain of Javelins',
+    tag: 'Skyfall · Pin & Impale',
+    cooldown: 19,
+    energyRequired: 100,
+    description:
+      'The Lizardfolk leaps backward and launches an enormous number of spears into the sky. The spears rain down across a large battlefield area, heavily damaging and pinning enemies beneath them.',
+    detailLine: '3.8s heavy spear barrage · Punctures, bleeds, and pins all enemies in targeted zone',
+    accentColor: '#10B981',
+  },
+  [UltimateSkillId.WorldPiercer]: {
+    id: UltimateSkillId.WorldPiercer,
+    characterId: CharacterId.Lizardfolk,
+    name: 'World Piercer',
+    tag: 'Colossal Lance · Infinite Pierce',
+    cooldown: 20,
+    energyRequired: 100,
+    description:
+      'Channels maximum physical focus and throws a colossal dragon-slaying spear that tears through the fabric of the battlefield, piercing through all enemies and barriers in an infinite line.',
+    detailLine: 'Colossal dragon-slaying spear · Pierces infinite distance with immense critical shockwaves',
+    accentColor: '#059669',
+  },
+  [UltimateSkillId.SpiritOfTheGreatHunt]: {
+    id: UltimateSkillId.SpiritOfTheGreatHunt,
+    characterId: CharacterId.Lizardfolk,
+    name: 'Spirit of the Great Hunt',
+    tag: 'Avatar · Primal Beasts',
+    cooldown: 22,
+    energyRequired: 100,
+    description:
+      'Awakens the primal spirit of the ancient hunter god, gaining tremendous attack speed, tracking spears, and spectral spirit beasts that aid in combat.',
+    detailLine: '10s Primal God Avatar · +50% Attack Speed, auto-tracking spears, & spectral beasts',
+    accentColor: '#F59E0B',
+  },
 };
 
 export const ZOMBIE_PASSIVE_SKILLS: PassiveSkillDef[] = [
@@ -751,6 +945,48 @@ export const KOBOLD_PASSIVE_SKILLS: PassiveSkillDef[] = [
     description:
       'Repeatedly attacking the same enemy allows the Kobold to identify its weaknesses and improve the accuracy of subsequent attacks.',
     detailLine: 'Hits stack Hunter Marks (up to 5x: +6% Crit Chance & +7% Bonus DMG per stack)',
+  },
+];
+
+export const SLIME_PASSIVE_SKILLS: PassiveSkillDef[] = [
+  {
+    id: PassiveSkillId.ArcaneConduit,
+    characterId: CharacterId.Slime,
+    name: 'Arcane Conduit',
+    tag: 'Always Active · Arcane Amplification',
+    description:
+      "The Slime's gelatinous body naturally absorbs and circulates magical energy, allowing it to enhance the properties of its magical attacks.",
+    detailLine: '+20% Arcane & Elemental Spell Damage · Casting spells grants +15% spell velocity & +10% area size',
+  },
+  {
+    id: PassiveSkillId.UnstableMana,
+    characterId: CharacterId.Slime,
+    name: 'Unstable Mana',
+    tag: 'Always Active · Arcane Detonation',
+    description:
+      'Whenever the Slime casts consecutive magical attacks, unstable energy accumulates within its body. Once enough energy gathers, its next magical attack produces an additional arcane explosion.',
+    detailLine: 'Every 3 consecutive magic casts, release an unstable 360° Arcane Burst dealing heavy splash damage',
+  },
+];
+
+export const LIZARDFOLK_PASSIVE_SKILLS: PassiveSkillDef[] = [
+  {
+    id: PassiveSkillId.PredatorsAccuracy,
+    characterId: CharacterId.Lizardfolk,
+    name: "Predator's Accuracy",
+    tag: 'Always Active · Range Scaling',
+    description:
+      "The Lizardfolk's keen reptilian senses grant increased critical strike chance, extended vision range, and amplified damage the farther away the target is.",
+    detailLine: '+20% Critical Strike Chance · Deals up to +40% bonus damage based on distance to the enemy',
+  },
+  {
+    id: PassiveSkillId.HuntersInstinct,
+    characterId: CharacterId.Lizardfolk,
+    name: "Hunter's Instinct",
+    tag: 'Always Active · Focus Reset',
+    description:
+      "Dodging or moving grants stacks of Hunter's Focus. At max stacks, the next spear throw is guaranteed to critically strike, pierce all targets, and reset the cooldown of Piercing Javelin.",
+    detailLine: 'Moving generates Focus (max 5) · At 5 stacks, next spear is guaranteed 100% Crit, Pierces all, & resets Piercing Javelin CD',
   },
 ];
 
@@ -959,6 +1195,74 @@ export const CHARACTER_ROSTER: Record<CharacterId, CharacterProfileDef> = {
       ultimateSkill: UltimateSkillId.MasterArtificer,
     },
   },
+  [CharacterId.Slime]: {
+    id: CharacterId.Slime,
+    name: 'Gloop the Arcane Core',
+    archetypeName: 'Slime',
+    characterType: 'Magic · Ranged · Crowd Control',
+    role: 'A magical creature that manipulates its gelatinous body to channel powerful arcane energy. Specializes in long-range magical attacks, elemental spells, and battlefield control.',
+    portraitUrl: SLIME_PORTRAIT_URL,
+    accentColor: '#A855F7',
+    attackLabel: 'PULSE',
+    baseHp: 100,
+    baseSpeed: 215,
+    baseAttackDamage: 22,
+    baseAttackCooldown: 0.3,
+    baseCritChance: 0.18,
+    critMultiplier: 1.8,
+    guildSpot: { x: -180, y: -220, facingX: 1 },
+    normalSkillIds: [
+      NormalSkillId.ArcaneOrb,
+      NormalSkillId.PrismaticShards,
+      NormalSkillId.GravityWell,
+      NormalSkillId.ElementalCascade,
+      NormalSkillId.ArcanePrison,
+    ],
+    ultimateSkillIds: [
+      UltimateSkillId.CataclysmOfElements,
+      UltimateSkillId.AstralSingularity,
+      UltimateSkillId.PrimordialOverload,
+    ],
+    passiveSkills: SLIME_PASSIVE_SKILLS,
+    defaultLoadout: {
+      normalSkills: [NormalSkillId.ArcaneOrb, NormalSkillId.GravityWell],
+      ultimateSkill: UltimateSkillId.CataclysmOfElements,
+    },
+  },
+  [CharacterId.Lizardfolk]: {
+    id: CharacterId.Lizardfolk,
+    name: 'Krazz the Primal Hunter',
+    archetypeName: 'Lizardfolk',
+    characterType: 'Ranged · Physical Damage · Marksman',
+    role: 'A skilled reptilian hunter specializing in spear throwing, precision attacks, and long-range combat. Uses specially crafted spears with different properties to pierce enemies, control their movements, and attack multiple targets.',
+    portraitUrl: LIZARDFOLK_PORTRAIT_URL,
+    accentColor: '#10B981',
+    attackLabel: 'SPEAR',
+    baseHp: 110,
+    baseSpeed: 236,
+    baseAttackDamage: 24,
+    baseAttackCooldown: 0.32,
+    baseCritChance: 0.25,
+    critMultiplier: 1.9,
+    guildSpot: { x: 320, y: 120, facingX: -1 },
+    normalSkillIds: [
+      NormalSkillId.PiercingJavelin,
+      NormalSkillId.TripleSpearToss,
+      NormalSkillId.ImpalingSpear,
+      NormalSkillId.HuntingMark,
+      NormalSkillId.SpearCyclone,
+    ],
+    ultimateSkillIds: [
+      UltimateSkillId.RainOfJavelins,
+      UltimateSkillId.WorldPiercer,
+      UltimateSkillId.SpiritOfTheGreatHunt,
+    ],
+    passiveSkills: LIZARDFOLK_PASSIVE_SKILLS,
+    defaultLoadout: {
+      normalSkills: [NormalSkillId.PiercingJavelin, NormalSkillId.SpearCyclone],
+      ultimateSkill: UltimateSkillId.RainOfJavelins,
+    },
+  },
 };
 
 export const CHARACTER_LIST: CharacterProfileDef[] = [
@@ -968,6 +1272,8 @@ export const CHARACTER_LIST: CharacterProfileDef[] = [
   CHARACTER_ROSTER[CharacterId.Gnome],
   CHARACTER_ROSTER[CharacterId.Ghost],
   CHARACTER_ROSTER[CharacterId.Kobold],
+  CHARACTER_ROSTER[CharacterId.Slime],
+  CHARACTER_ROSTER[CharacterId.Lizardfolk],
 ];
 
 export function getNormalSkillsForCharacter(charId: CharacterId): NormalSkillDef[] {
@@ -1308,6 +1614,110 @@ export const CHARACTER_UPGRADE_PATHS: Record<CharacterId, CharacterUpgradePathDe
         costStep: 16,
         maxRank: 5,
         perRankLabel: '+5% Move Speed · +14% Ult Gain · -7% Cooldowns',
+      },
+    ],
+  },
+  [CharacterId.Slime]: {
+    characterId: CharacterId.Slime,
+    pathTitle: 'Path of Gelatinous Arcana',
+    pathSubtitle: 'Arcane Conduit · Elemental Cascade · Singularity Power',
+    nodes: [
+      {
+        slot: 'pathA',
+        name: 'Amorphous Vitality',
+        summary: 'Enriches gelatinous mass to absorb kinetic impacts and maintain high magical reserves.',
+        baseCost: 16,
+        costStep: 12,
+        maxRank: 6,
+        perRankLabel: '+14 Max HP · +3% Arcane Shielding',
+      },
+      {
+        slot: 'pathB',
+        name: 'Resonant Mana Core',
+        summary: 'Intensifies the central arcane crystal for devastating spell impact and faster casting.',
+        baseCost: 18,
+        costStep: 14,
+        maxRank: 6,
+        perRankLabel: '+14% Arcane & Elemental Damage · +4% Cast Haste',
+      },
+      {
+        slot: 'pathC',
+        name: 'Prismatic Focusing',
+        summary: 'Tunes crystal facets to maximize spell critical strikes and Unstable Mana detonations.',
+        baseCost: 18,
+        costStep: 15,
+        maxRank: 6,
+        perRankLabel: '+4% Spell Crit · +14% Unstable Mana Explosion Area & DMG',
+      },
+      {
+        slot: 'pathD',
+        name: 'Gravitational Mastery',
+        summary: 'Amplifies Gravity Well pull, Arcane Prison duration, and Singularity blast power.',
+        baseCost: 20,
+        costStep: 15,
+        maxRank: 6,
+        perRankLabel: '+22% Vortex Pull & Prison Field Power · +0.6s Duration',
+      },
+      {
+        slot: 'pathE',
+        name: 'Gelatinous Surge',
+        summary: 'Enhances elastic fluidity for swift gliding, rapid ultimate accumulation, and reduced cooldowns.',
+        baseCost: 22,
+        costStep: 16,
+        maxRank: 5,
+        perRankLabel: '+4.5% Move Speed · +12% Ult Gain · -7% Cooldowns',
+      },
+    ],
+  },
+  [CharacterId.Lizardfolk]: {
+    characterId: CharacterId.Lizardfolk,
+    pathTitle: 'Path of the Apex Javelin',
+    pathSubtitle: 'Spear Mastery · Precision Marksman · Ancient Hunt Avatar',
+    nodes: [
+      {
+        slot: 'pathA',
+        name: 'Reptilian Vigor',
+        summary: 'Hardens scaled hide and tones sinewy muscles for superior survival in close quarters.',
+        baseCost: 16,
+        costStep: 12,
+        maxRank: 6,
+        perRankLabel: '+15 Max HP · +3% Physical Evasion',
+      },
+      {
+        slot: 'pathB',
+        name: 'Honed Spearheads',
+        summary: 'Forges razor obsidian and hardened steel tips for devastating puncture damage.',
+        baseCost: 18,
+        costStep: 14,
+        maxRank: 6,
+        perRankLabel: '+15% Spear & Javelin Damage · +5% Throw Velocity',
+      },
+      {
+        slot: 'pathC',
+        name: 'Predatory Instincts',
+        summary: 'Sharpens hunting senses to amplify long-range critical hits and Hunter Mark damage.',
+        baseCost: 18,
+        costStep: 15,
+        maxRank: 6,
+        perRankLabel: '+4.5% Crit Chance · +15% Distance Scaling & Mark Bonus',
+      },
+      {
+        slot: 'pathD',
+        name: 'Weapon Cyclone Art',
+        summary: 'Refines multi-spear throwing techniques for Spear Cyclone, Rain of Javelins, and Impale.',
+        baseCost: 20,
+        costStep: 15,
+        maxRank: 6,
+        perRankLabel: '+20% Spear Cyclone & Rain Duration/DMG · +0.8s Impale Pin',
+      },
+      {
+        slot: 'pathE',
+        name: 'Stalker Gait',
+        summary: 'Lightens footfalls to generate Hunter’s Focus rapidly and kite enemies effortlessly.',
+        baseCost: 22,
+        costStep: 16,
+        maxRank: 5,
+        perRankLabel: '+5% Move Speed · +14% Focus Generation · -6% Cooldowns',
       },
     ],
   },
@@ -2460,6 +2870,254 @@ export const CHARACTER_STATUE_BLESSINGS: Record<CharacterId, RunBlessing[]> = {
       requiredUltimateSkill: UltimateSkillId.KoboldsDeadlyArsenal,
     },
   ],
+
+  // === SLIME STATUE BLESSINGS & AWAKENING PATHS ===
+  [CharacterId.Slime]: [
+    {
+      id: 'slime_mana_conduit_amp',
+      characterId: CharacterId.Slime,
+      name: 'Prismatic Viscosity',
+      category: 'Arcane Conduit · Spell Power',
+      description: '+25% Arcane & Elemental spell damage, and spell impacts restore 1.5% Max HP.',
+    },
+    {
+      id: 'slime_unstable_singularity',
+      characterId: CharacterId.Slime,
+      name: 'Volatile Resonance',
+      category: 'Unstable Mana · Detonation',
+      description: 'Unstable Mana detonations trigger after 2 spells instead of 3, with +30% blast radius.',
+    },
+    {
+      id: 'slime_amorphous_ward',
+      characterId: CharacterId.Slime,
+      name: 'Gelatinous Aegis',
+      category: 'Vitality · Ward',
+      description: '+24 Max HP, heals 24 HP immediately, and grants 15% physical damage reduction.',
+    },
+    {
+      id: 'slime_mana_tide',
+      characterId: CharacterId.Slime,
+      name: 'Astral Flow',
+      category: 'Cooldowns · Tempo',
+      description: '-15% Normal Skill cooldowns and +25% Ultimate charge generation from spell hits.',
+    },
+    // Normal Skill Specific
+    {
+      id: 'slime_skill_arcane_orb',
+      characterId: CharacterId.Slime,
+      name: 'Pulsing Supernova',
+      category: 'Arcane Orb',
+      description: 'Arcane Orb explodes twice in rapid succession and emits shockwaves that slow foes.',
+      requiredNormalSkill: NormalSkillId.ArcaneOrb,
+    },
+    {
+      id: 'slime_skill_prismatic_shards',
+      characterId: CharacterId.Slime,
+      name: 'Infinite Refraction',
+      category: 'Prismatic Shards',
+      description: 'Summons 3 additional crystal shards (8 total) that pierce an extra time with +20% Crit.',
+      requiredNormalSkill: NormalSkillId.PrismaticShards,
+    },
+    {
+      id: 'slime_skill_gravity_well',
+      characterId: CharacterId.Slime,
+      name: 'Crushing Event Horizon',
+      category: 'Gravity Well',
+      description: 'Gravity Well pulls with double force and continuously crushes foes for heavy arcane damage.',
+      requiredNormalSkill: NormalSkillId.GravityWell,
+    },
+    {
+      id: 'slime_skill_elemental_cascade',
+      characterId: CharacterId.Slime,
+      name: 'Tri-Element Catastrophe',
+      category: 'Elemental Cascade',
+      description: 'Elemental Cascade showers 50% more meteors and leaves burning, freezing, and shocking zones.',
+      requiredNormalSkill: NormalSkillId.ElementalCascade,
+    },
+    {
+      id: 'slime_skill_arcane_prison',
+      characterId: CharacterId.Slime,
+      name: 'Unstable Containment',
+      category: 'Arcane Prison',
+      description: 'Arcane Prison barrier shocks trapped enemies every 0.4s and detonates violently when expiring.',
+      requiredNormalSkill: NormalSkillId.ArcanePrison,
+    },
+    // Awakening Paths: Cataclysm of Elements
+    {
+      id: 'slime_ult_cataclysm_path_a',
+      characterId: CharacterId.Slime,
+      name: 'Path A – Elemental Sovereign',
+      category: 'Awakening · Elemental Spirits',
+      description: 'Summons four enormous elemental spirits (fire, ice, lightning, earth) that independently fight before combining into a massive eruption.',
+      requiredUltimateSkill: UltimateSkillId.CataclysmOfElements,
+    },
+    {
+      id: 'slime_ult_cataclysm_path_b',
+      characterId: CharacterId.Slime,
+      name: 'Path B – Elemental Convergence',
+      category: 'Awakening · Mystic Glyph',
+      description: 'Creates a massive rotating magical symbol above the arena, unleashing unpredictable dual-element hyper-bursts across the field.',
+      requiredUltimateSkill: UltimateSkillId.CataclysmOfElements,
+    },
+    // Awakening Paths: Astral Singularity
+    {
+      id: 'slime_ult_singularity_path_a',
+      characterId: CharacterId.Slime,
+      name: 'Path A – Black Star',
+      category: 'Awakening · Dark Collapse',
+      description: 'Transforms singularity into a miniature black star consuming energy and projectiles before collapsing into an immense gravitational blast.',
+      requiredUltimateSkill: UltimateSkillId.AstralSingularity,
+    },
+    {
+      id: 'slime_ult_singularity_path_b',
+      characterId: CharacterId.Slime,
+      name: 'Path B – Celestial Prison',
+      category: 'Awakening · Pocket Dimension',
+      description: 'Traps affected enemies in a pocket dimension with distorted gravity and orbiting magical crystal fragments that continuously strike.',
+      requiredUltimateSkill: UltimateSkillId.AstralSingularity,
+    },
+    // Awakening Paths: Primordial Overload
+    {
+      id: 'slime_ult_overload_path_a',
+      characterId: CharacterId.Slime,
+      name: 'Path A – Arcane Deity',
+      category: 'Awakening · Multi-Core Deity',
+      description: 'Transforms into a multi-core divine entity where each orbiting core independently casts distinct elemental and arcane spells.',
+      requiredUltimateSkill: UltimateSkillId.PrimordialOverload,
+    },
+    {
+      id: 'slime_ult_overload_path_b',
+      characterId: CharacterId.Slime,
+      name: 'Path B – Living Spellbook',
+      category: 'Awakening · Ancient Grimoire',
+      description: 'Manifests a colossal floating ancient grimoire with turning pages, unleashing magical storms, giant energy hands, and crystal formations.',
+      requiredUltimateSkill: UltimateSkillId.PrimordialOverload,
+    },
+  ],
+
+  // === LIZARDFOLK STATUE BLESSINGS & AWAKENING PATHS ===
+  [CharacterId.Lizardfolk]: [
+    {
+      id: 'lizard_predator_instinct_amp',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Cold-Blooded Ruthlessness',
+      category: "Predator's Accuracy",
+      description: '+25% Spear Damage; striking targets from long range deals 2.2x Critical damage.',
+    },
+    {
+      id: 'lizard_hunters_focus_surge',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Apex Reflexes',
+      category: "Hunter's Instinct",
+      description: "Hunter's Focus generates twice as quickly while moving; dodging grants maximum Focus immediately.",
+    },
+    {
+      id: 'lizard_scaled_vitality',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Obsidian Scales',
+      category: 'Vitality · Tough Hide',
+      description: '+26 Max HP, heals 26 HP immediately, and grants 15% armor mitigation against melee hits.',
+    },
+    {
+      id: 'lizard_spear_cyclone_tempo',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Spear-Dancer Tempo',
+      category: 'Spear Haste · Reload',
+      description: '+20% Spear throw velocity and -15% cooldowns on all spear-based techniques.',
+    },
+    // Normal Skill Specific
+    {
+      id: 'lizard_skill_piercing_javelin',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Returning Harpoon',
+      category: 'Piercing Javelin',
+      description: 'Piercing Javelin returns with 3x velocity, pulling struck enemies backward along its path.',
+      requiredNormalSkill: NormalSkillId.PiercingJavelin,
+    },
+    {
+      id: 'lizard_skill_triple_spear',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Five-Point Barbed Fan',
+      category: 'Triple Spear Toss',
+      description: 'Throws 5 barbed spears instead of 3, piercing up to 2 enemies per spear with +20% Crit.',
+      requiredNormalSkill: NormalSkillId.TripleSpearToss,
+    },
+    {
+      id: 'lizard_skill_impaling_spear',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Grounded Execution',
+      category: 'Impaling Spear',
+      description: 'Impaled enemies suffer 40% increased damage from all attacks and erupt in a bone splinter burst.',
+      requiredNormalSkill: NormalSkillId.ImpalingSpear,
+    },
+    {
+      id: 'lizard_skill_hunting_mark',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Bloodhound Brand',
+      category: 'Hunting Mark',
+      description: 'Marked enemies are revealed and slowed 30%; all spear attacks against them ignore 100% armor.',
+      requiredNormalSkill: NormalSkillId.HuntingMark,
+    },
+    {
+      id: 'lizard_skill_spear_cyclone',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Vortex of Blades',
+      category: 'Spear Cyclone',
+      description: 'Spear Cyclone adds 2 additional orbiting spears (6 total) and draws nearby enemies into its orbit.',
+      requiredNormalSkill: NormalSkillId.SpearCyclone,
+    },
+    // Awakening Paths: Rain of Javelins
+    {
+      id: 'lizard_ult_rain_path_a',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Path A – Thousand Spears of the Ancients',
+      category: 'Awakening · Ancestral Army',
+      description: 'Blankets the entire arena in ancestral spears; each spear impact summons a spectral tribal warrior that strikes nearby foes.',
+      requiredUltimateSkill: UltimateSkillId.RainOfJavelins,
+    },
+    {
+      id: 'lizard_ult_rain_path_b',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Path B – Spearfall Cataclysm',
+      category: 'Awakening · Titan Spear',
+      description: 'The falling spears converge into a titanic colossal spear that impacts like a meteor, shattering the earth with seismic shockwaves.',
+      requiredUltimateSkill: UltimateSkillId.RainOfJavelins,
+    },
+    // Awakening Paths: World Piercer
+    {
+      id: 'lizard_ult_world_piercer_path_a',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Path A – Dragonfang',
+      category: 'Awakening · Spectral Dragon',
+      description: 'Imbues the colossal spear with ancient dragon spirit energy; a giant flaming dragon maw engulfs the spear, searing everything in its wake.',
+      requiredUltimateSkill: UltimateSkillId.WorldPiercer,
+    },
+    {
+      id: 'lizard_ult_world_piercer_path_b',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Path B – Absolute Penetration',
+      category: 'Awakening · Armor Shatter',
+      description: 'Tears the dimensional fabric, shattering enemy armor to 0%, obliterating shields, and triggering sonic shockwaves at each penetration.',
+      requiredUltimateSkill: UltimateSkillId.WorldPiercer,
+    },
+    // Awakening Paths: Spirit of the Great Hunt
+    {
+      id: 'lizard_ult_hunt_path_a',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Path A – The First Hunter',
+      category: 'Awakening · Triple Split & Execute',
+      description: 'Channels the primordial founder of the hunt: every spear splits into 3 homing spears, and basic attacks instantly execute low-HP targets.',
+      requiredUltimateSkill: UltimateSkillId.SpiritOfTheGreatHunt,
+    },
+    {
+      id: 'lizard_ult_hunt_path_b',
+      characterId: CharacterId.Lizardfolk,
+      name: 'Path B – Wild Hunt Procession',
+      category: 'Awakening · Ghostly Pack',
+      description: 'Calls forth the spectral hunting procession—phantom raptors and ghost wolves rush the arena, mauling foes while spears rain automatically.',
+      requiredUltimateSkill: UltimateSkillId.SpiritOfTheGreatHunt,
+    },
+  ],
 };
 
 /**
@@ -2719,6 +3377,8 @@ export const DEFAULT_SAVE_DATA: GuildSaveData = {
     [CharacterId.Gnome]: { ...EMPTY_UPGRADE_RANKS },
     [CharacterId.Ghost]: { ...EMPTY_UPGRADE_RANKS },
     [CharacterId.Kobold]: { ...EMPTY_UPGRADE_RANKS },
+    [CharacterId.Slime]: { ...EMPTY_UPGRADE_RANKS },
+    [CharacterId.Lizardfolk]: { ...EMPTY_UPGRADE_RANKS },
   },
   loadouts: {
     [CharacterId.Zombie]: structuredClone(CHARACTER_ROSTER[CharacterId.Zombie].defaultLoadout),
@@ -2727,8 +3387,11 @@ export const DEFAULT_SAVE_DATA: GuildSaveData = {
     [CharacterId.Gnome]: structuredClone(CHARACTER_ROSTER[CharacterId.Gnome].defaultLoadout),
     [CharacterId.Ghost]: structuredClone(CHARACTER_ROSTER[CharacterId.Ghost].defaultLoadout),
     [CharacterId.Kobold]: structuredClone(CHARACTER_ROSTER[CharacterId.Kobold].defaultLoadout),
+    [CharacterId.Slime]: structuredClone(CHARACTER_ROSTER[CharacterId.Slime].defaultLoadout),
+    [CharacterId.Lizardfolk]: structuredClone(CHARACTER_ROSTER[CharacterId.Lizardfolk].defaultLoadout),
   },
   muted: false,
+  disableScreenShake: false,
   joystickScale: 1.0,
   skillButtonScale: 1.0,
 };
@@ -2802,6 +3465,10 @@ export function loadGuildSave(): GuildSaveData {
         ? CharacterId.Ghost
         : parsed.selectedCharacter === CharacterId.Kobold
         ? CharacterId.Kobold
+        : parsed.selectedCharacter === CharacterId.Slime
+        ? CharacterId.Slime
+        : parsed.selectedCharacter === CharacterId.Lizardfolk
+        ? CharacterId.Lizardfolk
         : CharacterId.Zombie;
 
     const zombieLoadout = sanitizeCharacterLoadout(
@@ -2827,6 +3494,14 @@ export function loadGuildSave(): GuildSaveData {
     const koboldLoadout = sanitizeCharacterLoadout(
       CharacterId.Kobold,
       parsed.loadouts?.[CharacterId.Kobold]
+    );
+    const slimeLoadout = sanitizeCharacterLoadout(
+      CharacterId.Slime,
+      parsed.loadouts?.[CharacterId.Slime]
+    );
+    const lizardfolkLoadout = sanitizeCharacterLoadout(
+      CharacterId.Lizardfolk,
+      parsed.loadouts?.[CharacterId.Lizardfolk]
     );
 
     const legacyMapped: CharacterUpgradeRanks | undefined = parsed.upgrades
@@ -2863,6 +3538,14 @@ export function loadGuildSave(): GuildSaveData {
       [CharacterId.Kobold]: sanitizeUpgradeRanks(
         parsed.characterUpgrades?.[CharacterId.Kobold] ??
           (selectedCharacter === CharacterId.Kobold ? legacyMapped : undefined)
+      ),
+      [CharacterId.Slime]: sanitizeUpgradeRanks(
+        parsed.characterUpgrades?.[CharacterId.Slime] ??
+          (selectedCharacter === CharacterId.Slime ? legacyMapped : undefined)
+      ),
+      [CharacterId.Lizardfolk]: sanitizeUpgradeRanks(
+        parsed.characterUpgrades?.[CharacterId.Lizardfolk] ??
+          (selectedCharacter === CharacterId.Lizardfolk ? legacyMapped : undefined)
       ),
     };
 
@@ -2901,8 +3584,11 @@ export function loadGuildSave(): GuildSaveData {
         [CharacterId.Gnome]: gnomeLoadout,
         [CharacterId.Ghost]: ghostLoadout,
         [CharacterId.Kobold]: koboldLoadout,
+        [CharacterId.Slime]: slimeLoadout,
+        [CharacterId.Lizardfolk]: lizardfolkLoadout,
       },
       muted: Boolean(parsed.muted),
+      disableScreenShake: Boolean(parsed.disableScreenShake),
       joystickScale: clampUiScale(parsed.joystickScale),
       skillButtonScale: clampUiScale(parsed.skillButtonScale),
     };

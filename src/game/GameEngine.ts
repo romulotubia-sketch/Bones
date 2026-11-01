@@ -12984,8 +12984,9 @@ export class GameEngine {
   }
 
   private render(): void {
-    const shakeX = this.shakeMag > 0 ? (Math.random() - 0.5) * 2 * this.shakeMag : 0;
-    const shakeY = this.shakeMag > 0 ? (Math.random() - 0.5) * 2 * this.shakeMag : 0;
+    const shakeActive = !this.saveData.disableScreenShake;
+    const shakeX = shakeActive && this.shakeMag > 0 ? (Math.random() - 0.5) * 2 * this.shakeMag : 0;
+    const shakeY = shakeActive && this.shakeMag > 0 ? (Math.random() - 0.5) * 2 * this.shakeMag : 0;
 
     renderGameWorld({
       ctx: this.ctx,

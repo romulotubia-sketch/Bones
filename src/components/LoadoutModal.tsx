@@ -32,7 +32,9 @@ import { GhostAttackPreview } from './GhostAttackPreview';
 import { GnomeAttackPreview } from './GnomeAttackPreview';
 import { GoblinAttackPreview } from './GoblinAttackPreview';
 import { KoboldAttackPreview } from './KoboldAttackPreview';
+import { LizardfolkAttackPreview } from './LizardfolkAttackPreview';
 import { SkeletonAttackPreview } from './SkeletonAttackPreview';
+import { SlimeAttackPreview } from './SlimeAttackPreview';
 import { ZombieAttackPreview } from './ZombieAttackPreview';
 
 interface LoadoutModalProps {
@@ -64,6 +66,8 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
   const isGnome = activeCharId === CharacterId.Gnome;
   const isGhost = activeCharId === CharacterId.Ghost;
   const isKobold = activeCharId === CharacterId.Kobold;
+  const isSlime = activeCharId === CharacterId.Slime;
+  const isLizardfolk = activeCharId === CharacterId.Lizardfolk;
   const accentTextClass = isSkeleton
     ? 'text-[#7DD3FC]'
     : isGoblin
@@ -74,6 +78,10 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
     ? 'text-[#E9D5FF]'
     : isKobold
     ? 'text-[#FDA4AF]'
+    : isSlime
+    ? 'text-[#E9D5FF]'
+    : isLizardfolk
+    ? 'text-[#6EE7B7]'
     : 'text-[#86EFAC]';
   const accentBrightTextClass = isSkeleton
     ? 'text-[#38BDF8]'
@@ -85,6 +93,10 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
     ? 'text-[#C084FC]'
     : isKobold
     ? 'text-[#FB7185]'
+    : isSlime
+    ? 'text-[#A855F7]'
+    : isLizardfolk
+    ? 'text-[#10B981]'
     : 'text-[#4ADE80]';
   const primaryBtnClass = isSkeleton
     ? 'bg-[#38BDF8] text-[#0B1724]'
@@ -96,6 +108,10 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
     ? 'bg-[#C084FC] text-[#180B26]'
     : isKobold
     ? 'bg-[#FB7185] text-[#1F0810]'
+    : isSlime
+    ? 'bg-[#A855F7] text-[#19092B]'
+    : isLizardfolk
+    ? 'bg-[#10B981] text-[#041D13]'
     : 'bg-[#4ADE80] text-[#0E1912]';
   const equippedCardClass = isSkeleton
     ? 'bg-[#192536] border-[#38BDF8]'
@@ -107,6 +123,10 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
     ? 'bg-[#251A36] border-[#C084FC]'
     : isKobold
     ? 'bg-[#2B1620] border-[#FB7185]'
+    : isSlime
+    ? 'bg-[#231533] border-[#A855F7]'
+    : isLizardfolk
+    ? 'bg-[#122820] border-[#10B981]'
     : 'bg-[#1D2824] border-[#4ADE80]';
 
   const characterLoadout = saveData.loadouts[activeCharId] ?? profile.defaultLoadout;
@@ -599,6 +619,62 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
                       <div>Ranged Reach: 400px Crossbow Bolts</div>
                       <div>3rd Bolt: +24% DMG &amp; +25% Crit</div>
                       <div>All 8 Skills: 60fps Bolt &amp; Trap FX</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Slime Basic Attack & Arcane Magic 60fps Animation Preview */}
+            {isSlime && (
+              <div className="pt-3 border-t border-[#282336] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold text-[#E9D5FF] flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#A855F7]" />
+                    <span>Basic Attack · Arcane Pulse &amp; Detonation (60fps FX)</span>
+                  </div>
+                  <span className="text-[10px] text-[#C084FC] font-mono-num">3-Hit Arcane</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-[#20112F] border border-[#532675] space-y-2">
+                  <p className="text-[11px] text-[#E5D7F2] leading-snug">
+                    Pulses concentrated spheres of magical energy with undulating gelatinous body recoil; every 3rd cast triggers an Unstable Mana Arcane Detonation.
+                  </p>
+                  <div className="flex items-center gap-2.5 pt-0.5">
+                    <div className="relative w-24 h-16 bg-[#13081E] rounded-lg border border-[#6E2E9E] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                      <SlimeAttackPreview />
+                    </div>
+                    <div className="text-[10px] text-[#E9D5FF] space-y-0.5 font-mono-num leading-tight">
+                      <div>Ranged Reach: 360px Arcane Pulses</div>
+                      <div>3rd Pulse: Unstable Arcane Detonation</div>
+                      <div>All 8 Skills: 60fps Elemental FX</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Lizardfolk Basic Attack & Spear Thrusts 60fps Animation Preview */}
+            {isLizardfolk && (
+              <div className="pt-3 border-t border-[#282336] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold text-[#6EE7B7] flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#10B981]" />
+                    <span>Basic Attack · Hunter's Spear Thrust &amp; Javelin (60fps FX)</span>
+                  </div>
+                  <span className="text-[10px] text-[#34D399] font-mono-num">3-Hit Thrust &amp; Throw</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-[#10241A] border border-[#1F543C] space-y-2">
+                  <p className="text-[11px] text-[#D1EBE0] leading-snug">
+                    Swift two-hand reptilian spear thrusts with tail counter-balance, culminating in a 3rd-hit high-velocity Piercing Javelin throw that punctures enemy lines.
+                  </p>
+                  <div className="flex items-center gap-2.5 pt-0.5">
+                    <div className="relative w-24 h-16 bg-[#081710] rounded-lg border border-[#276F4E] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                      <LizardfolkAttackPreview />
+                    </div>
+                    <div className="text-[10px] text-[#6EE7B7] space-y-0.5 font-mono-num leading-tight">
+                      <div>Thrust Reach: 75 · Javelin: 380px</div>
+                      <div>3rd Throw: +25% DMG &amp; 100% Pierce</div>
+                      <div>All 8 Skills: 60fps Spear Art FX</div>
                     </div>
                   </div>
                 </div>

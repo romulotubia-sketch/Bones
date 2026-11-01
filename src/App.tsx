@@ -303,7 +303,12 @@ export default function App() {
   }, []);
 
   const handleUpdateSettings = useCallback(
-    (patch: { muted?: boolean; joystickScale?: number; skillButtonScale?: number }) => {
+    (patch: {
+      muted?: boolean;
+      joystickScale?: number;
+      skillButtonScale?: number;
+      disableScreenShake?: boolean;
+    }) => {
       setSaveData((prev) => {
         const nextMuted = patch.muted !== undefined ? patch.muted : prev.muted;
         const clamp = (v: number) => Math.max(0.7, Math.min(1.35, Math.round(v * 100) / 100));
@@ -313,6 +318,10 @@ export default function App() {
           patch.skillButtonScale !== undefined
             ? clamp(patch.skillButtonScale)
             : prev.skillButtonScale;
+        const nextShake =
+          patch.disableScreenShake !== undefined
+            ? patch.disableScreenShake
+            : Boolean(prev.disableScreenShake);
 
         if (nextMuted !== prev.muted) {
           soundEngine.setMuted(nextMuted);
@@ -324,6 +333,7 @@ export default function App() {
           muted: nextMuted,
           joystickScale: nextJoy,
           skillButtonScale: nextSkill,
+          disableScreenShake: nextShake,
         };
         persistGuildSave(updated);
         engineRef.current?.updateSaveData(updated);
@@ -606,6 +616,7 @@ export default function App() {
           muted={saveData.muted}
           joystickScale={saveData.joystickScale}
           skillButtonScale={saveData.skillButtonScale}
+          disableScreenShake={Boolean(saveData.disableScreenShake)}
           onUpdateSettings={handleUpdateSettings}
           onClose={() => setSettingsModalOpen(false)}
         />

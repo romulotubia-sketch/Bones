@@ -51,6 +51,8 @@ export enum CharacterId {
   Gnome = 'GNOME',
   Ghost = 'GHOST',
   Kobold = 'KOBOLD',
+  Slime = 'SLIME',
+  Lizardfolk = 'LIZARDFOLK',
 }
 
 export enum NormalSkillId {
@@ -95,6 +97,20 @@ export enum NormalSkillId {
   ExplosiveBolt = 'EXPLOSIVE_BOLT',
   SnareTrap = 'SNARE_TRAP',
   MultiShot = 'MULTI_SHOT',
+
+  // Slime Normal Skills (5)
+  ArcaneOrb = 'ARCANE_ORB',
+  PrismaticShards = 'PRISMATIC_SHARDS',
+  GravityWell = 'GRAVITY_WELL',
+  ElementalCascade = 'ELEMENTAL_CASCADE',
+  ArcanePrison = 'ARCANE_PRISON',
+
+  // Lizardfolk Normal Skills (5)
+  PiercingJavelin = 'PIERCING_JAVELIN',
+  TripleSpearToss = 'TRIPLE_SPEAR_TOSS',
+  ImpalingSpear = 'IMPALING_SPEAR',
+  HuntingMark = 'HUNTING_MARK',
+  SpearCyclone = 'SPEAR_CYCLONE',
 }
 
 export enum UltimateSkillId {
@@ -127,6 +143,16 @@ export enum UltimateSkillId {
   DragonsBarrage = 'DRAGONS_BARRAGE',
   MasterArtificer = 'MASTER_ARTIFICER',
   KoboldsDeadlyArsenal = 'KOBOLDS_DEADLY_ARSENAL',
+
+  // Slime Ultimate Skills (3)
+  CataclysmOfElements = 'CATACLYSM_OF_ELEMENTS',
+  AstralSingularity = 'ASTRAL_SINGULARITY',
+  PrimordialOverload = 'PRIMORDIAL_OVERLOAD',
+
+  // Lizardfolk Ultimate Skills (3)
+  RainOfJavelins = 'RAIN_OF_JAVELINS',
+  WorldPiercer = 'WORLD_PIERCER',
+  SpiritOfTheGreatHunt = 'SPIRIT_OF_THE_GREAT_HUNT',
 }
 
 export enum PassiveSkillId {
@@ -153,6 +179,14 @@ export enum PassiveSkillId {
   // Kobold Passives (2)
   MechanicalExpertise = 'MECHANICAL_EXPERTISE',
   HuntersPrecision = 'HUNTERS_PRECISION',
+
+  // Slime Passives (2)
+  ArcaneConduit = 'ARCANE_CONDUIT',
+  UnstableMana = 'UNSTABLE_MANA',
+
+  // Lizardfolk Passives (2)
+  PredatorsAccuracy = 'PREDATORS_ACCURACY',
+  HuntersInstinct = 'HUNTERS_INSTINCT',
 }
 
 export enum EnemyKind {
@@ -223,6 +257,7 @@ export interface GuildSaveData {
   muted: boolean;
   joystickScale: number;
   skillButtonScale: number;
+  disableScreenShake?: boolean;
 }
 
 export interface RunBlessing {
@@ -340,7 +375,17 @@ export interface ProjectileEntity {
     | 'PLAYER_PIERCING_BOLT'
     | 'PLAYER_EXPLOSIVE_BOLT'
     | 'PLAYER_ELEMENTAL_BOLT'
-    | 'PLAYER_TURRET_BOLT';
+    | 'PLAYER_TURRET_BOLT'
+    | 'PLAYER_ARCANE_ORB'
+    | 'PLAYER_PRISMATIC_SHARD'
+    | 'PLAYER_ELEMENTAL_CASCADE_METEOR'
+    | 'PLAYER_JAVELIN'
+    | 'PLAYER_TRIPLE_SPEAR'
+    | 'PLAYER_IMPALING_SPEAR'
+    | 'PLAYER_WORLD_PIERCER'
+    | 'PLAYER_CYCLONE_SPEAR'
+    | 'PLAYER_SPECTRAL_HUNT_SPEAR'
+    | 'PLAYER_DRAGONFANG_HEAD';
   angle: number;
   pierce?: boolean;
   hitEnemyIds?: Set<number>;
@@ -411,7 +456,105 @@ export interface AfterimageEntity {
   color: string;
   life: number;
   maxLife: number;
-  archetype?: 'GOBLIN' | 'SKELETON' | 'ZOMBIE' | 'GNOME' | 'GHOST' | 'KOBOLD';
+  archetype?: 'GOBLIN' | 'SKELETON' | 'ZOMBIE' | 'GNOME' | 'GHOST' | 'KOBOLD' | 'SLIME' | 'LIZARDFOLK';
+}
+
+export interface GravityWellZone {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  tickTimer: number;
+  pullDamage: number;
+}
+
+export interface ArcanePrisonZone {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  tickTimer: number;
+  damagePerTick: number;
+}
+
+export interface AstralSingularityZone {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  tickTimer: number;
+  pullDamage: number;
+  explosionDamage: number;
+  detonated: boolean;
+  pathVariant?: 'STANDARD' | 'BLACK_STAR' | 'CELESTIAL_PRISON';
+}
+
+export interface ElementalCascadeZone {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  tickTimer: number;
+  damagePerDrop: number;
+  dropsRemaining: number;
+}
+
+export interface SpearCycloneZone {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  tickTimer: number;
+  damagePerTick: number;
+  returnToPlayer?: boolean;
+}
+
+export interface RainOfJavelinsZone {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  tickTimer: number;
+  damagePerVolley: number;
+  pathVariant?: 'STANDARD' | 'THOUSAND_SPEARS' | 'SPEARFALL_CATACLYSM';
+}
+
+export interface AncientHunterSpirit {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  targetEnemyId: number | null;
+  life: number;
+  maxLife: number;
+  attackCooldown: number;
+  facingX: number;
+  variant: 'FIRST_HUNTER' | 'WILD_HUNT';
+}
+
+export interface ElementalSpiritEntity {
+  id: number;
+  element: 'FIRE' | 'ICE' | 'LIGHTNING' | 'EARTH';
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  attackCooldown: number;
 }
 
 export interface DeathsPassageRift {
@@ -589,7 +732,28 @@ export interface SlashEffect {
     | 'KOBOLD_ARSENAL_BURST'
     | 'KOBOLD_ARSENAL_RING'
     | 'KOBOLD_ELEMENTAL_NOVA'
-    | 'KOBOLD_ELEMENTAL_BURST';
+    | 'KOBOLD_ELEMENTAL_BURST'
+    | 'SLIME_ARCANE_WHIP'
+    | 'SLIME_ORB_EXPLOSION'
+    | 'SLIME_PRISMATIC_BURST'
+    | 'SLIME_GRAVITY_PULSE'
+    | 'SLIME_CASCADE_IMPACT'
+    | 'SLIME_PRISON_RING'
+    | 'SLIME_CATACLYSM_STORM'
+    | 'SLIME_SINGULARITY_BURST'
+    | 'SLIME_OVERLOAD_NOVA'
+    | 'SLIME_MANA_EXPLOSION'
+    | 'LIZARDFOLK_SPEAR_THRUST'
+    | 'LIZARDFOLK_SPEAR_CLEAVE'
+    | 'LIZARDFOLK_JAVELIN_WAKE'
+    | 'LIZARDFOLK_IMPALE_BURST'
+    | 'LIZARDFOLK_HUNTING_MARK_FX'
+    | 'LIZARDFOLK_CYCLONE_SPIN'
+    | 'LIZARDFOLK_RAIN_VOLLEY'
+    | 'LIZARDFOLK_WORLD_PIERCER_SHOCKWAVE'
+    | 'LIZARDFOLK_DRAGONFANG_BREATH'
+    | 'LIZARDFOLK_FRACTURE_BEAM'
+    | 'LIZARDFOLK_GREAT_HUNT_ROAR';
   scale?: number;
   isCrit?: boolean;
   fromX?: number;
@@ -753,6 +917,11 @@ export interface HudSnapshot {
   rapidReloadActive: boolean;
   arsenalActive: boolean;
   activeTurrets: number;
+  slimeUnstableManaStacks?: number;
+  slimePrimordialTimer?: number;
+  lizardCycloneTimer?: number;
+  lizardHunterMarkActive?: boolean;
+  lizardDragonfangTimer?: number;
   ultCharge: number; // 0 to 100
   ultCooldown: number;
   ultMaxCooldown: number;

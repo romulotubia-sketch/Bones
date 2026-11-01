@@ -1,15 +1,17 @@
 import React from 'react';
-import { Download, RotateCcw, Settings, Volume2, VolumeX, X } from 'lucide-react';
+import { Activity, Download, RotateCcw, Settings, Volume2, VolumeX, X } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 
 export interface SettingsModalProps {
   muted: boolean;
   joystickScale: number;
   skillButtonScale: number;
+  disableScreenShake?: boolean;
   onUpdateSettings: (patch: {
     muted?: boolean;
     joystickScale?: number;
     skillButtonScale?: number;
+    disableScreenShake?: boolean;
   }) => void;
   onClose: () => void;
 }
@@ -28,11 +30,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   muted,
   joystickScale,
   skillButtonScale,
+  disableScreenShake = false,
   onUpdateSettings,
   onClose,
 }) => {
   const handleToggleSound = (nextMuted: boolean) => {
     onUpdateSettings({ muted: nextMuted });
+  };
+
+  const handleToggleScreenShake = (disabled: boolean) => {
+    soundEngine.playUiClick(500);
+    onUpdateSettings({ disableScreenShake: disabled });
   };
 
   const handleResetDefaults = () => {
@@ -41,6 +49,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       muted: false,
       joystickScale: 1.0,
       skillButtonScale: 1.0,
+      disableScreenShake: false,
     });
   };
 
@@ -109,6 +118,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               >
                 <VolumeX className="w-3.5 h-3.5" />
                 <span>Muted</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Screen Shake Setting Toggle */}
+          <div className="p-3 rounded-xl bg-[#1D1928] border border-[#2E273F] flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs sm:text-sm font-bold text-[#F5F0E6] flex items-center gap-1.5">
+                <Activity className="w-3.5 h-3.5 text-[#38BDF8]" />
+                <span>Screen Shake</span>
+              </div>
+              <p className="text-[11px] text-[#A39BB5] leading-snug">
+                Camera rumble and impact feedback on heavy strikes, critical hits, and boss slams.
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#120F19] border border-[#2B243A] shrink-0">
+              <button
+                type="button"
+                onClick={() => handleToggleScreenShake(false)}
+                className={`min-h-[38px] px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                  !disableScreenShake
+                    ? 'bg-[#38BDF8] text-[#0A1A24]'
+                    : 'text-[#9E96B0] hover:text-[#F5F0E6]'
+                }`}
+              >
+                <span>Enabled</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleScreenShake(true)}
+                className={`min-h-[38px] px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                  disableScreenShake
+                    ? 'bg-[#FB7185] text-[#1F0810]'
+                    : 'text-[#9E96B0] hover:text-[#F5F0E6]'
+                }`}
+              >
+                <span>Disabled</span>
               </button>
             </div>
           </div>
