@@ -310,6 +310,8 @@ export interface EnemyEntity {
   vulnerableTimer: number;
   hunterMarkStacks: number;
   hunterMarkTimer: number;
+  isHuntingMarked?: boolean;
+  huntingMarkTimer?: number;
 
   aiState: 'IDLE' | 'CHASE' | 'WINDUP' | 'ATTACK' | 'COOLDOWN' | 'SUMMONING' | 'WHIRLWIND';
   stateTimer: number;
@@ -757,6 +759,8 @@ export interface SlashEffect {
     | 'LIZARDFOLK_JAVELIN_WAKE'
     | 'LIZARDFOLK_IMPALE_BURST'
     | 'LIZARDFOLK_HUNTING_MARK_FX'
+    | 'LIZARDFOLK_MARK_TRANSFER'
+    | 'LIZARDFOLK_THROW_SNAP'
     | 'LIZARDFOLK_CYCLONE_SPIN'
     | 'LIZARDFOLK_RAIN_VOLLEY'
     | 'LIZARDFOLK_WORLD_PIERCER_SHOCKWAVE'

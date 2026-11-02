@@ -282,6 +282,11 @@ export class GameEngine {
     lizardMoveDistAccum: 0,
     lizardHuntSpiritTimer: 0,
     lizardDragonfangTimer: 0,
+    lizardThrowAnimTimer: 0,
+    lizardThrowAnimDuration: 0.28,
+    lizardThrowStep: 0,
+    lizardHunterMarkTargetId: null as number | null,
+    lizardHunterMarkTimer: 0,
 
     // Strategic Blessing transient timers & counters
     ultSurgeTimer: 0,
@@ -4260,8 +4265,17 @@ export class GameEngine {
     if (p.lizardDragonfangTimer > 0) {
       p.lizardDragonfangTimer = Math.max(0, p.lizardDragonfangTimer - dt);
     }
+    if (p.lizardThrowAnimTimer > 0) {
+      p.lizardThrowAnimTimer = Math.max(0, p.lizardThrowAnimTimer - dt);
+    }
+    if (p.lizardHunterMarkTimer > 0) {
+      p.lizardHunterMarkTimer = Math.max(0, p.lizardHunterMarkTimer - dt);
+      if (p.lizardHunterMarkTimer <= 0) {
+        p.lizardHunterMarkTargetId = null;
+      }
+    }
 
-    // Soul Knight Mobile Aiming: Manual skill drag / combo hold overrides auto-lock; otherwise auto-lock nearest enemy or joystick vector
+    // Soul Knight Mobile Aiming: Manual skill drag / combo hold overrides auto-lock; otherwise auto-lock marked target / nearest enemy or joystick vector
     if (p.manualAimHoldTimer > 0) {
       p.manualAimHoldTimer = Math.max(0, p.manualAimHoldTimer - dt);
     }
@@ -4270,9 +4284,13 @@ export class GameEngine {
       p.characterId === CharacterId.Kobold ||
       p.characterId === CharacterId.Slime ||
       p.characterId === CharacterId.Lizardfolk
-        ? 450
+        ? 520
         : 305;
-    const nearestEnemy = this.findNearestEnemy(p.x, p.y, autoLockRange);
+    const markedEnemy =
+      p.characterId === CharacterId.Lizardfolk
+        ? this.world.enemies.find((e) => e && e.hp > 0 && e.isHuntingMarked)
+        : null;
+    const nearestEnemy = markedEnemy || this.findNearestEnemy(p.x, p.y, autoLockRange);
     if (this.activeSkillAim && !this.activeSkillAim.isCancelling) {
       p.aimAngle = this.activeSkillAim.angle;
       p.facingX = Math.cos(p.aimAngle) >= 0 ? 1 : -1;
@@ -5077,6 +5095,15 @@ export class GameEngine {
       p.squashX = isFinisher ? 1.28 : isTwin ? 1.22 : 1.18;
       p.squashY = isFinisher ? 0.78 : isTwin ? 0.82 : 0.84;
 
+      // Ultra-smooth 60fps athletic throwing javelin animation triggers
+      p.lizardThrowAnimTimer = 0.28;
+      p.lizardThrowAnimDuration = 0.28;
+      p.lizardThrowStep = lizardStep;
+
+      // Check if Hunting Mark is active on any enemy for visual empowering & homing
+      const markedEnemy = this.world.enemies.find((e) => e && e.hp > 0 && e.isHuntingMarked);
+      const isMarkEmpowered = Boolean(markedEnemy);
+
       // Hunter's Instinct: 5 stacks guarantees 100% critical strike and resets Piercing Javelin cooldown!
       let guaranteedCrit = false;
       if (p.lizardFocusStacks >= 5) {
@@ -5095,20 +5122,36 @@ export class GameEngine {
         this.networkManager?.sendCastSkill('BASIC', p.x, p.y, p.aimAngle, 'BASIC');
       }
 
-      const muzzleDist = isFinisher ? 24 : isTwin ? 22 : 20;
+      const muzzleDist = isFinisher ? 26 : isTwin ? 22 : 20;
       const muzzleX = p.x + Math.cos(p.aimAngle) * muzzleDist;
       const muzzleY = p.y - 2 + Math.sin(p.aimAngle) * muzzleDist;
 
+      // Throw release snap wave
+      this.slashes.push({
+        x: muzzleX,
+        y: muzzleY,
+        angle: p.aimAngle,
+        radius: isFinisher ? 48 : 34,
+        arcSpread: 0.85,
+        color: isMarkEmpowered ? '#F59E0B' : guaranteedCrit ? '#FDE047' : '#10B981',
+        life: 0.16,
+        maxLife: 0.16,
+        flip: p.comboFlip,
+        kind: 'LIZARDFOLK_THROW_SNAP',
+        isCrit: guaranteedCrit || isFinisher,
+        scale: isFinisher ? 1.3 : 1.0,
+      });
+
       if (isFinisher) {
         // Step 2: Great Impaling Harpoon / Power Javelin (high-velocity piercing throw that punches through lines)
-        this.shakeMag = Math.max(this.shakeMag, 3.4);
+        this.shakeMag = Math.max(this.shakeMag, 3.8);
         this.slashes.push({
           x: muzzleX,
           y: muzzleY,
           angle: p.aimAngle,
-          radius: 56,
+          radius: 58,
           arcSpread: 0.85,
-          color: guaranteedCrit ? '#FDE047' : '#34D399',
+          color: isMarkEmpowered ? '#F59E0B' : guaranteedCrit ? '#FDE047' : '#34D399',
           life: 0.22,
           maxLife: 0.22,
           flip: false,
@@ -5128,7 +5171,7 @@ export class GameEngine {
             vx: Math.cos(sa) * spd,
             vy: Math.sin(sa) * spd,
             size: 3.0,
-            color: i % 2 === 0 ? '#10B981' : '#FDE047',
+            color: isMarkEmpowered ? '#F59E0B' : i % 2 === 0 ? '#10B981' : '#FDE047',
             life: 0.22,
             maxLife: 0.22,
             gravity: 0,
@@ -5142,21 +5185,24 @@ export class GameEngine {
         }
 
         const javelinDmg =
-          profile.baseAttackDamage * 1.6 * this.getPhysicalDamageMultiplier();
+          profile.baseAttackDamage * 1.6 * (isMarkEmpowered ? 1.3 : 1.0) * this.getPhysicalDamageMultiplier();
         this.projectiles.push({
           id: allocEntityId(),
           fromPlayer: true,
           x: muzzleX,
           y: muzzleY,
-          vx: Math.cos(p.aimAngle) * 890,
-          vy: Math.sin(p.aimAngle) * 890,
+          vx: Math.cos(p.aimAngle) * 910,
+          vy: Math.sin(p.aimAngle) * 910,
           radius: 10,
           damage: javelinDmg,
-          life: 0.72,
-          color: guaranteedCrit ? '#FDE047' : '#10B981',
+          life: 0.75,
+          color: isMarkEmpowered ? '#F59E0B' : guaranteedCrit ? '#FDE047' : '#10B981',
           kind: 'PLAYER_JAVELIN',
           angle: p.aimAngle,
           pierce: true,
+          homing: isMarkEmpowered,
+          targetEnemyId: markedEnemy?.id ?? null,
+          isHuntingMarkEmpowered: isMarkEmpowered,
           hitEnemyIds: new Set<number>(),
         });
       } else if (isTwin) {
@@ -5164,7 +5210,7 @@ export class GameEngine {
         const spreadOffset = 0.085;
         const twinAngles = [p.aimAngle - spreadOffset, p.aimAngle + spreadOffset];
         const javelinDmg =
-          profile.baseAttackDamage * 0.75 * this.getPhysicalDamageMultiplier();
+          profile.baseAttackDamage * 0.75 * (isMarkEmpowered ? 1.3 : 1.0) * this.getPhysicalDamageMultiplier();
 
         for (let t = 0; t < twinAngles.length; t++) {
           const tAngle = twinAngles[t];
@@ -5177,7 +5223,7 @@ export class GameEngine {
             angle: tAngle,
             radius: 36,
             arcSpread: 0.75,
-            color: '#34D399',
+            color: isMarkEmpowered ? '#F59E0B' : '#34D399',
             life: 0.16,
             maxLife: 0.16,
             flip: t === 1,
@@ -5190,20 +5236,23 @@ export class GameEngine {
             fromPlayer: true,
             x: tMuzzleX,
             y: tMuzzleY,
-            vx: Math.cos(tAngle) * 840,
-            vy: Math.sin(tAngle) * 840,
+            vx: Math.cos(tAngle) * 850,
+            vy: Math.sin(tAngle) * 850,
             radius: 7.2,
             damage: javelinDmg,
-            life: 0.62,
-            color: '#10B981',
+            life: 0.65,
+            color: isMarkEmpowered ? '#F59E0B' : '#10B981',
             kind: 'PLAYER_JAVELIN',
             angle: tAngle,
             pierce: guaranteedCrit,
+            homing: isMarkEmpowered,
+            targetEnemyId: markedEnemy?.id ?? null,
+            isHuntingMarkEmpowered: isMarkEmpowered,
             hitEnemyIds: new Set<number>(),
           });
         }
 
-        // 6 jade razor streaks
+        // 6 jade/amber razor streaks
         for (let i = 0; i < 6; i++) {
           if (this.particles.length > 240) break;
           const sa = p.aimAngle + (Math.random() - 0.5) * 0.9;
@@ -5214,7 +5263,7 @@ export class GameEngine {
             vx: Math.cos(sa) * spd,
             vy: Math.sin(sa) * spd,
             size: 2.5,
-            color: i % 2 === 0 ? '#10B981' : '#6EE7B7',
+            color: isMarkEmpowered ? '#F59E0B' : i % 2 === 0 ? '#10B981' : '#6EE7B7',
             life: 0.18,
             maxLife: 0.18,
             gravity: 0,
@@ -5234,7 +5283,7 @@ export class GameEngine {
           angle: p.aimAngle,
           radius: 38,
           arcSpread: 0.75,
-          color: guaranteedCrit ? '#FDE047' : '#10B981',
+          color: isMarkEmpowered ? '#F59E0B' : guaranteedCrit ? '#FDE047' : '#10B981',
           life: 0.16,
           maxLife: 0.16,
           flip: false,
@@ -5242,7 +5291,7 @@ export class GameEngine {
           isCrit: guaranteedCrit,
         });
 
-        // 5 emerald slipstream sparks
+        // 5 emerald/amber slipstream sparks
         for (let i = 0; i < 5; i++) {
           if (this.particles.length > 240) break;
           const sa = p.aimAngle + (Math.random() - 0.5) * 0.65;
@@ -5253,7 +5302,7 @@ export class GameEngine {
             vx: Math.cos(sa) * spd,
             vy: Math.sin(sa) * spd,
             size: 2.6,
-            color: i % 2 === 0 ? '#10B981' : '#34D399',
+            color: isMarkEmpowered ? '#F59E0B' : i % 2 === 0 ? '#10B981' : '#34D399',
             life: 0.18,
             maxLife: 0.18,
             gravity: 0,
@@ -5267,22 +5316,24 @@ export class GameEngine {
         }
 
         const javelinDmg =
-          profile.baseAttackDamage * 1.05 * this.getPhysicalDamageMultiplier();
+          profile.baseAttackDamage * 1.05 * (isMarkEmpowered ? 1.3 : 1.0) * this.getPhysicalDamageMultiplier();
         this.projectiles.push({
           id: allocEntityId(),
           fromPlayer: true,
           x: muzzleX,
           y: muzzleY,
-          vx: Math.cos(p.aimAngle) * 820,
-          vy: Math.sin(p.aimAngle) * 820,
+          vx: Math.cos(p.aimAngle) * 840,
+          vy: Math.sin(p.aimAngle) * 840,
           radius: 7.8,
           damage: javelinDmg,
-          life: 0.65,
-          color: '#10B981',
+          life: 0.68,
+          color: isMarkEmpowered ? '#F59E0B' : '#10B981',
           kind: 'PLAYER_JAVELIN',
           angle: p.aimAngle,
           pierce: guaranteedCrit,
-          hitEnemyIds: new Set<number>(),
+          homing: isMarkEmpowered,
+          targetEnemyId: markedEnemy?.id ?? null,
+          isHuntingMarkEmpowered: isMarkEmpowered,
         });
       }
 
@@ -8201,6 +8252,13 @@ export class GameEngine {
         p.squashY = 0.78;
         this.shakeMag = Math.max(this.shakeMag, 6.0);
 
+        const markedTarget = this.world.enemies.find((e) => e && e.hp > 0 && e.isHuntingMarked);
+        const isMarkEmpowered = Boolean(markedTarget);
+
+        p.lizardThrowAnimTimer = 0.28;
+        p.lizardThrowAnimDuration = 0.28;
+        p.lizardThrowStep = 0;
+
         const muzzleX = p.x + Math.cos(angle) * 22;
         const muzzleY = p.y - 2 + Math.sin(angle) * 22;
 
@@ -8210,32 +8268,43 @@ export class GameEngine {
           angle,
           radius: 64,
           arcSpread: 0.75,
-          color: '#10B981',
+          color: isMarkEmpowered ? '#F59E0B' : '#10B981',
           life: 0.22,
           maxLife: 0.22,
           flip: false,
           kind: 'LIZARDFOLK_JAVELIN_WAKE',
-          isCrit: p.lizardFocusStacks >= 5,
+          isCrit: p.lizardFocusStacks >= 5 || isMarkEmpowered,
         });
 
-        const javelinDmg = Math.round(48 * this.getPhysicalDamageMultiplier());
+        const javelinDmg = Math.round(
+          48 * (isMarkEmpowered ? 1.3 : 1.0) * this.getPhysicalDamageMultiplier()
+        );
         this.projectiles.push({
           id: allocEntityId(),
           fromPlayer: true,
           x: muzzleX,
           y: muzzleY,
-          vx: Math.cos(angle) * 850,
-          vy: Math.sin(angle) * 850,
+          vx: Math.cos(angle) * 880,
+          vy: Math.sin(angle) * 880,
           radius: 10,
           damage: javelinDmg,
-          life: 0.75,
-          color: '#10B981',
+          life: 0.78,
+          color: isMarkEmpowered ? '#F59E0B' : '#10B981',
           kind: 'PLAYER_JAVELIN',
           angle,
           pierce: true,
+          homing: isMarkEmpowered,
+          targetEnemyId: markedTarget?.id ?? null,
+          isHuntingMarkEmpowered: isMarkEmpowered,
           hitEnemyIds: new Set<number>(),
         });
-        this.spawnPopup(p.x, p.y - 28, 'PIERCING JAVELIN!', '#10B981', 1.0);
+        this.spawnPopup(
+          p.x,
+          p.y - 28,
+          isMarkEmpowered ? 'HOMING JAVELIN!' : 'PIERCING JAVELIN!',
+          isMarkEmpowered ? '#F59E0B' : '#10B981',
+          1.05
+        );
         break;
       }
 
@@ -8250,10 +8319,19 @@ export class GameEngine {
         p.squashY = 0.82;
         this.shakeMag = Math.max(this.shakeMag, 5.0);
 
+        const markedTarget = this.world.enemies.find((e) => e && e.hp > 0 && e.isHuntingMarked);
+        const isMarkEmpowered = Boolean(markedTarget);
+
+        p.lizardThrowAnimTimer = 0.28;
+        p.lizardThrowAnimDuration = 0.28;
+        p.lizardThrowStep = 1;
+
         const muzzleX = p.x + Math.cos(angle) * 20;
         const muzzleY = p.y - 2 + Math.sin(angle) * 20;
 
-        const spearDmg = Math.round(32 * this.getPhysicalDamageMultiplier());
+        const spearDmg = Math.round(
+          32 * (isMarkEmpowered ? 1.25 : 1.0) * this.getPhysicalDamageMultiplier()
+        );
         const offsets = [-0.24, 0, 0.24];
         for (const off of offsets) {
           const sa = angle + off;
@@ -8262,15 +8340,18 @@ export class GameEngine {
             fromPlayer: true,
             x: muzzleX,
             y: muzzleY,
-            vx: Math.cos(sa) * 820,
-            vy: Math.sin(sa) * 820,
+            vx: Math.cos(sa) * 840,
+            vy: Math.sin(sa) * 840,
             radius: 8.5,
             damage: spearDmg,
-            life: 0.65,
-            color: '#34D399',
+            life: 0.68,
+            color: isMarkEmpowered ? '#F59E0B' : '#34D399',
             kind: 'PLAYER_TRIPLE_SPEAR',
             angle: sa,
             pierce: true,
+            homing: isMarkEmpowered,
+            targetEnemyId: markedTarget?.id ?? null,
+            isHuntingMarkEmpowered: isMarkEmpowered,
             hitEnemyIds: new Set<number>(),
           });
         }
@@ -8281,13 +8362,19 @@ export class GameEngine {
           angle,
           radius: 58,
           arcSpread: 1.1,
-          color: '#34D399',
+          color: isMarkEmpowered ? '#F59E0B' : '#34D399',
           life: 0.2,
           maxLife: 0.2,
           flip: false,
           kind: 'LIZARDFOLK_JAVELIN_WAKE',
         });
-        this.spawnPopup(p.x, p.y - 28, 'TRIPLE SPEARS!', '#34D399', 1.0);
+        this.spawnPopup(
+          p.x,
+          p.y - 28,
+          isMarkEmpowered ? 'HOMING TRIPLE SPEARS!' : 'TRIPLE SPEARS!',
+          isMarkEmpowered ? '#F59E0B' : '#34D399',
+          1.0
+        );
         break;
       }
 
@@ -8303,24 +8390,36 @@ export class GameEngine {
         p.squashY = 0.74;
         this.shakeMag = Math.max(this.shakeMag, 7.5);
 
+        const markedTarget = this.world.enemies.find((e) => e && e.hp > 0 && e.isHuntingMarked);
+        const isMarkEmpowered = Boolean(markedTarget);
+
+        p.lizardThrowAnimTimer = 0.32;
+        p.lizardThrowAnimDuration = 0.32;
+        p.lizardThrowStep = 2;
+
         const muzzleX = p.x + Math.cos(angle) * 22;
         const muzzleY = p.y - 2 + Math.sin(angle) * 22;
-        const impaleDmg = Math.round(58 * this.getPhysicalDamageMultiplier());
+        const impaleDmg = Math.round(
+          58 * (isMarkEmpowered ? 1.35 : 1.0) * this.getPhysicalDamageMultiplier()
+        );
 
         this.projectiles.push({
           id: allocEntityId(),
           fromPlayer: true,
           x: muzzleX,
           y: muzzleY,
-          vx: Math.cos(angle) * 890,
-          vy: Math.sin(angle) * 890,
+          vx: Math.cos(angle) * 920,
+          vy: Math.sin(angle) * 920,
           radius: 11,
           damage: impaleDmg,
-          life: 0.75,
-          color: '#059669',
+          life: 0.78,
+          color: isMarkEmpowered ? '#F59E0B' : '#059669',
           kind: 'PLAYER_IMPALING_SPEAR',
           angle,
           pierce: false,
+          homing: isMarkEmpowered,
+          targetEnemyId: markedTarget?.id ?? null,
+          isHuntingMarkEmpowered: isMarkEmpowered,
           hitEnemyIds: new Set<number>(),
         });
 
@@ -8330,14 +8429,20 @@ export class GameEngine {
           angle,
           radius: 68,
           arcSpread: 0.65,
-          color: '#059669',
+          color: isMarkEmpowered ? '#F59E0B' : '#059669',
           life: 0.24,
           maxLife: 0.24,
           flip: false,
           kind: 'LIZARDFOLK_IMPALE_BURST',
           isCrit: true,
         });
-        this.spawnPopup(p.x, p.y - 28, 'IMPALING SPEAR!', '#059669', 1.05);
+        this.spawnPopup(
+          p.x,
+          p.y - 28,
+          isMarkEmpowered ? 'HOMING IMPALER!' : 'IMPALING SPEAR!',
+          isMarkEmpowered ? '#F59E0B' : '#059669',
+          1.05
+        );
         break;
       }
 
@@ -8346,25 +8451,51 @@ export class GameEngine {
         const p = this.player;
         const target = manual?.lockedEnemyId
           ? this.world.enemies.find((e) => e.id === manual.lockedEnemyId && e.hp > 0)
-          : this.findNearestEnemy(p.x, p.y, 320);
+          : this.findNearestEnemy(p.x, p.y, 380);
 
         if (target) {
+          // Clear any existing marks on all enemies
+          for (const e of this.world.enemies) {
+            e.isHuntingMarked = false;
+          }
+          target.isHuntingMarked = true;
+          target.huntingMarkTimer = 9.0;
           target.hunterMarkStacks = 5;
-          target.hunterMarkTimer = 7.0;
-          target.vulnerableTimer = Math.max(target.vulnerableTimer, 6.0);
+          target.vulnerableTimer = Math.max(target.vulnerableTimer, 9.0);
+          p.lizardHunterMarkTargetId = target.id;
+          p.lizardHunterMarkTimer = 9.0;
+
+          // Crucial: ALL in-flight projectiles from Lizardfolk immediately home in on the marked target!
+          for (const proj of this.projectiles) {
+            if (proj.fromPlayer && p.characterId === CharacterId.Lizardfolk) {
+              proj.isHuntingMarkEmpowered = true;
+              proj.homing = true;
+              proj.targetEnemyId = target.id;
+              proj.color = '#F59E0B';
+            }
+          }
+
           this.slashes.push({
             x: target.x,
             y: target.y,
             angle: 0,
-            radius: 48,
+            radius: 54,
             arcSpread: Math.PI * 2,
-            color: '#10B981',
-            life: 0.35,
-            maxLife: 0.35,
+            color: '#F59E0B',
+            life: 0.38,
+            maxLife: 0.38,
             flip: false,
             kind: 'LIZARDFOLK_HUNTING_MARK_FX',
           });
-          this.spawnPopup(target.x, target.y - 36, 'HUNTING MARK!', '#10B981', 1.1);
+          this.shockwaves.push({
+            x: target.x,
+            y: target.y,
+            maxRadius: 65,
+            color: '#F59E0B',
+            life: 0.28,
+            maxLife: 0.28,
+          });
+          this.spawnPopup(target.x, target.y - 36, 'HUNTING MARK!', '#F59E0B', 1.25);
         }
 
         // Grants 3 Focus stacks to Lizardfolk
@@ -11242,6 +11373,15 @@ export class GameEngine {
           e.hunterMarkStacks = 0;
         }
       }
+      if (e.huntingMarkTimer && e.huntingMarkTimer > 0) {
+        e.huntingMarkTimer = Math.max(0, e.huntingMarkTimer - dt);
+        if (e.huntingMarkTimer <= 0) {
+          e.isHuntingMarked = false;
+          if (this.player.lizardHunterMarkTargetId === e.id) {
+            this.player.lizardHunterMarkTargetId = null;
+          }
+        }
+      }
 
       if (e.infectionStacks > 0 || e.plagueTimer > 0) {
         e.infectionTimer -= dt;
@@ -12170,6 +12310,56 @@ export class GameEngine {
           pr.y += pr.vy * dt;
         }
       } else {
+        // Lizardfolk Projectiles: home in on marked enemies and turn into empowered fiery javelins
+        if (
+          pr.fromPlayer &&
+          (this.player.characterId === CharacterId.Lizardfolk || pr.isHuntingMarkEmpowered || pr.homing)
+        ) {
+          const markedEnemy =
+            (pr.targetEnemyId
+              ? this.world.enemies.find((e) => e && e.id === pr.targetEnemyId && e.hp > 0)
+              : null) ||
+            this.world.enemies.find((e) => e && e.hp > 0 && e.isHuntingMarked);
+
+          if (markedEnemy) {
+            pr.isHuntingMarkEmpowered = true;
+            pr.homing = true;
+            pr.targetEnemyId = markedEnemy.id;
+            pr.color = '#F59E0B';
+
+            const desired = Math.atan2(markedEnemy.y - pr.y, markedEnemy.x - pr.x);
+            const diff = Math.atan2(Math.sin(desired - pr.angle), Math.cos(desired - pr.angle));
+            const turnRate = 12.0; // ultra responsive 60fps tracking curve
+            pr.angle += Math.max(-turnRate * dt, Math.min(turnRate * dt, diff));
+            const spd = Math.hypot(pr.vx, pr.vy) || 860;
+            pr.vx = Math.cos(pr.angle) * spd;
+            pr.vy = Math.sin(pr.angle) * spd;
+
+            // 60fps golden-amber hunter spark particle wake
+            if (Math.random() < 0.65 && this.particles.length < 240) {
+              const pa = pr.angle + Math.PI + (Math.random() - 0.5) * 0.7;
+              const pspd = 50 + Math.random() * 85;
+              this.particles.push({
+                x: pr.x - Math.cos(pr.angle) * 8,
+                y: pr.y - Math.sin(pr.angle) * 8,
+                vx: Math.cos(pa) * pspd,
+                vy: Math.sin(pa) * pspd,
+                size: 2.8,
+                color: Math.random() < 0.55 ? '#F59E0B' : '#FDE047',
+                life: 0.22,
+                maxLife: 0.22,
+                gravity: 0,
+                fade: true,
+                kind: 'SLASH_STREAK',
+                rot: pa,
+                len: 11,
+                thick: 2.2,
+                drag: 4.8,
+              });
+            }
+          }
+        }
+
         pr.x += pr.vx * dt;
         pr.y += pr.vy * dt;
       }
@@ -12184,7 +12374,10 @@ export class GameEngine {
             pr.kind === 'PLAYER_SPIRIT_ORB' ||
             pr.kind === 'PLAYER_PIERCING_BOLT' ||
             pr.kind === 'PLAYER_EXPLOSIVE_BOLT' ||
-            pr.kind === 'PLAYER_ELEMENTAL_BOLT') &&
+            pr.kind === 'PLAYER_ELEMENTAL_BOLT' ||
+            pr.kind === 'PLAYER_JAVELIN' ||
+            pr.kind === 'PLAYER_TRIPLE_SPEAR' ||
+            pr.kind === 'PLAYER_IMPALING_SPEAR') &&
           Math.random() < 0.62 &&
           this.particles.length < 238
         ) {
@@ -14468,6 +14661,42 @@ export class GameEngine {
     if (enemy.kind === EnemyKind.TrainingDummy && enemy.hp <= 10) {
       enemy.hp = enemy.maxHp;
       this.spawnPopup(enemy.x, enemy.y - 42, 'RESET!', '#FBBF24', 1.0);
+      if (enemy.isHuntingMarked) {
+        const otherDummy = this.world.enemies.find(
+          (e) => e && e.id !== enemy.id && e.kind === EnemyKind.TrainingDummy && e.hp > 0
+        );
+        if (otherDummy) {
+          enemy.isHuntingMarked = false;
+          otherDummy.isHuntingMarked = true;
+          otherDummy.huntingMarkTimer = 9.0;
+          otherDummy.hunterMarkStacks = 5;
+          otherDummy.vulnerableTimer = Math.max(otherDummy.vulnerableTimer, 9.0);
+          this.player.lizardHunterMarkTargetId = otherDummy.id;
+          this.player.lizardHunterMarkTimer = 9.0;
+          this.slashes.push({
+            x: otherDummy.x,
+            y: otherDummy.y,
+            fromX: enemy.x,
+            fromY: enemy.y,
+            angle: Math.atan2(otherDummy.y - enemy.y, otherDummy.x - enemy.x),
+            radius: 54,
+            arcSpread: Math.PI * 2,
+            color: '#F59E0B',
+            life: 0.38,
+            maxLife: 0.38,
+            flip: false,
+            kind: 'LIZARDFOLK_MARK_TRANSFER',
+          });
+          this.spawnPopup(otherDummy.x, otherDummy.y - 36, 'MARK TRANSFERRED!', '#F59E0B', 1.2);
+          for (const proj of this.projectiles) {
+            if (proj.fromPlayer && (proj.isHuntingMarkEmpowered || this.player.characterId === CharacterId.Lizardfolk)) {
+              proj.isHuntingMarkEmpowered = true;
+              proj.homing = true;
+              proj.targetEnemyId = otherDummy.id;
+            }
+          }
+        }
+      }
       return;
     }
 
@@ -14480,6 +14709,70 @@ export class GameEngine {
     const idx = this.world.enemies.indexOf(enemy);
     if (idx !== -1) {
       this.world.enemies.splice(idx, 1);
+    }
+
+    // Lizardfolk Hunting Mark Transfer: automatically mark nearest enemy when marked enemy dies
+    if (enemy.isHuntingMarked || this.player.lizardHunterMarkTargetId === enemy.id) {
+      const candidates = this.world.enemies.filter(
+        (e) => e && e.id !== enemy.id && e.hp > 0 && e.kind !== EnemyKind.TrainingDummy
+      );
+      if (candidates.length > 0) {
+        // Prioritize enemy nearest to Lizardfolk character
+        candidates.sort(
+          (a, b) =>
+            Math.hypot(a.x - this.player.x, a.y - this.player.y) -
+            Math.hypot(b.x - this.player.x, b.y - this.player.y)
+        );
+        const nextTarget = candidates[0];
+        nextTarget.isHuntingMarked = true;
+        nextTarget.huntingMarkTimer = 9.0;
+        nextTarget.hunterMarkStacks = 5;
+        nextTarget.vulnerableTimer = Math.max(nextTarget.vulnerableTimer, 9.0);
+        this.player.lizardHunterMarkTargetId = nextTarget.id;
+        this.player.lizardHunterMarkTimer = 9.0;
+
+        // Visual mark transfer streak & shockwave
+        this.slashes.push({
+          x: nextTarget.x,
+          y: nextTarget.y,
+          fromX: enemy.x,
+          fromY: enemy.y,
+          angle: Math.atan2(nextTarget.y - enemy.y, nextTarget.x - enemy.x),
+          radius: 54,
+          arcSpread: Math.PI * 2,
+          color: '#F59E0B',
+          life: 0.38,
+          maxLife: 0.38,
+          flip: false,
+          kind: 'LIZARDFOLK_MARK_TRANSFER',
+        });
+        this.shockwaves.push({
+          x: nextTarget.x,
+          y: nextTarget.y,
+          maxRadius: 68,
+          color: '#F59E0B',
+          life: 0.28,
+          maxLife: 0.28,
+        });
+        soundEngine.playUiClick(940);
+        this.spawnPopup(nextTarget.x, nextTarget.y - 36, 'MARK TRANSFERRED!', '#F59E0B', 1.25);
+
+        // Immediately redirect all in-flight Lizardfolk projectiles to the newly marked target!
+        for (const proj of this.projectiles) {
+          if (
+            proj.fromPlayer &&
+            (proj.isHuntingMarkEmpowered || this.player.characterId === CharacterId.Lizardfolk)
+          ) {
+            proj.isHuntingMarkEmpowered = true;
+            proj.homing = true;
+            proj.targetEnemyId = nextTarget.id;
+            proj.color = '#F59E0B';
+          }
+        }
+      } else {
+        this.player.lizardHunterMarkTargetId = null;
+        this.player.lizardHunterMarkTimer = 0;
+      }
     }
 
     const ranks = this.getActiveUpgrades();

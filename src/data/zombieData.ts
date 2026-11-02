@@ -499,8 +499,8 @@ export const NORMAL_SKILLS: Record<NormalSkillId, NormalSkillDef> = {
     tag: 'Target Lock · Homing Spears',
     cooldown: 6.0,
     description:
-      'Marks a targeted enemy with a hunter’s symbol. The Lizardfolk’s subsequent spear attacks prioritize the marked target and can track its movement.',
-    detailLine: 'Places Hunter Brand for 8s · All spears curve & home into the marked target (+30% DMG)',
+      'Marks a targeted enemy with a primal hunter’s brand. All projectiles from the Lizardfolk visually empower with hunter fire and home directly onto the marked target. When the marked enemy is slain, the hunting mark automatically transfers to the nearest enemy.',
+    detailLine: 'Places Hunter Brand for 9s · All projectiles empower & home on target (+30% DMG) · Transfers to nearest enemy on kill',
     accentColor: '#F59E0B',
   },
   [NormalSkillId.SpearCyclone]: {
@@ -2871,7 +2871,7 @@ export const CHARACTER_STATUE_BLESSINGS: Record<CharacterId, RunBlessing[]> = {
     },
   ],
 
-  // === SLIME STATUE BLESSINGS & AWAKENING PATHS ===
+  // === SLIME STATUE BLESSINGS ===
   [CharacterId.Slime]: [
     {
       id: 'slime_mana_conduit_amp',
@@ -2942,60 +2942,9 @@ export const CHARACTER_STATUE_BLESSINGS: Record<CharacterId, RunBlessing[]> = {
       description: 'Arcane Prison barrier shocks trapped enemies every 0.4s and detonates violently when expiring.',
       requiredNormalSkill: NormalSkillId.ArcanePrison,
     },
-    // Awakening Paths: Cataclysm of Elements
-    {
-      id: 'slime_ult_cataclysm_path_a',
-      characterId: CharacterId.Slime,
-      name: 'Path A – Elemental Sovereign',
-      category: 'Awakening · Elemental Spirits',
-      description: 'Summons four enormous elemental spirits (fire, ice, lightning, earth) that independently fight before combining into a massive eruption.',
-      requiredUltimateSkill: UltimateSkillId.CataclysmOfElements,
-    },
-    {
-      id: 'slime_ult_cataclysm_path_b',
-      characterId: CharacterId.Slime,
-      name: 'Path B – Elemental Convergence',
-      category: 'Awakening · Mystic Glyph',
-      description: 'Creates a massive rotating magical symbol above the arena, unleashing unpredictable dual-element hyper-bursts across the field.',
-      requiredUltimateSkill: UltimateSkillId.CataclysmOfElements,
-    },
-    // Awakening Paths: Astral Singularity
-    {
-      id: 'slime_ult_singularity_path_a',
-      characterId: CharacterId.Slime,
-      name: 'Path A – Black Star',
-      category: 'Awakening · Dark Collapse',
-      description: 'Transforms singularity into a miniature black star consuming energy and projectiles before collapsing into an immense gravitational blast.',
-      requiredUltimateSkill: UltimateSkillId.AstralSingularity,
-    },
-    {
-      id: 'slime_ult_singularity_path_b',
-      characterId: CharacterId.Slime,
-      name: 'Path B – Celestial Prison',
-      category: 'Awakening · Pocket Dimension',
-      description: 'Traps affected enemies in a pocket dimension with distorted gravity and orbiting magical crystal fragments that continuously strike.',
-      requiredUltimateSkill: UltimateSkillId.AstralSingularity,
-    },
-    // Awakening Paths: Primordial Overload
-    {
-      id: 'slime_ult_overload_path_a',
-      characterId: CharacterId.Slime,
-      name: 'Path A – Arcane Deity',
-      category: 'Awakening · Multi-Core Deity',
-      description: 'Transforms into a multi-core divine entity where each orbiting core independently casts distinct elemental and arcane spells.',
-      requiredUltimateSkill: UltimateSkillId.PrimordialOverload,
-    },
-    {
-      id: 'slime_ult_overload_path_b',
-      characterId: CharacterId.Slime,
-      name: 'Path B – Living Spellbook',
-      category: 'Awakening · Ancient Grimoire',
-      description: 'Manifests a colossal floating ancient grimoire with turning pages, unleashing magical storms, giant energy hands, and crystal formations.',
-      requiredUltimateSkill: UltimateSkillId.PrimordialOverload,
-    },
   ],
 
-  // === LIZARDFOLK STATUE BLESSINGS & AWAKENING PATHS ===
+  // === LIZARDFOLK STATUE BLESSINGS ===
   [CharacterId.Lizardfolk]: [
     {
       id: 'lizard_predator_instinct_amp',

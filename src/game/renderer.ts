@@ -6321,17 +6321,109 @@ function drawLizardfolkPlayer(
   ctx.rect(6.7, -16, 0.9, 4);
   ctx.fill();
 
-  // Articulated Hunting Spear / Javelin aimed toward aimAngle!
+  // 60fps Athletic Lizardfolk Throwing Javelin Animation & Arm Dynamics
+  const isThrowing = (player.lizardThrowAnimTimer ?? 0) > 0;
+  const throwDuration = player.lizardThrowAnimDuration || 0.28;
+  const throwProg = isThrowing
+    ? Math.min(1, Math.max(0, 1 - (player.lizardThrowAnimTimer ?? 0) / throwDuration))
+    : 0;
+
   const localAim =
     player.facingX >= 0
       ? player.aimAngle
       : Math.atan2(Math.sin(player.aimAngle), -Math.cos(player.aimAngle));
   const clampedAim = Math.max(-1.15, Math.min(1.15, localAim));
-  const spearThrust = Math.max(-4, lunge * 0.9);
 
+  let handX = 10;
+  let handY = 0;
+  let handAngle = clampedAim;
+  let spearAlpha = 1.0;
+  let showReleaseRings = false;
+  let releaseProgress = 0;
+
+  if (isThrowing) {
+    if (throwProg < 0.35) {
+      // Phase 1: Athletic wind-up and deep cock-back behind shoulder
+      const t = throwProg / 0.35;
+      const easeCock = Math.sin(t * Math.PI * 0.5);
+      handX = 10 - 22 * easeCock;
+      handY = -3 - 8 * easeCock;
+      handAngle = clampedAim - 0.32 * easeCock;
+    } else if (throwProg < 0.68) {
+      // Phase 2: Supersonic arm whip and throw release forward!
+      const t = (throwProg - 0.35) / 0.33;
+      const easeWhip = Math.sin(t * Math.PI * 0.5);
+      handX = -12 + 42 * easeWhip;
+      handY = -11 + 13 * easeWhip;
+      handAngle = clampedAim + 0.15 * (1 - t);
+      if (t > 0.45) {
+        showReleaseRings = true;
+        releaseProgress = (t - 0.45) / 0.55;
+        // Javelin launches from hand into flight
+        spearAlpha = Math.max(0, 1 - (t - 0.45) * 2.8);
+      }
+    } else {
+      // Phase 3: Dynamic follow-through arc across chest & retrieve next javelin from quiver
+      const t = (throwProg - 0.68) / 0.32;
+      handX = 30 - 20 * t;
+      handY = 2 + 5 * Math.sin(t * Math.PI);
+      handAngle = clampedAim + 0.12 * (1 - t);
+      spearAlpha = Math.min(1, t * 2.2);
+    }
+  } else {
+    // Combat ready stance with gentle respiratory idle sway
+    handX = 10 + Math.max(-4, lunge * 0.9);
+    handY = Math.sin(time * 3.5) * 1.2;
+    handAngle = clampedAim;
+  }
+
+  // Draw Quiver on back with spare javelins
   ctx.save();
-  ctx.translate(10 + spearThrust, 0);
-  ctx.rotate(clampedAim);
+  ctx.translate(-14, -6);
+  ctx.rotate(-0.35);
+  ctx.fillStyle = flash ? '#FFFFFF' : '#451A03';
+  ctx.strokeStyle = '#120F17';
+  ctx.lineWidth = 1.6;
+  drawRoundedRect(ctx, -4, -14, 8, 20, 2.5);
+  ctx.fill();
+  ctx.stroke();
+
+  // Spare javelin feather fletchings sticking out of quiver
+  ctx.fillStyle = '#10B981';
+  ctx.beginPath();
+  ctx.moveTo(-2, -14);
+  ctx.lineTo(-5, -22);
+  ctx.lineTo(0, -18);
+  ctx.lineTo(3, -24);
+  ctx.lineTo(1, -14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // Supersonic throwing release flash rings
+  if (showReleaseRings) {
+    ctx.save();
+    ctx.translate(handX + 16, handY);
+    ctx.rotate(clampedAim);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = '#F59E0B';
+    ctx.lineWidth = 2.4 * (1 - releaseProgress);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 16 * releaseProgress, 7 * releaseProgress, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(0, 0, 4.5 * (1 - releaseProgress), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Articulated Javelin & Throwing Arm
+  ctx.save();
+  ctx.translate(handX, handY);
+  ctx.rotate(handAngle);
+  ctx.globalAlpha = spearAlpha;
 
   // Ash-wood spear shaft
   ctx.fillStyle = flash ? '#FFFFFF' : '#78350F';
@@ -6345,6 +6437,18 @@ function drawLizardfolkPlayer(
   if (!flash) {
     ctx.fillStyle = '#D97706';
     ctx.fillRect(-2, -2.4, 9, 4.8);
+  }
+
+  // Emerald feather fletching at back of javelin
+  if (!flash) {
+    ctx.fillStyle = '#10B981';
+    ctx.beginPath();
+    ctx.moveTo(-16, 0);
+    ctx.lineTo(-22, -4);
+    ctx.lineTo(-19, 0);
+    ctx.lineTo(-22, 4);
+    ctx.closePath();
+    ctx.fill();
   }
 
   // Obsidian razor-barbed spearhead
@@ -6738,6 +6842,117 @@ function drawEnemy(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: numb
       ctx.closePath();
       ctx.fill();
     }
+    ctx.restore();
+  }
+
+  // Lizardfolk Primal Hunting Mark: Horned Hunter Crest, Inward Tracking Chevrons & Beacon
+  if (enemy.isHuntingMarked) {
+    const pulse = Math.sin(time * 8);
+    const retR = (isBoss ? 32 : 21) + pulse * 1.5;
+    const crestY = isBoss ? -70 : isDummy ? -58 : -54;
+
+    ctx.save();
+    // 1. Ground Tribal Reticle with Inward Predator Chevrons
+    ctx.strokeStyle = '#F59E0B';
+    ctx.lineWidth = 2.4;
+    ctx.globalAlpha = 0.85 + pulse * 0.12;
+    ctx.beginPath();
+    ctx.ellipse(0, isBoss ? 24 : 14, retR, retR * 0.44, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Secondary pulsing shock ring
+    const expandRing = ((time * 1.8) % 1) * retR * 1.35;
+    ctx.strokeStyle = '#FDE047';
+    ctx.lineWidth = 1.4 * (1 - (time * 1.8) % 1);
+    ctx.beginPath();
+    ctx.ellipse(0, isBoss ? 24 : 14, expandRing, expandRing * 0.44, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 4 Inward-pointing locking chevrons
+    const rot = time * 2.4;
+    for (let c = 0; c < 4; c++) {
+      const a = rot + (c * Math.PI) / 2;
+      const cx = Math.cos(a) * retR;
+      const cy = (isBoss ? 24 : 14) + Math.sin(a) * (retR * 0.44);
+      const tipX = Math.cos(a) * (retR - 5);
+      const tipY = (isBoss ? 24 : 14) + Math.sin(a) * (retR * 0.44 - 2.5);
+
+      ctx.fillStyle = c % 2 === 0 ? '#FDE047' : '#F59E0B';
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(cx + Math.cos(a + 0.6) * 4, cy + Math.sin(a + 0.6) * 2.5);
+      ctx.lineTo(cx + Math.cos(a - 0.6) * 4, cy + Math.sin(a - 0.6) * 2.5);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 2. Overhead Primal Hunter Crest (Horned Predator Brand)
+    ctx.translate(0, crestY);
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Glowing amber aura flare
+    const flareR = 14 + pulse * 2.5;
+    const flareGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, flareR);
+    flareGrad.addColorStop(0, 'rgba(253, 224, 71, 0.95)');
+    flareGrad.addColorStop(0.5, 'rgba(245, 158, 11, 0.6)');
+    flareGrad.addColorStop(1, 'rgba(245, 158, 11, 0)');
+    ctx.fillStyle = flareGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, flareR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Horned Tribal Crest
+    ctx.fillStyle = '#F59E0B';
+    ctx.strokeStyle = '#120F17';
+    ctx.lineWidth = 1.4;
+
+    // Center arrowhead
+    ctx.beginPath();
+    ctx.moveTo(0, -9);
+    ctx.lineTo(6, -2);
+    ctx.lineTo(0, 5);
+    ctx.lineTo(-6, -2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Left curved horn
+    ctx.beginPath();
+    ctx.moveTo(-4, -4);
+    ctx.quadraticCurveTo(-11, -9, -13, -15);
+    ctx.quadraticCurveTo(-8, -11, -1, -8);
+    ctx.closePath();
+    ctx.fill();
+
+    // Right curved horn
+    ctx.beginPath();
+    ctx.moveTo(4, -4);
+    ctx.quadraticCurveTo(11, -9, 13, -15);
+    ctx.quadraticCurveTo(8, -11, 1, -8);
+    ctx.closePath();
+    ctx.fill();
+
+    // Emerald center eye glint
+    ctx.fillStyle = '#10B981';
+    ctx.beginPath();
+    ctx.arc(0, -2, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Overhead [HUNTING MARK] Badge
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(20, 14, 5, 0.85)';
+    ctx.strokeStyle = '#F59E0B';
+    ctx.lineWidth = 1.2;
+    drawRoundedRect(ctx, -38, -26, 76, 12, 3);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#FDE047';
+    ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('HUNTING MARK', 0, -20);
+
     ctx.restore();
   }
 
@@ -10360,27 +10575,145 @@ function drawLizardfolkSlashVfx(ctx: CanvasRenderingContext2D, slash: SlashEffec
     return;
   }
 
+  if (slash.kind === 'LIZARDFOLK_THROW_SNAP') {
+    // 60fps Supersonic throw release sonic snap crescent & javelin trail filament
+    const r = slash.radius * (0.35 + easeOut * 0.65);
+    const half = (slash.arcSpread || 0.85) * 0.5;
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.rotate(slash.angle);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    // Outer supersonic expansion crescent
+    ctx.strokeStyle = slash.color || '#F59E0B';
+    ctx.lineWidth = 4.5 * (1 - progress * 0.6);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, -half, half);
+    ctx.stroke();
+
+    // Inner bright white/amber filament
+    ctx.strokeStyle = '#FEF08A';
+    ctx.lineWidth = 2.2 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.82, -half * 0.8, half * 0.8);
+    ctx.stroke();
+
+    // Forward release thrust needle
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.moveTo(0, -2);
+    ctx.lineTo(r * 1.25, 0);
+    ctx.lineTo(0, 2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'LIZARDFOLK_MARK_TRANSFER') {
+    // Primal Hunting Mark Transfer: golden-amber laser tether linking fallen prey to newly marked target
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    if (slash.fromX !== undefined && slash.fromY !== undefined) {
+      const dx = slash.x - slash.fromX;
+      const dy = slash.y - slash.fromY;
+      const dist = Math.hypot(dx, dy);
+
+      // Outer golden-amber tether beam
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.75)';
+      ctx.lineWidth = 5 * (1 - progress * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(slash.fromX, slash.fromY);
+      ctx.lineTo(slash.x, slash.y);
+      ctx.stroke();
+
+      // Inner white-hot laser filament
+      ctx.strokeStyle = '#FEF08A';
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      ctx.moveTo(slash.fromX, slash.fromY);
+      ctx.lineTo(slash.x, slash.y);
+      ctx.stroke();
+
+      // Racing golden-amber hunter tracking motes along the tether
+      for (let m = 0; m < 5; m++) {
+        const moteProg = ((progress * 2.2 + m / 5) % 1);
+        const mx = slash.fromX + dx * moteProg;
+        const my = slash.fromY + dy * moteProg;
+        ctx.fillStyle = m % 2 === 0 ? '#FFFFFF' : '#FDE047';
+        ctx.beginPath();
+        ctx.arc(mx, my, 3.2 * (1 - progress * 0.4), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Arrival target primal brand detonation
+    const arrivalR = slash.radius * (0.3 + easeOut * 0.72);
+    ctx.translate(slash.x, slash.y);
+
+    ctx.strokeStyle = '#F59E0B';
+    ctx.lineWidth = 3.8 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, arrivalR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    for (let c = 0; c < 4; c++) {
+      const a = (c * Math.PI) / 2 + progress * 1.5;
+      ctx.strokeStyle = '#FDE047';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * (arrivalR - 6), Math.sin(a) * (arrivalR - 6));
+      ctx.lineTo(Math.cos(a) * (arrivalR + 10), Math.sin(a) * (arrivalR + 10));
+      ctx.stroke();
+    }
+
+    ctx.restore();
+    return;
+  }
+
   if (slash.kind === 'LIZARDFOLK_HUNTING_MARK_FX') {
-    // Hunter's mark crosshair with sharp predator eye glyph
+    // Primal hunter mark brand crosshair with sharp predator eye glyph
     const r = slash.radius * (0.4 + easeOut * 0.6);
     ctx.save();
     ctx.translate(slash.x, slash.y);
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = alpha;
 
-    ctx.strokeStyle = '#EF4444';
-    ctx.lineWidth = 2.6 * (1 - progress * 0.4);
+    ctx.strokeStyle = '#F59E0B';
+    ctx.lineWidth = 3.2 * (1 - progress * 0.4);
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.stroke();
 
+    // Secondary inner reticle ring
+    ctx.strokeStyle = '#FDE047';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.65, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 4 Cardinal hunter spikes
     for (let i = 0; i < 4; i++) {
-      const a = (i * Math.PI) / 2;
+      const a = (i * Math.PI) / 2 + progress * 0.4;
+      ctx.strokeStyle = i % 2 === 0 ? '#FEF08A' : '#F59E0B';
+      ctx.lineWidth = 2.2;
       ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * (r - 4), Math.sin(a) * (r - 4));
-      ctx.lineTo(Math.cos(a) * (r + 7), Math.sin(a) * (r + 7));
+      ctx.moveTo(Math.cos(a) * (r - 6), Math.sin(a) * (r - 6));
+      ctx.lineTo(Math.cos(a) * (r + 12), Math.sin(a) * (r + 12));
       ctx.stroke();
     }
+
+    // Glowing predator iris
+    ctx.fillStyle = '#10B981';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 3.5, 7 * (1 - progress * 0.4), 0, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.restore();
     return;
   }
@@ -11163,78 +11496,178 @@ function drawProjectile(ctx: CanvasRenderingContext2D, proj: ProjectileEntity, t
     ctx.fill();
     ctx.restore();
   } else if (proj.kind === 'PLAYER_JAVELIN' || proj.kind === 'PLAYER_TRIPLE_SPEAR') {
-    // Aerodynamic wooden/bronze javelin with emerald feather fletching and supersonic slipstream
+    const isEmpowered = Boolean(proj.isHuntingMarkEmpowered || proj.homing || proj.color === '#F59E0B');
+
+    if (isEmpowered) {
+      // Empowered Primal Hunter Javelin: blazing golden-amber plasma slipstream & solar-fire spearhead
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      // Outer blazing solar corona
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.85)';
+      ctx.lineWidth = 5.8;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-36, 0);
+      ctx.lineTo(16, 0);
+      ctx.stroke();
+
+      // Inner white-hot kinetic laser core
+      ctx.strokeStyle = '#FEF08A';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(-30, 0);
+      ctx.lineTo(24, 0);
+      ctx.stroke();
+
+      // Entwining solar energy helix ribbons
+      ctx.strokeStyle = '#FDE047';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      for (let x = -26; x <= 20; x += 4) {
+        const y = Math.sin(time * 24 + x * 0.35) * 3.4;
+        if (x === -26) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      // Spear dark obsidian / bronze shaft
+      ctx.strokeStyle = '#292524';
+      ctx.lineWidth = 2.8;
+      ctx.beginPath();
+      ctx.moveTo(-20, 0);
+      ctx.lineTo(16, 0);
+      ctx.stroke();
+
+      // Golden solar feather fletching
+      ctx.fillStyle = '#F59E0B';
+      ctx.beginPath();
+      ctx.moveTo(-20, 0);
+      ctx.lineTo(-27, -5);
+      ctx.lineTo(-22, 0);
+      ctx.lineTo(-27, 5);
+      ctx.closePath();
+      ctx.fill();
+
+      // Radiant sun-forged dragon-fang spearhead
+      ctx.fillStyle = '#FDE047';
+      ctx.strokeStyle = '#D97706';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(27, 0);
+      ctx.lineTo(15, -5.5);
+      ctx.lineTo(18, 0);
+      ctx.lineTo(15, 5.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Molten tip glint
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(26, 0, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } else {
+      // Standard aerodynamic wooden/bronze javelin with emerald feather fletching
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = 'rgba(110, 231, 183, 0.7)';
+      ctx.lineWidth = 3.2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-28, 0);
+      ctx.lineTo(8, 0);
+      ctx.stroke();
+      ctx.restore();
+
+      // Spear wooden shaft
+      ctx.strokeStyle = '#78350F';
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.moveTo(-18, 0);
+      ctx.lineTo(14, 0);
+      ctx.stroke();
+
+      // Emerald feather fletching
+      ctx.fillStyle = '#10B981';
+      ctx.beginPath();
+      ctx.moveTo(-18, 0);
+      ctx.lineTo(-24, -4);
+      ctx.lineTo(-20, 0);
+      ctx.lineTo(-24, 4);
+      ctx.closePath();
+      ctx.fill();
+
+      // Flint/bronze spearhead
+      ctx.fillStyle = '#34D399';
+      ctx.strokeStyle = '#065F46';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(22, 0);
+      ctx.lineTo(13, -4.5);
+      ctx.lineTo(13, 4.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  } else if (proj.kind === 'PLAYER_IMPALING_SPEAR') {
+    const isEmpowered = Boolean(proj.isHuntingMarkEmpowered || proj.homing || proj.color === '#F59E0B');
+    // Heavy barbed bone-and-iron harpoon
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = 'rgba(110, 231, 183, 0.7)';
-    ctx.lineWidth = 3.2;
+    ctx.strokeStyle = isEmpowered ? 'rgba(245, 158, 11, 0.92)' : 'rgba(251, 191, 36, 0.7)';
+    ctx.lineWidth = isEmpowered ? 6.5 : 4;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(-28, 0);
-    ctx.lineTo(8, 0);
-    ctx.stroke();
-    ctx.restore();
-
-    // Spear wooden shaft
-    ctx.strokeStyle = '#78350F';
-    ctx.lineWidth = 2.6;
-    ctx.beginPath();
-    ctx.moveTo(-18, 0);
+    ctx.moveTo(-36, 0);
     ctx.lineTo(14, 0);
     ctx.stroke();
 
-    // Emerald feather fletching
-    ctx.fillStyle = '#10B981';
-    ctx.beginPath();
-    ctx.moveTo(-18, 0);
-    ctx.lineTo(-24, -4);
-    ctx.lineTo(-20, 0);
-    ctx.lineTo(-24, 4);
-    ctx.closePath();
-    ctx.fill();
-
-    // Flint/bronze spearhead
-    ctx.fillStyle = '#34D399';
-    ctx.strokeStyle = '#065F46';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(22, 0);
-    ctx.lineTo(13, -4.5);
-    ctx.lineTo(13, 4.5);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  } else if (proj.kind === 'PLAYER_IMPALING_SPEAR') {
-    // Heavy barbed bone-and-iron harpoon
-    ctx.save();
-    ctx.strokeStyle = 'rgba(251, 191, 36, 0.7)';
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(-32, 0);
-    ctx.lineTo(10, 0);
-    ctx.stroke();
+    if (isEmpowered) {
+      ctx.strokeStyle = '#FEF08A';
+      ctx.lineWidth = 2.8;
+      ctx.beginPath();
+      ctx.moveTo(-30, 0);
+      ctx.lineTo(26, 0);
+      ctx.stroke();
+    }
+    ctx.restore();
 
     // Heavy iron shaft
     ctx.strokeStyle = '#44403C';
     ctx.lineWidth = 3.4;
     ctx.beginPath();
-    ctx.moveTo(-20, 0);
+    ctx.moveTo(-22, 0);
     ctx.lineTo(16, 0);
     ctx.stroke();
 
     // Barbed harpoon spearhead with rear hooks
-    ctx.fillStyle = '#F59E0B';
+    ctx.fillStyle = isEmpowered ? '#FDE047' : '#F59E0B';
+    ctx.strokeStyle = isEmpowered ? '#B45309' : '#78350F';
+    ctx.lineWidth = 1.4;
     ctx.beginPath();
-    ctx.moveTo(26, 0);
-    ctx.lineTo(14, -6);
-    ctx.lineTo(17, -2);
+    ctx.moveTo(28, 0);
+    ctx.lineTo(14, -6.5);
+    ctx.lineTo(18, -2.5);
     ctx.lineTo(14, 0);
-    ctx.lineTo(17, 2);
-    ctx.lineTo(14, 6);
+    ctx.lineTo(18, 2.5);
+    ctx.lineTo(14, 6.5);
     ctx.closePath();
     ctx.fill();
-    ctx.restore();
+    ctx.stroke();
+
+    if (isEmpowered) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(27, 0, 3.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
   } else if (proj.kind === 'PLAYER_WORLD_PIERCER') {
     // Massive luminous emerald enchanted lance with dimensional shockwaves
     ctx.save();
