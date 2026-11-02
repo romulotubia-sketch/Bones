@@ -257,6 +257,24 @@ export class GameEngine {
     arsenalStep: 0,
     arsenalAngle: 0,
 
+    // Slime active states & passives
+    slimePulseOffset: 0,
+    slimeComboStep: 0,
+    slimeUnstableStacks: 0,
+    slimePrimordialTimer: 0,
+    slimePrimordialTick: 0,
+    slimeElementalConvergenceTimer: 0,
+    slimeLivingSpellbookTimer: 0,
+    slimeLivingSpellbookTick: 0,
+
+    // Lizardfolk active states & passives
+    lizardComboStep: 0,
+    lizardSpearLungeOffset: 0,
+    lizardFocusStacks: 0,
+    lizardMoveDistAccum: 0,
+    lizardHuntSpiritTimer: 0,
+    lizardDragonfangTimer: 0,
+
     // Strategic Blessing transient timers & counters
     ultSurgeTimer: 0,
     stormReliquaryCount: 0,
@@ -305,6 +323,14 @@ export class GameEngine {
   private stoneRamparts: StoneRampartEntity[] = [];
   private deathsPassageRifts: DeathsPassageRift[] = [];
   private ghostMistZones: GhostMistZone[] = [];
+  private gravityWells: GravityWellZone[] = [];
+  private arcanePrisons: ArcanePrisonZone[] = [];
+  private astralSingularities: AstralSingularityZone[] = [];
+  private elementalCascades: ElementalCascadeZone[] = [];
+  private spearCyclones: SpearCycloneZone[] = [];
+  private rainOfJavelinsZones: RainOfJavelinsZone[] = [];
+  private ancientHunters: AncientHunterSpirit[] = [];
+  private elementalSpirits: ElementalSpiritEntity[] = [];
   private pickups: PickupOrb[] = [];
   private slashes: SlashEffect[] = [];
   private shockwaves: ShockwaveRing[] = [];
@@ -1686,6 +1712,151 @@ export class GameEngine {
             isCancelling,
           };
         }
+
+        // Slime Arcane Mage Normal Skills
+        case NormalSkillId.ArcaneOrb: {
+          const beamLen = this.clampBeamRangeToWall(p.x, p.y, angle, 420, false);
+          return {
+            kind: 'LINE',
+            angle,
+            maxRange: beamLen,
+            lineWidth: 24,
+            aoeRadius: 65,
+            color: '#818CF8',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.PrismaticShards:
+          return {
+            kind: 'CONE',
+            angle,
+            maxRange: 380,
+            arcSpread: 1.15,
+            color: '#C084FC',
+            isCancelling,
+          };
+        case NormalSkillId.GravityWell: {
+          const maxR = 280;
+          const dist = Math.max(20, clampedMag * maxR);
+          const tx = p.x + Math.cos(angle) * dist;
+          const ty = p.y + Math.sin(angle) * dist;
+          const locked = this.findEnemyNearReticle(p.x, p.y, maxR, tx, ty, 80, false);
+          return {
+            kind: 'TARGET_AOE',
+            angle,
+            maxRange: maxR,
+            aoeRadius: 130,
+            targetX: locked ? locked.x : tx,
+            targetY: locked ? locked.y : ty,
+            lockedEnemyId: locked?.id ?? null,
+            color: '#6366F1',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.ElementalCascade: {
+          const maxR = 290;
+          const dist = Math.max(20, clampedMag * maxR);
+          const tx = p.x + Math.cos(angle) * dist;
+          const ty = p.y + Math.sin(angle) * dist;
+          const locked = this.findEnemyNearReticle(p.x, p.y, maxR, tx, ty, 85, false);
+          return {
+            kind: 'TARGET_AOE',
+            angle,
+            maxRange: maxR,
+            aoeRadius: 140,
+            targetX: locked ? locked.x : tx,
+            targetY: locked ? locked.y : ty,
+            lockedEnemyId: locked?.id ?? null,
+            color: '#EC4899',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.ArcanePrison: {
+          const maxR = 270;
+          const dist = Math.max(20, clampedMag * maxR);
+          const tx = p.x + Math.cos(angle) * dist;
+          const ty = p.y + Math.sin(angle) * dist;
+          const locked = this.findEnemyNearReticle(p.x, p.y, maxR, tx, ty, 80, false);
+          return {
+            kind: 'TARGET_AOE',
+            angle,
+            maxRange: maxR,
+            aoeRadius: 120,
+            targetX: locked ? locked.x : tx,
+            targetY: locked ? locked.y : ty,
+            lockedEnemyId: locked?.id ?? null,
+            color: '#A855F7',
+            isCancelling,
+          };
+        }
+
+        // Lizardfolk Spear Hunter Normal Skills
+        case NormalSkillId.PiercingJavelin: {
+          const beamLen = this.clampBeamRangeToWall(p.x, p.y, angle, 520, true);
+          return {
+            kind: 'LINE',
+            angle,
+            maxRange: beamLen,
+            lineWidth: 20,
+            color: '#10B981',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.TripleSpearToss:
+          return {
+            kind: 'CONE',
+            angle,
+            maxRange: 440,
+            arcSpread: 0.85,
+            color: '#34D399',
+            isCancelling,
+          };
+        case NormalSkillId.ImpalingSpear: {
+          const beamLen = this.clampBeamRangeToWall(p.x, p.y, angle, 560, false);
+          return {
+            kind: 'LINE',
+            angle,
+            maxRange: beamLen,
+            lineWidth: 24,
+            color: '#059669',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.HuntingMark: {
+          const maxR = 340;
+          const dist = clampedMag * maxR;
+          const tx = p.x + Math.cos(angle) * dist;
+          const ty = p.y + Math.sin(angle) * dist;
+          const locked = this.findEnemyNearReticle(p.x, p.y, maxR, tx, ty, 100, false);
+          return {
+            kind: 'TARGET_ENEMY',
+            angle,
+            maxRange: maxR,
+            targetX: tx,
+            targetY: ty,
+            lockedEnemyId: locked?.id ?? null,
+            color: '#EAB308',
+            isCancelling,
+          };
+        }
+        case NormalSkillId.SpearCyclone: {
+          const maxR = 260;
+          const dist = Math.max(18, clampedMag * maxR);
+          const tx = p.x + Math.cos(angle) * dist;
+          const ty = p.y + Math.sin(angle) * dist;
+          const locked = this.findEnemyNearReticle(p.x, p.y, maxR, tx, ty, 75, false);
+          return {
+            kind: 'TARGET_AOE',
+            angle,
+            maxRange: maxR,
+            aoeRadius: 110,
+            targetX: locked ? locked.x : tx,
+            targetY: locked ? locked.y : ty,
+            lockedEnemyId: locked?.id ?? null,
+            color: '#10B981',
+            isCancelling,
+          };
+        }
       }
     }
 
@@ -1823,6 +1994,91 @@ export class GameEngine {
           maxRange: 440,
           arcSpread: 1.35,
           color: '#FBBF24',
+          isCancelling,
+        };
+
+      // Slime Arcane Mage Ultimate Skills
+      case UltimateSkillId.CataclysmOfElements: {
+        const maxR = 270;
+        const dist = Math.max(16, clampedMag * maxR);
+        const tx = p.x + Math.cos(angle) * dist;
+        const ty = p.y + Math.sin(angle) * dist;
+        const locked = this.findEnemyNearReticle(p.x, p.y, maxR, tx, ty, 85, false);
+        return {
+          kind: 'TARGET_AOE',
+          angle,
+          maxRange: maxR,
+          aoeRadius: 220,
+          targetX: locked ? locked.x : tx,
+          targetY: locked ? locked.y : ty,
+          lockedEnemyId: locked?.id ?? null,
+          color: '#F43F5E',
+          isCancelling,
+        };
+      }
+      case UltimateSkillId.AstralSingularity: {
+        const maxR = 310;
+        const dist = Math.max(20, clampedMag * maxR);
+        const tx = p.x + Math.cos(angle) * dist;
+        const ty = p.y + Math.sin(angle) * dist;
+        const locked = this.findEnemyNearReticle(p.x, p.y, maxR, tx, ty, 90, false);
+        return {
+          kind: 'TARGET_AOE',
+          angle,
+          maxRange: maxR,
+          aoeRadius: 200,
+          targetX: locked ? locked.x : tx,
+          targetY: locked ? locked.y : ty,
+          lockedEnemyId: locked?.id ?? null,
+          color: '#8B5CF6',
+          isCancelling,
+        };
+      }
+      case UltimateSkillId.PrimordialOverload:
+        return {
+          kind: 'SELF_AOE',
+          angle,
+          maxRange: 240,
+          color: '#C084FC',
+          isCancelling,
+        };
+
+      // Lizardfolk Spear Hunter Ultimate Skills
+      case UltimateSkillId.RainOfJavelins: {
+        const maxR = 320;
+        const dist = Math.max(20, clampedMag * maxR);
+        const tx = p.x + Math.cos(angle) * dist;
+        const ty = p.y + Math.sin(angle) * dist;
+        const locked = this.findEnemyNearReticle(p.x, p.y, maxR, tx, ty, 85, false);
+        return {
+          kind: 'TARGET_AOE',
+          angle,
+          maxRange: maxR,
+          aoeRadius: 210,
+          targetX: locked ? locked.x : tx,
+          targetY: locked ? locked.y : ty,
+          lockedEnemyId: locked?.id ?? null,
+          color: '#10B981',
+          isCancelling,
+        };
+      }
+      case UltimateSkillId.WorldPiercer: {
+        const beamLen = this.clampBeamRangeToWall(p.x, p.y, angle, 750, true);
+        return {
+          kind: 'LINE',
+          angle,
+          maxRange: beamLen,
+          lineWidth: 34,
+          color: '#059669',
+          isCancelling,
+        };
+      }
+      case UltimateSkillId.SpiritOfTheGreatHunt:
+        return {
+          kind: 'SELF_AOE',
+          angle,
+          maxRange: 220,
+          color: '#34D399',
           isCancelling,
         };
     }
@@ -1975,6 +2231,14 @@ export class GameEngine {
     this.stoneRamparts = [];
     this.deathsPassageRifts = [];
     this.ghostMistZones = [];
+    this.gravityWells = [];
+    this.arcanePrisons = [];
+    this.astralSingularities = [];
+    this.elementalCascades = [];
+    this.spearCyclones = [];
+    this.rainOfJavelinsZones = [];
+    this.ancientHunters = [];
+    this.elementalSpirits = [];
     this.pickups = [];
     this.slashes = [];
     this.shockwaves = [];
@@ -2042,6 +2306,20 @@ export class GameEngine {
     this.player.tinkerHasteTimer = 0;
     this.player.rapidReloadRemaining = 0;
     this.player.arsenalRemaining = 0;
+    this.player.slimePulseOffset = 0;
+    this.player.slimeComboStep = 0;
+    this.player.slimeUnstableStacks = 0;
+    this.player.slimePrimordialTimer = 0;
+    this.player.slimePrimordialTick = 0;
+    this.player.slimeElementalConvergenceTimer = 0;
+    this.player.slimeLivingSpellbookTimer = 0;
+    this.player.slimeLivingSpellbookTick = 0;
+    this.player.lizardComboStep = 0;
+    this.player.lizardSpearLungeOffset = 0;
+    this.player.lizardFocusStacks = 0;
+    this.player.lizardMoveDistAccum = 0;
+    this.player.lizardHuntSpiritTimer = 0;
+    this.player.lizardDragonfangTimer = 0;
     this.player.ultSurgeTimer = 0;
     this.player.stormReliquaryCount = 0;
     this.player.deathrattlerTimer = 0;
@@ -2067,7 +2345,7 @@ export class GameEngine {
     const isKobold = profile.id === CharacterId.Kobold;
 
     const upgHp = isSkel
-      ? ranks.pathA * 14
+      ? ranks.pathA * 15
       : isGob
       ? ranks.pathA * 11
       : isGnome
@@ -2076,6 +2354,10 @@ export class GameEngine {
       ? ranks.pathA * 9
       : isKobold
       ? ranks.pathA * 12
+      : profile.id === CharacterId.Slime
+      ? ranks.pathA * 14
+      : profile.id === CharacterId.Lizardfolk
+      ? ranks.pathA * 16
       : ranks.pathA * 24;
     const statueHp =
       (this.activeBlessingIds.has('zombie_bloated_carcass') ? 22 : 0) +
@@ -2084,6 +2366,8 @@ export class GameEngine {
       (this.activeBlessingIds.has('gnome_bedrock_plating') ? 24 : 0) +
       (this.activeBlessingIds.has('ghost_ethereal_veil') ? 14 : 0) +
       (this.activeBlessingIds.has('kobold_dragonscale_quiver') ? 18 : 0) +
+      (this.activeBlessingIds.has('slime_gelatinous_membrane') ? 20 : 0) +
+      (this.activeBlessingIds.has('lizard_thick_hide') ? 22 : 0) +
       (this.activeBlessingIds.has('relic_lantern_vitality') ? 20 : 0);
     const levelBonus = (this.runLevel - 1) * 10;
     const rawMaxHp = profile.baseHp + upgHp + statueHp + levelBonus;
@@ -2098,22 +2382,26 @@ export class GameEngine {
       this.player.hp = Math.min(this.player.maxHp, this.player.hp);
     }
 
+    const isSlime = profile.id === CharacterId.Slime;
+    const isLizard = profile.id === CharacterId.Lizardfolk;
+
     const upgSpeedMult =
-      isSkel || isGob || isKobold
+      isSkel || isGob || isKobold || isLizard
         ? 1 + ranks.pathE * 0.05
         : isGnome
         ? 1 + ranks.pathE * 0.04
-        : isGhost
+        : isGhost || isSlime
         ? 1 + ranks.pathE * 0.055
         : 1.0;
     const statueSpeedMult =
       (this.activeBlessingIds.has('skel_phantom_stride') ? 1.1 : 1.0) *
       (this.activeBlessingIds.has('gob_quicksilver_boots') ? 1.1 : 1.0) *
       (this.activeBlessingIds.has('gnome_seismic_momentum') ? 1.12 : 1.0) *
-      (this.activeBlessingIds.has('kobold_clockwork_overdrive') ? 1.08 : 1.0);
+      (this.activeBlessingIds.has('kobold_clockwork_overdrive') ? 1.08 : 1.0) *
+      (this.activeBlessingIds.has('lizard_predator_stride') ? 1.12 : 1.0);
     this.player.speed = profile.baseSpeed * upgSpeedMult * statueSpeedMult;
 
-    const pathCdStep = isSkel || isGob || isGhost || isKobold ? 0.07 : 0.06;
+    const pathCdStep = isSkel || isGob || isGhost || isKobold || isSlime || isLizard ? 0.07 : 0.06;
     const upgCdMult = 1 - ranks.pathE * pathCdStep;
     const normalBlessCdMult =
       (this.activeBlessingIds.has('skel_phantom_stride') ? 0.9 : 1.0) *
@@ -2134,6 +2422,79 @@ export class GameEngine {
     this.player.resolveRatio = isGnome
       ? Math.max(0, Math.min(1, 1 - this.player.hp / Math.max(1, this.player.maxHp)))
       : 0;
+  }
+
+  private triggerSlimeUnstableManaExplosion(x: number, y: number): void {
+    soundEngine.playBossSlam();
+    this.shakeMag = Math.max(this.shakeMag, 6.5);
+    const radius = 104;
+    this.slashes.push({
+      x,
+      y,
+      angle: 0,
+      radius,
+      arcSpread: Math.PI * 2,
+      color: '#A855F7',
+      life: 0.3,
+      maxLife: 0.3,
+      flip: false,
+      kind: 'SLIME_MANA_EXPLOSION',
+    });
+    this.shockwaves.push({
+      x,
+      y,
+      maxRadius: radius,
+      color: '#C084FC',
+      life: 0.26,
+      maxLife: 0.26,
+    });
+    for (let i = 0; i < 14; i++) {
+      if (this.particles.length > 240) break;
+      const pa = (i / 14) * Math.PI * 2 + Math.random() * 0.2;
+      const spd = 120 + Math.random() * 80;
+      this.particles.push({
+        x: x + Math.cos(pa) * 12,
+        y: y + Math.sin(pa) * 12,
+        vx: Math.cos(pa) * spd,
+        vy: Math.sin(pa) * spd,
+        size: 3.5,
+        color: i % 2 === 0 ? '#C084FC' : '#67E8F9',
+        life: 0.3,
+        maxLife: 0.3,
+        gravity: 0,
+        fade: true,
+        kind: 'RUNE_SPARK',
+        rot: pa,
+        vRot: 10,
+        drag: 4.2,
+      });
+    }
+    const blastDmg = Math.round(28 * this.getPlagueOrSkillMultiplier());
+    for (const enemy of [...this.world.enemies]) {
+      if (!enemy || enemy.hp <= 0) continue;
+      if (Math.hypot(enemy.x - x, enemy.y - y) <= radius + enemy.radius) {
+        this.damageEnemy(enemy, blastDmg, false, x, y, true);
+        const dist = Math.hypot(enemy.x - x, enemy.y - y);
+        if (dist > 2) {
+          enemy.vx += ((enemy.x - x) / dist) * 180;
+          enemy.vy += ((enemy.y - y) / dist) * 180;
+        }
+      }
+    }
+    this.spawnPopup(x, y - 26, 'UNSTABLE MANA!', '#D8B4FE', 1.05);
+  }
+
+  private getLizardfolkDistanceDamageBonus(
+    enemyX: number,
+    enemyY: number,
+    originX: number,
+    originY: number
+  ): number {
+    if (this.player.characterId !== CharacterId.Lizardfolk) return 1.0;
+    const dist = Math.hypot(enemyX - originX, enemyY - originY);
+    const distRatio = Math.min(1.0, dist / 260);
+    const ranks = this.getActiveUpgrades();
+    return 1.15 + distRatio * (0.24 + ranks.pathB * 0.04);
   }
 
   private getGhostRestlessMultiplier(): number {
@@ -2192,7 +2553,7 @@ export class GameEngine {
     const ranks = this.getActiveUpgrades();
     const charId = this.player.characterId;
     const pathBStep =
-      charId === CharacterId.Skeleton || charId === CharacterId.Kobold
+      charId === CharacterId.Skeleton || charId === CharacterId.Kobold || charId === CharacterId.Lizardfolk
         ? 0.13
         : charId === CharacterId.Goblin
         ? 0.12
@@ -2216,6 +2577,10 @@ export class GameEngine {
         : 1.0;
     const koboldHaste =
       charId === CharacterId.Kobold && this.player.tinkerHasteTimer > 0 ? 1.12 : 1.0;
+    const lizardPredator =
+      charId === CharacterId.Lizardfolk ? 1.18 : 1.0;
+    const lizardGreatHunt =
+      charId === CharacterId.Lizardfolk && this.player.lizardHuntSpiritTimer > 0 ? 1.35 : 1.0;
     const ghostRestless = this.getGhostRestlessMultiplier();
     const ghostNightmare =
       charId === CharacterId.Ghost && this.player.nightmareTimer > 0 ? 1.25 : 1.0;
@@ -2249,6 +2614,8 @@ export class GameEngine {
       gritOffense *
       ghostWisp *
       koboldHaste *
+      lizardPredator *
+      lizardGreatHunt *
       ghostRestless *
       ghostNightmare *
       abom *
@@ -2278,7 +2645,15 @@ export class GameEngine {
         ? ranks.pathC * 0.18
         : charId === CharacterId.Ghost
         ? ranks.pathB * 0.14 + ranks.pathC * 0.16
+        : charId === CharacterId.Slime
+        ? ranks.pathB * 0.16 + ranks.pathC * 0.18
+        : charId === CharacterId.Lizardfolk
+        ? ranks.pathC * 0.2
         : ranks.pathC * 0.2;
+    const slimeConduit =
+      charId === CharacterId.Slime ? 1.2 : 1.0;
+    const slimePrimordial =
+      charId === CharacterId.Slime && this.player.slimePrimordialTimer > 0 ? 1.55 : 1.0;
     const ghostRestless = this.getGhostRestlessMultiplier();
     const astralConduit =
       charId === CharacterId.Ghost && this.activeBlessingIds.has('ghost_astral_conduit')
@@ -2293,6 +2668,8 @@ export class GameEngine {
     const lvl = 1 + (this.runLevel - 1) * 0.06;
     return (
       (1 + upgBonus) *
+      slimeConduit *
+      slimePrimordial *
       ghostRestless *
       astralConduit *
       gildedGold *
@@ -2383,10 +2760,12 @@ export class GameEngine {
     const isGob = profile.id === CharacterId.Goblin;
     const isGhost = profile.id === CharacterId.Ghost;
     const isKobold = profile.id === CharacterId.Kobold;
+    const isLizard = profile.id === CharacterId.Lizardfolk;
 
-    const upgCrit = isSkel || isGob || isGhost || isKobold ? ranks.pathC * 0.04 : 0;
+    const upgCrit = isSkel || isGob || isGhost || isKobold || isLizard ? ranks.pathC * 0.04 : 0;
     const ivoryCrit = this.activeBlessingIds.has('skel_ivory_edge') ? 0.1 : 0;
     const serratedCrit = this.activeBlessingIds.has('kobold_serrated_broadheads') ? 0.1 : 0;
+    const lizardPredatorCrit = isLizard ? 0.2 : 0;
     const deathrattlerCrit = this.player.deathrattlerTimer > 0 ? 0.15 : 0;
     const heartseekerCrit = this.activeBlessingIds.has('gob_throat_seeker') ? 0.12 : 0;
     const cycloneCrit =
@@ -2407,6 +2786,7 @@ export class GameEngine {
         upgCrit +
         ivoryCrit +
         serratedCrit +
+        lizardPredatorCrit +
         deathrattlerCrit +
         heartseekerCrit +
         cycloneCrit +
@@ -2421,7 +2801,7 @@ export class GameEngine {
       return { damage: Math.max(1, Math.round(rawDamage)), isCrit: false };
     }
 
-    const skelPrecisionMult = isSkel || isKobold ? ranks.pathC * 0.12 : 0;
+    const skelPrecisionMult = isSkel || isKobold || isLizard ? ranks.pathC * 0.12 : 0;
     const ivoryMult = this.activeBlessingIds.has('skel_ivory_edge') ? 0.18 : 0;
     const serratedMult = this.activeBlessingIds.has('kobold_serrated_broadheads') ? 0.24 : 0;
     const shatterstoneMult = this.activeBlessingIds.has('gnome_shatterstone_grip') ? 0.2 : 0;
@@ -2822,6 +3202,14 @@ export class GameEngine {
     this.updateStoneRamparts(dt);
     this.updateGhostMistZones(dt);
     this.updateDeathsPassageRifts(dt);
+    this.updateGravityWells(dt);
+    this.updateArcanePrisons(dt);
+    this.updateAstralSingularities(dt);
+    this.updateElementalCascades(dt);
+    this.updateSpearCyclones(dt);
+    this.updateRainOfJavelins(dt);
+    this.updateAncientHunters(dt);
+    this.updateElementalSpirits(dt);
     this.updatePickups(dt);
     this.updateEffects(dt);
     this.updateParticles(dt);
@@ -3806,6 +4194,65 @@ export class GameEngine {
       }
     }
 
+    // Slime Arcane Mage active timers
+    p.slimePulseOffset = (p.slimePulseOffset + dt * 4.2) % (Math.PI * 2);
+
+    if (p.slimePrimordialTimer > 0) {
+      p.slimePrimordialTimer = Math.max(0, p.slimePrimordialTimer - dt);
+      p.slimePrimordialTick -= dt;
+      if (p.slimePrimordialTick <= 0) {
+        p.slimePrimordialTick = 0.18;
+        soundEngine.playWhoosh();
+        const baseAng = p.aimAngle + (Math.random() - 0.5) * 0.45;
+        const beamDmg = Math.round(28 * this.getPlagueOrSkillMultiplier());
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x: p.x,
+          y: p.y - 8,
+          vx: Math.cos(baseAng) * 760,
+          vy: Math.sin(baseAng) * 760,
+          radius: 9,
+          damage: beamDmg,
+          life: 0.58,
+          color: Math.random() < 0.5 ? '#C084FC' : '#818CF8',
+          kind: 'PLAYER_ARCANE_ORB',
+          angle: baseAng,
+          pierce: true,
+          blastRadius: 55,
+          hitEnemyIds: new Set<number>(),
+        });
+        this.spawnBurst(p.x, p.y - 8, '#C084FC', 5, 80);
+      }
+    }
+
+    if (p.slimeElementalConvergenceTimer > 0) {
+      p.slimeElementalConvergenceTimer = Math.max(0, p.slimeElementalConvergenceTimer - dt);
+      if (Math.random() < 0.32) {
+        this.triggerElementalConvergenceBurst();
+      }
+    }
+
+    if (p.slimeLivingSpellbookTimer > 0) {
+      p.slimeLivingSpellbookTimer = Math.max(0, p.slimeLivingSpellbookTimer - dt);
+      p.slimeLivingSpellbookTick -= dt;
+      if (p.slimeLivingSpellbookTick <= 0) {
+        p.slimeLivingSpellbookTick = 0.48;
+        this.triggerLivingSpellbookCast();
+      }
+    }
+
+    // Lizardfolk Spear Hunter active timers
+    if (p.lizardSpearLungeOffset > 0) {
+      p.lizardSpearLungeOffset = Math.max(0, p.lizardSpearLungeOffset - dt * 45);
+    }
+    if (p.lizardHuntSpiritTimer > 0) {
+      p.lizardHuntSpiritTimer = Math.max(0, p.lizardHuntSpiritTimer - dt);
+    }
+    if (p.lizardDragonfangTimer > 0) {
+      p.lizardDragonfangTimer = Math.max(0, p.lizardDragonfangTimer - dt);
+    }
+
     // Soul Knight Mobile Aiming: Manual skill drag / combo hold overrides auto-lock; otherwise auto-lock nearest enemy or joystick vector
     if (p.manualAimHoldTimer > 0) {
       p.manualAimHoldTimer = Math.max(0, p.manualAimHoldTimer - dt);
@@ -4160,6 +4607,26 @@ export class GameEngine {
       p.vx = nx * effectiveMoveSpeed * clampedMag;
       p.vy = ny * effectiveMoveSpeed * clampedMag;
       p.walkPhase += dt * (8 + 6 * clampedMag) * (p.windrunnerTimer > 0 || p.restlessTimer > 0 ? 1.35 : 1);
+
+      // Lizardfolk Passive 2: Hunter's Instinct — moving builds focus up to 5 stacks
+      if (p.characterId === CharacterId.Lizardfolk) {
+        const moveDist = Math.hypot(p.vx, p.vy) * dt;
+        p.lizardMoveDistAccum += moveDist;
+        if (p.lizardMoveDistAccum >= 85) {
+          p.lizardMoveDistAccum -= 85;
+          if (p.lizardFocusStacks < 5) {
+            p.lizardFocusStacks++;
+            if (p.lizardFocusStacks === 5) {
+              soundEngine.playUiClick(940);
+              this.spawnPopup(p.x, p.y - 28, 'FOCUS MAX!', '#34D399', 1.15);
+              this.spawnBurst(p.x, p.y, '#34D399', 10, 85);
+              p.normalCooldowns[0] = 0; // reset Piercing Javelin cooldown!
+            } else {
+              this.spawnPopup(p.x, p.y - 24, `FOCUS ${p.lizardFocusStacks}`, '#6EE7B7', 0.85);
+            }
+          }
+        }
+      }
     } else {
       p.leapAirProgress = 0;
       p.vx *= Math.pow(0.001, dt);
@@ -4451,6 +4918,272 @@ export class GameEngine {
         }
       }
       return;
+    }
+
+    // === SLIME ARCANE MAGE BASIC ATTACK (ARCANE PULSE / WHIP + UNSTABLE MANA) ===
+    if (profile.id === CharacterId.Slime) {
+      const slimeCd = profile.baseAttackCooldown / (1.15 * (1 + ranks.pathE * 0.05));
+      p.basicAttackCooldown = Math.max(0.12, slimeCd);
+
+      const slimeStep = p.slimeComboStep;
+      const isFinisher = slimeStep === 2;
+      p.slimeComboStep = (slimeStep + 1) % 3;
+      p.comboFlip = slimeStep % 2 === 1;
+      p.slimePulseOffset = isFinisher ? 10 : 6;
+      p.squashX = isFinisher ? 0.76 : 0.84;
+      p.squashY = isFinisher ? 1.32 : 1.2;
+
+      soundEngine.playWhoosh();
+      if (this.isInCoop()) {
+        this.networkManager?.sendCastSkill('BASIC', p.x, p.y, p.aimAngle, 'BASIC');
+      }
+
+      const muzzleX = p.x + Math.cos(p.aimAngle) * 20;
+      const muzzleY = p.y - 2 + Math.sin(p.aimAngle) * 20;
+
+      this.slashes.push({
+        x: muzzleX,
+        y: muzzleY,
+        angle: p.aimAngle,
+        radius: isFinisher ? 38 : 28,
+        arcSpread: isFinisher ? 1.2 : 0.9,
+        color: isFinisher ? '#C084FC' : '#818CF8',
+        life: isFinisher ? 0.18 : 0.14,
+        maxLife: isFinisher ? 0.18 : 0.14,
+        flip: p.comboFlip,
+        kind: 'SLIME_ARCANE_WHIP',
+        scale: isFinisher ? 1.3 : 1.0,
+        isCrit: isFinisher,
+      });
+
+      // Swirling arcane motes & prismatic crystals
+      const sparkCount = isFinisher ? 8 : 5;
+      for (let i = 0; i < sparkCount; i++) {
+        if (this.particles.length > 240) break;
+        const sa = p.aimAngle + (Math.random() - 0.5) * 0.6;
+        const sspd = (isFinisher ? 150 : 110) + Math.random() * 80;
+        this.particles.push({
+          x: muzzleX,
+          y: muzzleY,
+          vx: Math.cos(sa) * sspd,
+          vy: Math.sin(sa) * sspd,
+          size: 3.2,
+          color: i % 2 === 0 ? '#C084FC' : '#818CF8',
+          life: 0.22,
+          maxLife: 0.22,
+          gravity: 0,
+          fade: true,
+          kind: 'RUNE_SPARK',
+          rot: sa,
+          vRot: 10,
+          drag: 4.8,
+        });
+      }
+
+      const orbSpeed = (isFinisher ? 640 : 580) * 1.15; // Arcane Conduit +15% velocity
+      const orbDmg =
+        profile.baseAttackDamage *
+        (isFinisher ? 1.4 : 1.0) *
+        this.getPlagueOrSkillMultiplier();
+
+      this.projectiles.push({
+        id: allocEntityId(),
+        fromPlayer: true,
+        x: muzzleX,
+        y: muzzleY,
+        vx: Math.cos(p.aimAngle) * orbSpeed,
+        vy: Math.sin(p.aimAngle) * orbSpeed,
+        radius: isFinisher ? 10 : 8,
+        damage: orbDmg,
+        life: 0.72,
+        color: isFinisher ? '#C084FC' : '#818CF8',
+        kind: 'PLAYER_ARCANE_ORB',
+        angle: p.aimAngle,
+        pierce: isFinisher,
+        blastRadius: isFinisher ? 78 : 56,
+        hitEnemyIds: new Set<number>(),
+      });
+
+      // Passive 2: Unstable Mana — accumulates energy with each attack; on 3rd cast produces extra explosion!
+      p.slimeUnstableStacks++;
+      if (p.slimeUnstableStacks >= 3) {
+        p.slimeUnstableStacks = 0;
+        this.triggerSlimeUnstableManaExplosion(muzzleX, muzzleY);
+      }
+
+      // Universal Relic Blessing: Stormbound Reliquary
+      if (this.activeBlessingIds.has('relic_storm_reliquary')) {
+        p.stormReliquaryCount++;
+        if (p.stormReliquaryCount >= 4) {
+          p.stormReliquaryCount = 0;
+          const arcTargets = [...this.world.enemies]
+            .filter((e) => e && e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) <= 285)
+            .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))
+            .slice(0, 2);
+          if (arcTargets.length > 0) {
+            const arcDmg = Math.round(18 * this.getPlagueOrSkillMultiplier());
+            let prevX = p.x;
+            let prevY = p.y - 8;
+            for (const target of arcTargets) {
+              this.slashes.push({
+                x: target.x,
+                y: target.y,
+                fromX: prevX,
+                fromY: prevY,
+                angle: Math.atan2(target.y - prevY, target.x - prevX),
+                radius: 0,
+                arcSpread: 0,
+                color: '#67E8F9',
+                life: 0.22,
+                maxLife: 0.22,
+                flip: false,
+                kind: 'GNOME_MAGNETIC_ARC',
+              });
+              this.damageEnemy(target, arcDmg, false, prevX, prevY);
+              this.spawnBurst(target.x, target.y, '#67E8F9', 5, 75);
+              prevX = target.x;
+              prevY = target.y;
+            }
+          }
+        }
+      }
+      return;
+    }
+
+    // === LIZARDFOLK SPEAR HUNTER BASIC ATTACK (THRUST / CLEAVE / POWER JAVELIN) ===
+    if (profile.id === CharacterId.Lizardfolk) {
+      const lizardCd = profile.baseAttackCooldown / (1 + ranks.pathE * 0.05);
+      p.basicAttackCooldown = Math.max(0.12, lizardCd);
+
+      const lizardStep = p.lizardComboStep;
+      const isThrowFinisher = lizardStep === 2;
+      p.lizardComboStep = (lizardStep + 1) % 3;
+      p.comboFlip = lizardStep % 2 === 1;
+      p.lizardSpearLungeOffset = isThrowFinisher ? 12 : 7;
+      p.squashX = isThrowFinisher ? 1.25 : 1.15;
+      p.squashY = isThrowFinisher ? 0.8 : 0.88;
+
+      // Hunter's Instinct: 5 stacks guarantees 100% critical strike and resets Piercing Javelin cooldown!
+      let guaranteedCrit = false;
+      if (p.lizardFocusStacks >= 5) {
+        guaranteedCrit = true;
+        p.lizardFocusStacks = 0;
+        const loadout = this.getActiveLoadout();
+        const javelinSlot = loadout.normalSkills.indexOf(NormalSkillId.PiercingJavelin);
+        if (javelinSlot >= 0) {
+          p.normalCooldowns[javelinSlot] = 0;
+        }
+        this.spawnPopup(p.x, p.y - 32, 'HUNTER FOCUS CRIT!', '#10B981', 1.15);
+      }
+
+      if (this.isInCoop()) {
+        this.networkManager?.sendCastSkill('BASIC', p.x, p.y, p.aimAngle, 'BASIC');
+      }
+
+      if (isThrowFinisher) {
+        // Step 2: Power Piercing Javelin throw
+        soundEngine.playArrow();
+        const muzzleX = p.x + Math.cos(p.aimAngle) * 22;
+        const muzzleY = p.y - 2 + Math.sin(p.aimAngle) * 22;
+
+        this.slashes.push({
+          x: muzzleX,
+          y: muzzleY,
+          angle: p.aimAngle,
+          radius: 54,
+          arcSpread: 0.8,
+          color: '#10B981',
+          life: 0.2,
+          maxLife: 0.2,
+          flip: false,
+          kind: 'LIZARDFOLK_JAVELIN_WAKE',
+          isCrit: guaranteedCrit,
+        });
+
+        const javelinDmg =
+          profile.baseAttackDamage * 1.5 * this.getPhysicalDamageMultiplier();
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x: muzzleX,
+          y: muzzleY,
+          vx: Math.cos(p.aimAngle) * 780,
+          vy: Math.sin(p.aimAngle) * 780,
+          radius: 9,
+          damage: javelinDmg,
+          life: 0.65,
+          color: '#10B981',
+          kind: 'PLAYER_JAVELIN',
+          angle: p.aimAngle,
+          pierce: true,
+          hitEnemyIds: new Set<number>(),
+        });
+        return;
+      } else {
+        // Step 0 & 1: Precision spear thrust / sweeping cleave
+        soundEngine.playSlash(lizardStep);
+        const reach = (lizardStep === 0 ? 82 : 72) * (1 + ranks.pathB * 0.04);
+        const spread = lizardStep === 0 ? 1.05 : 1.72;
+        const originX = p.x + Math.cos(p.aimAngle) * 16;
+        const originY = p.y + Math.sin(p.aimAngle) * 16;
+
+        const createdSlash: SlashEffect = {
+          x: originX,
+          y: originY,
+          angle: p.aimAngle,
+          radius: reach,
+          arcSpread: spread,
+          color: guaranteedCrit ? '#FDE047' : '#10B981',
+          life: 0.16,
+          maxLife: 0.16,
+          flip: p.comboFlip,
+          kind: lizardStep === 0 ? 'LIZARDFOLK_SPEAR_THRUST' : 'LIZARDFOLK_SPEAR_CLEAVE',
+          isCrit: guaranteedCrit,
+        };
+        this.slashes.push(createdSlash);
+
+        // Jade/emerald hunter razor streaks
+        for (let i = 0; i < 6; i++) {
+          if (this.particles.length > 240) break;
+          const dir = p.aimAngle + (Math.random() - 0.5) * spread;
+          const spd = 160 + Math.random() * 90;
+          this.particles.push({
+            x: originX,
+            y: originY,
+            vx: Math.cos(dir) * spd,
+            vy: Math.sin(dir) * spd,
+            size: 2.6,
+            color: i % 2 === 0 ? '#10B981' : '#6EE7B7',
+            life: 0.18,
+            maxLife: 0.18,
+            gravity: 0,
+            fade: true,
+            kind: 'SLASH_STREAK',
+            rot: dir,
+            len: 14,
+            thick: 2,
+            drag: 5.0,
+          });
+        }
+
+        const rawDmg = profile.baseAttackDamage * this.getPhysicalDamageMultiplier();
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          const dist = Math.hypot(enemy.x - p.x, enemy.y - p.y);
+          if (dist <= reach + enemy.radius) {
+            const angleToEnemy = Math.atan2(enemy.y - p.y, enemy.x - p.x);
+            let diff = Math.abs(angleToEnemy - p.aimAngle);
+            while (diff > Math.PI) diff = Math.abs(diff - Math.PI * 2);
+            if (diff <= spread * 0.55) {
+              const distBonus = this.getLizardfolkDistanceDamageBonus(enemy.x, enemy.y, p.x, p.y);
+              const roll = this.rollPhysicalAttack(rawDmg * distBonus, 0.2, guaranteedCrit);
+              this.damageEnemy(enemy, roll.damage, true, p.x, p.y, false, roll.isCrit);
+            }
+          }
+        }
+        this.hitDestructibleProps(p.x, p.y, reach);
+        return;
+      }
     }
 
     let cd = profile.baseAttackCooldown;
@@ -7043,6 +7776,508 @@ export class GameEngine {
         this.spawnPopup(p.x, p.y - 28, 'MULTI-SHOT!', '#FB7185', 1.0);
         break;
       }
+
+      // === SLIME NORMAL SKILLS ===
+      case NormalSkillId.ArcaneOrb: {
+        soundEngine.playWhoosh();
+        const p = this.player;
+        const angle = manual ? manual.angle : p.aimAngle;
+        p.aimAngle = angle;
+        p.facingX = Math.cos(angle) >= 0 ? 1 : -1;
+        p.slimePulseOffset = 8;
+        p.squashX = 0.8;
+        p.squashY = 1.25;
+        this.shakeMag = Math.max(this.shakeMag, 4.5);
+
+        const muzzleX = p.x + Math.cos(angle) * 20;
+        const muzzleY = p.y - 2 + Math.sin(angle) * 20;
+        this.slashes.push({
+          x: muzzleX,
+          y: muzzleY,
+          angle,
+          radius: 36,
+          arcSpread: 1.0,
+          color: '#818CF8',
+          life: 0.18,
+          maxLife: 0.18,
+          flip: false,
+          kind: 'SLIME_ARCANE_WHIP',
+        });
+
+        const orbDmg = Math.round(42 * this.getPlagueOrSkillMultiplier());
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x: muzzleX,
+          y: muzzleY,
+          vx: Math.cos(angle) * 720,
+          vy: Math.sin(angle) * 720,
+          radius: 12,
+          damage: orbDmg,
+          blastRadius: 110,
+          life: 0.82,
+          color: '#818CF8',
+          kind: 'PLAYER_ARCANE_ORB',
+          angle,
+          pierce: false,
+          hitEnemyIds: new Set<number>(),
+        });
+
+        p.slimeUnstableStacks++;
+        if (p.slimeUnstableStacks >= 3) {
+          p.slimeUnstableStacks = 0;
+          this.triggerSlimeUnstableManaExplosion(muzzleX, muzzleY);
+        }
+        this.spawnPopup(p.x, p.y - 28, 'ARCANE ORB!', '#818CF8', 1.0);
+        break;
+      }
+
+      case NormalSkillId.PrismaticShards: {
+        soundEngine.playWhoosh();
+        soundEngine.playSlash(1);
+        const p = this.player;
+        const angle = manual ? manual.angle : p.aimAngle;
+        p.aimAngle = angle;
+        p.facingX = Math.cos(angle) >= 0 ? 1 : -1;
+        p.squashX = 0.85;
+        p.squashY = 1.2;
+        this.shakeMag = Math.max(this.shakeMag, 5.0);
+
+        const muzzleX = p.x + Math.cos(angle) * 20;
+        const muzzleY = p.y - 2 + Math.sin(angle) * 20;
+        this.slashes.push({
+          x: muzzleX,
+          y: muzzleY,
+          angle,
+          radius: 65,
+          arcSpread: 1.2,
+          color: '#C084FC',
+          life: 0.22,
+          maxLife: 0.22,
+          flip: false,
+          kind: 'SLIME_PRISMATIC_BURST',
+        });
+
+        const shardCount = 5;
+        const spread = 0.65;
+        const shardDmg = Math.round(24 * this.getPlagueOrSkillMultiplier());
+        for (let i = 0; i < shardCount; i++) {
+          const t = i / (shardCount - 1) - 0.5;
+          const shotAng = angle + t * spread;
+          this.projectiles.push({
+            id: allocEntityId(),
+            fromPlayer: true,
+            x: muzzleX,
+            y: muzzleY,
+            vx: Math.cos(shotAng) * 780,
+            vy: Math.sin(shotAng) * 780,
+            radius: 8,
+            damage: shardDmg,
+            life: 0.72,
+            color: i % 2 === 0 ? '#C084FC' : '#38BDF8',
+            kind: 'PLAYER_PRISMATIC_SHARD',
+            angle: shotAng,
+            pierce: true,
+            homing: true,
+            hitEnemyIds: new Set<number>(),
+          });
+        }
+
+        p.slimeUnstableStacks++;
+        if (p.slimeUnstableStacks >= 3) {
+          p.slimeUnstableStacks = 0;
+          this.triggerSlimeUnstableManaExplosion(muzzleX, muzzleY);
+        }
+        this.spawnPopup(p.x, p.y - 28, 'PRISMATIC SHARDS!', '#C084FC', 1.0);
+        break;
+      }
+
+      case NormalSkillId.GravityWell: {
+        soundEngine.playSummon();
+        const p = this.player;
+        const focusTarget = manual ? null : this.findNearestEnemy(p.x, p.y, 280);
+        const zx = manual
+          ? (manual.targetX ?? p.x + Math.cos(p.aimAngle) * 110)
+          : focusTarget
+          ? focusTarget.x
+          : p.x + Math.cos(p.aimAngle) * 110;
+        const zy = manual
+          ? (manual.targetY ?? p.y + Math.sin(p.aimAngle) * 110)
+          : focusTarget
+          ? focusTarget.y
+          : p.y + Math.sin(p.aimAngle) * 110;
+
+        const wellRadius = 140;
+        const wellLife = 3.8;
+        this.gravityWells.push({
+          id: allocEntityId(),
+          x: zx,
+          y: zy,
+          radius: wellRadius,
+          life: wellLife,
+          maxLife: wellLife,
+          tickTimer: 0.22,
+          pullDamage: Math.round(10 * this.getPlagueOrSkillMultiplier()),
+        });
+
+        this.shockwaves.push({
+          x: zx,
+          y: zy,
+          maxRadius: wellRadius,
+          color: '#818CF8',
+          life: 0.32,
+          maxLife: 0.32,
+        });
+        this.slashes.push({
+          x: zx,
+          y: zy,
+          angle: 0,
+          radius: wellRadius,
+          arcSpread: Math.PI * 2,
+          color: '#818CF8',
+          life: 0.35,
+          maxLife: 0.35,
+          flip: false,
+          kind: 'SLIME_GRAVITY_PULSE',
+        });
+
+        p.slimeUnstableStacks++;
+        if (p.slimeUnstableStacks >= 3) {
+          p.slimeUnstableStacks = 0;
+          this.triggerSlimeUnstableManaExplosion(p.x, p.y);
+        }
+        this.spawnPopup(zx, zy - 32, 'GRAVITY WELL!', '#818CF8', 1.05);
+        break;
+      }
+
+      case NormalSkillId.ElementalCascade: {
+        soundEngine.playSummon();
+        const p = this.player;
+        const focusTarget = manual ? null : this.findNearestEnemy(p.x, p.y, 290);
+        const zx = manual
+          ? (manual.targetX ?? p.x + Math.cos(p.aimAngle) * 105)
+          : focusTarget
+          ? focusTarget.x
+          : p.x + Math.cos(p.aimAngle) * 105;
+        const zy = manual
+          ? (manual.targetY ?? p.y + Math.sin(p.aimAngle) * 105)
+          : focusTarget
+          ? focusTarget.y
+          : p.y + Math.sin(p.aimAngle) * 105;
+
+        const cascadeRadius = 155;
+        const cascadeLife = 3.4;
+        this.elementalCascades.push({
+          id: allocEntityId(),
+          x: zx,
+          y: zy,
+          radius: cascadeRadius,
+          life: cascadeLife,
+          maxLife: cascadeLife,
+          tickTimer: 0.12,
+          damagePerDrop: Math.round(19 * this.getPlagueOrSkillMultiplier()),
+          dropsRemaining: 10,
+        });
+
+        this.shockwaves.push({
+          x: zx,
+          y: zy,
+          maxRadius: cascadeRadius,
+          color: '#38BDF8',
+          life: 0.3,
+          maxLife: 0.3,
+        });
+        this.spawnPopup(zx, zy - 32, 'ELEMENTAL CASCADE!', '#38BDF8', 1.05);
+        break;
+      }
+
+      case NormalSkillId.ArcanePrison: {
+        soundEngine.playBossSlam();
+        const p = this.player;
+        const focusTarget = manual ? null : this.findNearestEnemy(p.x, p.y, 270);
+        const zx = manual
+          ? (manual.targetX ?? p.x + Math.cos(p.aimAngle) * 100)
+          : focusTarget
+          ? focusTarget.x
+          : p.x + Math.cos(p.aimAngle) * 100;
+        const zy = manual
+          ? (manual.targetY ?? p.y + Math.sin(p.aimAngle) * 100)
+          : focusTarget
+          ? focusTarget.y
+          : p.y + Math.sin(p.aimAngle) * 100;
+
+        const prisonRadius = 125;
+        const prisonLife = 4.2;
+        this.arcanePrisons.push({
+          id: allocEntityId(),
+          x: zx,
+          y: zy,
+          radius: prisonRadius,
+          life: prisonLife,
+          maxLife: prisonLife,
+          tickTimer: 0.22,
+          damagePerTick: Math.round(15 * this.getPlagueOrSkillMultiplier()),
+        });
+
+        this.slashes.push({
+          x: zx,
+          y: zy,
+          angle: 0,
+          radius: prisonRadius,
+          arcSpread: Math.PI * 2,
+          color: '#A855F7',
+          life: 0.4,
+          maxLife: 0.4,
+          flip: false,
+          kind: 'SLIME_PRISON_RING',
+        });
+        this.shockwaves.push({
+          x: zx,
+          y: zy,
+          maxRadius: prisonRadius,
+          color: '#C084FC',
+          life: 0.35,
+          maxLife: 0.35,
+        });
+
+        p.slimeUnstableStacks++;
+        if (p.slimeUnstableStacks >= 3) {
+          p.slimeUnstableStacks = 0;
+          this.triggerSlimeUnstableManaExplosion(p.x, p.y);
+        }
+        this.spawnPopup(zx, zy - 32, 'ARCANE PRISON!', '#C084FC', 1.05);
+        break;
+      }
+
+      // === LIZARDFOLK NORMAL SKILLS ===
+      case NormalSkillId.PiercingJavelin: {
+        soundEngine.playArrow();
+        soundEngine.playSlash(1);
+        const p = this.player;
+        const angle = manual ? manual.angle : p.aimAngle;
+        p.aimAngle = angle;
+        p.facingX = Math.cos(angle) >= 0 ? 1 : -1;
+        p.lizardSpearLungeOffset = 14;
+        p.squashX = 1.28;
+        p.squashY = 0.78;
+        this.shakeMag = Math.max(this.shakeMag, 6.0);
+
+        const muzzleX = p.x + Math.cos(angle) * 22;
+        const muzzleY = p.y - 2 + Math.sin(angle) * 22;
+
+        this.slashes.push({
+          x: muzzleX,
+          y: muzzleY,
+          angle,
+          radius: 64,
+          arcSpread: 0.75,
+          color: '#10B981',
+          life: 0.22,
+          maxLife: 0.22,
+          flip: false,
+          kind: 'LIZARDFOLK_JAVELIN_WAKE',
+          isCrit: p.lizardFocusStacks >= 5,
+        });
+
+        const javelinDmg = Math.round(48 * this.getPhysicalDamageMultiplier());
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x: muzzleX,
+          y: muzzleY,
+          vx: Math.cos(angle) * 850,
+          vy: Math.sin(angle) * 850,
+          radius: 10,
+          damage: javelinDmg,
+          life: 0.75,
+          color: '#10B981',
+          kind: 'PLAYER_JAVELIN',
+          angle,
+          pierce: true,
+          hitEnemyIds: new Set<number>(),
+        });
+        this.spawnPopup(p.x, p.y - 28, 'PIERCING JAVELIN!', '#10B981', 1.0);
+        break;
+      }
+
+      case NormalSkillId.TripleSpearToss: {
+        soundEngine.playArrow();
+        const p = this.player;
+        const angle = manual ? manual.angle : p.aimAngle;
+        p.aimAngle = angle;
+        p.facingX = Math.cos(angle) >= 0 ? 1 : -1;
+        p.lizardSpearLungeOffset = 10;
+        p.squashX = 1.22;
+        p.squashY = 0.82;
+        this.shakeMag = Math.max(this.shakeMag, 5.0);
+
+        const muzzleX = p.x + Math.cos(angle) * 20;
+        const muzzleY = p.y - 2 + Math.sin(angle) * 20;
+
+        const spearDmg = Math.round(32 * this.getPhysicalDamageMultiplier());
+        const offsets = [-0.24, 0, 0.24];
+        for (const off of offsets) {
+          const sa = angle + off;
+          this.projectiles.push({
+            id: allocEntityId(),
+            fromPlayer: true,
+            x: muzzleX,
+            y: muzzleY,
+            vx: Math.cos(sa) * 820,
+            vy: Math.sin(sa) * 820,
+            radius: 8.5,
+            damage: spearDmg,
+            life: 0.65,
+            color: '#34D399',
+            kind: 'PLAYER_TRIPLE_SPEAR',
+            angle: sa,
+            pierce: true,
+            hitEnemyIds: new Set<number>(),
+          });
+        }
+
+        this.slashes.push({
+          x: muzzleX,
+          y: muzzleY,
+          angle,
+          radius: 58,
+          arcSpread: 1.1,
+          color: '#34D399',
+          life: 0.2,
+          maxLife: 0.2,
+          flip: false,
+          kind: 'LIZARDFOLK_JAVELIN_WAKE',
+        });
+        this.spawnPopup(p.x, p.y - 28, 'TRIPLE SPEARS!', '#34D399', 1.0);
+        break;
+      }
+
+      case NormalSkillId.ImpalingSpear: {
+        soundEngine.playArrow();
+        soundEngine.playBoneBreak();
+        const p = this.player;
+        const angle = manual ? manual.angle : p.aimAngle;
+        p.aimAngle = angle;
+        p.facingX = Math.cos(angle) >= 0 ? 1 : -1;
+        p.lizardSpearLungeOffset = 15;
+        p.squashX = 1.32;
+        p.squashY = 0.74;
+        this.shakeMag = Math.max(this.shakeMag, 7.5);
+
+        const muzzleX = p.x + Math.cos(angle) * 22;
+        const muzzleY = p.y - 2 + Math.sin(angle) * 22;
+        const impaleDmg = Math.round(58 * this.getPhysicalDamageMultiplier());
+
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x: muzzleX,
+          y: muzzleY,
+          vx: Math.cos(angle) * 890,
+          vy: Math.sin(angle) * 890,
+          radius: 11,
+          damage: impaleDmg,
+          life: 0.75,
+          color: '#059669',
+          kind: 'PLAYER_IMPALING_SPEAR',
+          angle,
+          pierce: false,
+          hitEnemyIds: new Set<number>(),
+        });
+
+        this.slashes.push({
+          x: muzzleX,
+          y: muzzleY,
+          angle,
+          radius: 68,
+          arcSpread: 0.65,
+          color: '#059669',
+          life: 0.24,
+          maxLife: 0.24,
+          flip: false,
+          kind: 'LIZARDFOLK_IMPALE_BURST',
+          isCrit: true,
+        });
+        this.spawnPopup(p.x, p.y - 28, 'IMPALING SPEAR!', '#059669', 1.05);
+        break;
+      }
+
+      case NormalSkillId.HuntingMark: {
+        soundEngine.playUiClick(860);
+        const p = this.player;
+        const target = manual?.lockedEnemyId
+          ? this.world.enemies.find((e) => e.id === manual.lockedEnemyId && e.hp > 0)
+          : this.findNearestEnemy(p.x, p.y, 320);
+
+        if (target) {
+          target.hunterMarkStacks = 5;
+          target.hunterMarkTimer = 7.0;
+          target.vulnerableTimer = Math.max(target.vulnerableTimer, 6.0);
+          this.slashes.push({
+            x: target.x,
+            y: target.y,
+            angle: 0,
+            radius: 48,
+            arcSpread: Math.PI * 2,
+            color: '#10B981',
+            life: 0.35,
+            maxLife: 0.35,
+            flip: false,
+            kind: 'LIZARDFOLK_HUNTING_MARK_FX',
+          });
+          this.spawnPopup(target.x, target.y - 36, 'HUNTING MARK!', '#10B981', 1.1);
+        }
+
+        // Grants 3 Focus stacks to Lizardfolk
+        p.lizardFocusStacks = Math.min(5, p.lizardFocusStacks + 3);
+        this.spawnPopup(p.x, p.y - 28, '+3 FOCUS STACKS', '#34D399', 0.95);
+        break;
+      }
+
+      case NormalSkillId.SpearCyclone: {
+        soundEngine.playSlash(2);
+        const p = this.player;
+        const focusTarget = manual ? null : this.findNearestEnemy(p.x, p.y, 280);
+        const zx = manual
+          ? (manual.targetX ?? p.x + Math.cos(p.aimAngle) * 95)
+          : focusTarget
+          ? focusTarget.x
+          : p.x + Math.cos(p.aimAngle) * 95;
+        const zy = manual
+          ? (manual.targetY ?? p.y + Math.sin(p.aimAngle) * 95)
+          : focusTarget
+          ? focusTarget.y
+          : p.y + Math.sin(p.aimAngle) * 95;
+
+        const cycloneRadius = 130;
+        const cycloneLife = 3.6;
+        this.spearCyclones.push({
+          id: allocEntityId(),
+          x: zx,
+          y: zy,
+          radius: cycloneRadius,
+          life: cycloneLife,
+          maxLife: cycloneLife,
+          tickTimer: 0.18,
+          damagePerTick: Math.round(18 * this.getPhysicalDamageMultiplier()),
+          returnToPlayer: true,
+        });
+
+        this.slashes.push({
+          x: zx,
+          y: zy,
+          angle: 0,
+          radius: cycloneRadius,
+          arcSpread: Math.PI * 2,
+          color: '#10B981',
+          life: 0.34,
+          maxLife: 0.34,
+          flip: false,
+          kind: 'LIZARDFOLK_CYCLONE_SPIN',
+        });
+        this.spawnPopup(zx, zy - 32, 'SPEAR CYCLONE!', '#10B981', 1.05);
+        break;
+      }
     }
     this.emitHudSnapshot();
   }
@@ -9114,6 +10349,475 @@ export class GameEngine {
         this.spawnPopup(p.x, p.y - 38, 'DEADLY ARSENAL!', '#FDE047', 1.2);
         break;
       }
+
+      // === SLIME ULTIMATE SKILLS ===
+      case UltimateSkillId.CataclysmOfElements: {
+        soundEngine.playBossSlam();
+        soundEngine.playSummon();
+        this.hitstopTimer = 0.06;
+        this.shakeMag = 14;
+        p.squashX = 1.35;
+        p.squashY = 0.7;
+
+        const isSovereign = this.activeBlessingIds.has('slime_ult_cataclysm_a');
+        const isConvergence = this.activeBlessingIds.has('slime_ult_cataclysm_b');
+
+        if (isSovereign) {
+          // Path A – Elemental Sovereign: Summons 4 massive elemental spirits
+          const elements: ('FIRE' | 'ICE' | 'LIGHTNING' | 'EARTH')[] = [
+            'FIRE',
+            'ICE',
+            'LIGHTNING',
+            'EARTH',
+          ];
+          for (let i = 0; i < elements.length; i++) {
+            const ang = (i / elements.length) * Math.PI * 2;
+            const sx = p.x + Math.cos(ang) * 65;
+            const sy = p.y + Math.sin(ang) * 55;
+            this.elementalSpirits.push({
+              id: allocEntityId(),
+              element: elements[i],
+              x: sx,
+              y: sy,
+              vx: 0,
+              vy: 0,
+              life: 9.0,
+              maxLife: 9.0,
+              attackCooldown: 0.2 + i * 0.15,
+            });
+            this.spawnBurst(sx, sy, elements[i] === 'FIRE' ? '#F97316' : elements[i] === 'ICE' ? '#38BDF8' : elements[i] === 'LIGHTNING' ? '#FDE047' : '#10B981', 8, 85);
+          }
+          this.spawnPopup(p.x, p.y - 42, 'ELEMENTAL SOVEREIGN!', '#F59E0B', 1.25);
+        } else if (isConvergence) {
+          // Path B – Elemental Convergence: Massive converging elemental rune matrix
+          p.slimeElementalConvergenceTimer = 8.5;
+          this.spawnPopup(p.x, p.y - 42, 'ELEMENTAL CONVERGENCE!', '#818CF8', 1.25);
+        } else {
+          this.spawnPopup(p.x, p.y - 42, 'CATACLYSM OF ELEMENTS!', '#C084FC', 1.2);
+        }
+
+        const stormR = isSovereign ? 260 : 230;
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: stormR,
+          arcSpread: Math.PI * 2,
+          color: '#818CF8',
+          life: 0.55,
+          maxLife: 0.55,
+          flip: false,
+          kind: 'SLIME_CATACLYSM_STORM',
+        });
+        this.shockwaves.push({
+          x: p.x,
+          y: p.y,
+          maxRadius: stormR,
+          color: '#C084FC',
+          life: 0.42,
+          maxLife: 0.42,
+        });
+
+        // Instant initial elemental wave
+        const burstDmg = Math.round(52 * this.getPlagueOrSkillMultiplier());
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= stormR + enemy.radius) {
+            this.damageEnemy(enemy, burstDmg, true, p.x, p.y, true);
+            enemy.slowTimer = Math.max(enemy.slowTimer, 3.0);
+            enemy.slowFactor = Math.min(enemy.slowFactor, 0.6);
+            enemy.infectionStacks = Math.min(4, enemy.infectionStacks + 2);
+            enemy.plagueTimer = Math.max(enemy.plagueTimer, 4.0);
+          }
+        }
+        break;
+      }
+
+      case UltimateSkillId.AstralSingularity: {
+        soundEngine.playBossSlam();
+        this.hitstopTimer = 0.06;
+        this.shakeMag = 15;
+        p.squashX = 1.38;
+        p.squashY = 0.68;
+
+        const isBlackStar = this.activeBlessingIds.has('slime_ult_singularity_a');
+        const isCelestialPrison = this.activeBlessingIds.has('slime_ult_singularity_b');
+
+        const focusTarget = manual ? null : this.findNearestEnemy(p.x, p.y, 300);
+        const zx = manual
+          ? (manual.targetX ?? p.x + Math.cos(p.aimAngle) * 90)
+          : focusTarget
+          ? focusTarget.x
+          : p.x + Math.cos(p.aimAngle) * 90;
+        const zy = manual
+          ? (manual.targetY ?? p.y + Math.sin(p.aimAngle) * 90)
+          : focusTarget
+          ? focusTarget.y
+          : p.y + Math.sin(p.aimAngle) * 90;
+
+        const singRadius = isBlackStar ? 240 : 200;
+        const singLife = isBlackStar ? 3.0 : 2.5;
+
+        this.astralSingularities.push({
+          id: allocEntityId(),
+          x: zx,
+          y: zy,
+          radius: singRadius,
+          life: singLife,
+          maxLife: singLife,
+          tickTimer: 0.12,
+          pullDamage: Math.round(14 * this.getPlagueOrSkillMultiplier()),
+          explosionDamage: Math.round(
+            (isBlackStar ? 95 : 75) * this.getPlagueOrSkillMultiplier()
+          ),
+          detonated: false,
+          pathVariant: isBlackStar
+            ? 'BLACK_STAR'
+            : isCelestialPrison
+            ? 'CELESTIAL_PRISON'
+            : 'STANDARD',
+        });
+
+        this.slashes.push({
+          x: zx,
+          y: zy,
+          angle: 0,
+          radius: singRadius,
+          arcSpread: Math.PI * 2,
+          color: isBlackStar ? '#0F172A' : '#C084FC',
+          life: 0.45,
+          maxLife: 0.45,
+          flip: false,
+          kind: 'SLIME_SINGULARITY_BURST',
+        });
+        this.shockwaves.push({
+          x: zx,
+          y: zy,
+          maxRadius: singRadius,
+          color: '#818CF8',
+          life: 0.35,
+          maxLife: 0.35,
+        });
+
+        const titleText = isBlackStar
+          ? 'BLACK STAR!'
+          : isCelestialPrison
+          ? 'CELESTIAL PRISON!'
+          : 'ASTRAL SINGULARITY!';
+        this.spawnPopup(zx, zy - 38, titleText, '#C084FC', 1.25);
+        break;
+      }
+
+      case UltimateSkillId.PrimordialOverload: {
+        soundEngine.playSummon();
+        soundEngine.playBossSlam();
+        this.hitstopTimer = 0.05;
+        this.shakeMag = 12;
+        p.squashX = 1.35;
+        p.squashY = 0.72;
+        p.slimePrimordialTimer = 8.5;
+        p.slimePrimordialTick = 0.1;
+
+        const isArcaneDeity = this.activeBlessingIds.has('slime_ult_overload_a');
+        const isLivingSpellbook = this.activeBlessingIds.has('slime_ult_overload_b');
+
+        if (isLivingSpellbook) {
+          p.slimeLivingSpellbookTimer = 8.5;
+          p.slimeLivingSpellbookTick = 0.2;
+          this.spawnPopup(p.x, p.y - 42, 'LIVING SPELLBOOK!', '#F59E0B', 1.25);
+        } else if (isArcaneDeity) {
+          this.spawnPopup(p.x, p.y - 42, 'ARCANE DEITY!', '#C084FC', 1.25);
+        } else {
+          this.spawnPopup(p.x, p.y - 42, 'PRIMORDIAL OVERLOAD!', '#818CF8', 1.2);
+        }
+
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 175,
+          arcSpread: Math.PI * 2,
+          color: '#818CF8',
+          life: 0.45,
+          maxLife: 0.45,
+          flip: false,
+          kind: 'SLIME_OVERLOAD_NOVA',
+        });
+        this.shockwaves.push({
+          x: p.x,
+          y: p.y,
+          maxRadius: 175,
+          color: '#C084FC',
+          life: 0.35,
+          maxLife: 0.35,
+        });
+        break;
+      }
+
+      // === LIZARDFOLK ULTIMATE SKILLS ===
+      case UltimateSkillId.RainOfJavelins: {
+        soundEngine.playArrow();
+        soundEngine.playBossSlam();
+        this.hitstopTimer = 0.055;
+        this.shakeMag = 13;
+        p.lizardSpearLungeOffset = -22;
+        p.squashX = 1.35;
+        p.squashY = 0.7;
+
+        const isThousandSpears = this.activeBlessingIds.has('lizard_ult_rain_a');
+        const isCataclysm = this.activeBlessingIds.has('lizard_ult_rain_b');
+
+        const focusTarget = manual ? null : this.findNearestEnemy(p.x, p.y, 310);
+        const zx = manual
+          ? (manual.targetX ?? p.x + Math.cos(p.aimAngle) * 95)
+          : focusTarget
+          ? focusTarget.x
+          : p.x + Math.cos(p.aimAngle) * 95;
+        const zy = manual
+          ? (manual.targetY ?? p.y + Math.sin(p.aimAngle) * 95)
+          : focusTarget
+          ? focusTarget.y
+          : p.y + Math.sin(p.aimAngle) * 95;
+
+        const rainRadius = isThousandSpears ? 260 : 205;
+        const rainLife = isThousandSpears ? 4.5 : 3.6;
+
+        this.rainOfJavelinsZones.push({
+          id: allocEntityId(),
+          x: zx,
+          y: zy,
+          radius: rainRadius,
+          life: rainLife,
+          maxLife: rainLife,
+          tickTimer: 0.08,
+          damagePerVolley: Math.round(
+            (isCataclysm ? 28 : 22) * this.getPhysicalDamageMultiplier()
+          ),
+          pathVariant: isThousandSpears
+            ? 'THOUSAND_SPEARS'
+            : isCataclysm
+            ? 'SPEARFALL_CATACLYSM'
+            : 'STANDARD',
+        });
+
+        this.slashes.push({
+          x: zx,
+          y: zy,
+          angle: 0,
+          radius: rainRadius,
+          arcSpread: Math.PI * 2,
+          color: '#10B981',
+          life: 0.4,
+          maxLife: 0.4,
+          flip: false,
+          kind: 'LIZARDFOLK_RAIN_VOLLEY',
+        });
+        this.shockwaves.push({
+          x: zx,
+          y: zy,
+          maxRadius: rainRadius,
+          color: '#34D399',
+          life: 0.35,
+          maxLife: 0.35,
+        });
+
+        const rainTitle = isThousandSpears
+          ? 'THOUSAND SPEARS OF THE ANCIENTS!'
+          : isCataclysm
+          ? 'SPEARFALL CATACLYSM!'
+          : 'RAIN OF JAVELINS!';
+        this.spawnPopup(zx, zy - 38, rainTitle, '#10B981', 1.22);
+        break;
+      }
+
+      case UltimateSkillId.WorldPiercer: {
+        soundEngine.playBossSlam();
+        soundEngine.playArrow();
+        const angle = manual ? manual.angle : p.aimAngle;
+        p.aimAngle = angle;
+        p.facingX = Math.cos(angle) >= 0 ? 1 : -1;
+        p.lizardSpearLungeOffset = 24;
+        p.squashX = 1.45;
+        p.squashY = 0.65;
+        this.hitstopTimer = 0.06;
+        this.shakeMag = 16;
+
+        const isDragonfang = this.activeBlessingIds.has('lizard_ult_piercer_a');
+        const isAbsolutePen = this.activeBlessingIds.has('lizard_ult_piercer_b');
+
+        const muzzleX = p.x + Math.cos(angle) * 24;
+        const muzzleY = p.y - 2 + Math.sin(angle) * 24;
+
+        if (isDragonfang) {
+          // Path A – Dragonfang: Spear manifests a gigantic roaring dragon phantom head
+          this.slashes.push({
+            x: muzzleX,
+            y: muzzleY,
+            angle,
+            radius: 120,
+            arcSpread: 1.2,
+            color: '#F97316',
+            life: 0.4,
+            maxLife: 0.4,
+            flip: false,
+            kind: 'LIZARDFOLK_DRAGONFANG_BREATH',
+          });
+          this.projectiles.push({
+            id: allocEntityId(),
+            fromPlayer: true,
+            x: muzzleX,
+            y: muzzleY,
+            vx: Math.cos(angle) * 980,
+            vy: Math.sin(angle) * 980,
+            radius: 20,
+            damage: Math.round(110 * this.getPhysicalDamageMultiplier()),
+            life: 0.95,
+            color: '#F97316',
+            kind: 'PLAYER_DRAGONFANG_HEAD',
+            angle,
+            pierce: true,
+            hitEnemyIds: new Set<number>(),
+          });
+          this.spawnPopup(p.x, p.y - 40, 'WORLD PIERCER: DRAGONFANG!', '#F97316', 1.25);
+        } else if (isAbsolutePen) {
+          // Path B – Absolute Penetration: Dimensional fracture beam
+          this.slashes.push({
+            x: muzzleX,
+            y: muzzleY,
+            angle,
+            radius: 140,
+            arcSpread: 0.5,
+            color: '#10B981',
+            life: 0.45,
+            maxLife: 0.45,
+            flip: false,
+            kind: 'LIZARDFOLK_FRACTURE_BEAM',
+          });
+          this.projectiles.push({
+            id: allocEntityId(),
+            fromPlayer: true,
+            x: muzzleX,
+            y: muzzleY,
+            vx: Math.cos(angle) * 1250,
+            vy: Math.sin(angle) * 1250,
+            radius: 16,
+            damage: Math.round(120 * this.getPhysicalDamageMultiplier()),
+            life: 0.95,
+            color: '#34D399',
+            kind: 'PLAYER_WORLD_PIERCER',
+            angle,
+            pierce: true,
+            hitEnemyIds: new Set<number>(),
+          });
+          this.spawnPopup(p.x, p.y - 40, 'ABSOLUTE PENETRATION!', '#34D399', 1.25);
+        } else {
+          this.slashes.push({
+            x: muzzleX,
+            y: muzzleY,
+            angle,
+            radius: 95,
+            arcSpread: 0.8,
+            color: '#10B981',
+            life: 0.35,
+            maxLife: 0.35,
+            flip: false,
+            kind: 'LIZARDFOLK_WORLD_PIERCER_SHOCKWAVE',
+          });
+          this.projectiles.push({
+            id: allocEntityId(),
+            fromPlayer: true,
+            x: muzzleX,
+            y: muzzleY,
+            vx: Math.cos(angle) * 1100,
+            vy: Math.sin(angle) * 1100,
+            radius: 15,
+            damage: Math.round(95 * this.getPhysicalDamageMultiplier()),
+            life: 0.9,
+            color: '#10B981',
+            kind: 'PLAYER_WORLD_PIERCER',
+            angle,
+            pierce: true,
+            hitEnemyIds: new Set<number>(),
+          });
+          this.spawnPopup(p.x, p.y - 40, 'WORLD PIERCER!', '#10B981', 1.2);
+        }
+        break;
+      }
+
+      case UltimateSkillId.SpiritOfTheGreatHunt: {
+        soundEngine.playSummon();
+        soundEngine.playBossSlam();
+        this.hitstopTimer = 0.05;
+        this.shakeMag = 12;
+        p.lizardHuntSpiritTimer = 9.0;
+        p.squashX = 1.35;
+        p.squashY = 0.72;
+
+        const isFirstHunter = this.activeBlessingIds.has('lizard_ult_hunt_a');
+        const isWildHunt = this.activeBlessingIds.has('lizard_ult_hunt_b');
+
+        this.slashes.push({
+          x: p.x,
+          y: p.y,
+          angle: 0,
+          radius: 185,
+          arcSpread: Math.PI * 2,
+          color: '#10B981',
+          life: 0.45,
+          maxLife: 0.45,
+          flip: false,
+          kind: 'LIZARDFOLK_GREAT_HUNT_ROAR',
+        });
+        this.shockwaves.push({
+          x: p.x,
+          y: p.y,
+          maxRadius: 185,
+          color: '#34D399',
+          life: 0.35,
+          maxLife: 0.35,
+        });
+
+        if (isWildHunt) {
+          // Path B – Wild Hunt Procession: Pack of 4 spirits charging
+          for (let i = 0; i < 4; i++) {
+            const ang = (i / 4) * Math.PI * 2;
+            const sx = p.x + Math.cos(ang) * 55;
+            const sy = p.y + Math.sin(ang) * 45;
+            this.ancientHunters.push({
+              id: allocEntityId(),
+              x: sx,
+              y: sy,
+              vx: 0,
+              vy: 0,
+              targetEnemyId: null,
+              life: 8.5,
+              maxLife: 8.5,
+              attackCooldown: 0.2 + i * 0.15,
+              facingX: 1,
+              variant: 'WILD_HUNT',
+            });
+          }
+          this.spawnPopup(p.x, p.y - 42, 'WILD HUNT PROCESSION!', '#10B981', 1.25);
+        } else {
+          // Path A – The First Hunter: Towering ancestor hunter phantom
+          this.ancientHunters.push({
+            id: allocEntityId(),
+            x: p.x + Math.cos(p.aimAngle) * 45,
+            y: p.y + Math.sin(p.aimAngle) * 45,
+            vx: 0,
+            vy: 0,
+            targetEnemyId: null,
+            life: 9.5,
+            maxLife: 9.5,
+            attackCooldown: 0.3,
+            facingX: p.facingX,
+            variant: 'FIRST_HUNTER',
+          });
+          const title = isFirstHunter ? 'THE FIRST HUNTER!' : 'SPIRIT OF THE GREAT HUNT!';
+          this.spawnPopup(p.x, p.y - 42, title, '#34D399', 1.25);
+        }
+        break;
+      }
     }
 
     this.emitHudSnapshot();
@@ -10649,6 +12353,122 @@ export class GameEngine {
                 kind: 'SKELETON_IMPACT_FLASH',
                 scale: roll.isCrit ? 1.3 : 1.0,
                 isCrit: roll.isCrit,
+              });
+            } else if (pr.kind === 'PLAYER_ARCANE_ORB') {
+              soundEngine.playWhoosh();
+              const blastR = pr.blastRadius ?? 65;
+              this.shockwaves.push({
+                x: pr.x,
+                y: pr.y,
+                maxRadius: blastR,
+                color: '#C084FC',
+                life: 0.26,
+                maxLife: 0.26,
+              });
+              this.slashes.push({
+                x: pr.x,
+                y: pr.y,
+                angle: pr.angle,
+                radius: blastR,
+                arcSpread: Math.PI * 2,
+                color: '#818CF8',
+                life: 0.24,
+                maxLife: 0.24,
+                flip: false,
+                kind: 'SLIME_MANA_EXPLOSION',
+                isCrit: roll.isCrit,
+              });
+              for (const nearby of [...this.world.enemies]) {
+                if (!nearby || nearby.hp <= 0) continue;
+                if (Math.hypot(nearby.x - pr.x, nearby.y - pr.y) <= blastR + nearby.radius) {
+                  this.damageEnemy(nearby, roll.damage, true, pr.x, pr.y, true, roll.isCrit);
+                }
+              }
+              consumed = true;
+              break;
+            } else if (pr.kind === 'PLAYER_PRISMATIC_SHARD') {
+              this.spawnBurst(enemy.x, enemy.y, '#C084FC', 8, 90);
+              if (pr.hitEnemyIds?.size === 1) {
+                const nextTarget = this.world.enemies.find(
+                  (o) =>
+                    o &&
+                    o.hp > 0 &&
+                    o.id !== enemy.id &&
+                    Math.hypot(o.x - enemy.x, o.y - enemy.y) <= 240
+                );
+                if (nextTarget) {
+                  const na = Math.atan2(nextTarget.y - enemy.y, nextTarget.x - enemy.x);
+                  pr.angle = na;
+                  pr.vx = Math.cos(na) * 820;
+                  pr.vy = Math.sin(na) * 820;
+                }
+              }
+            } else if (pr.kind === 'PLAYER_JAVELIN' || pr.kind === 'PLAYER_TRIPLE_SPEAR') {
+              const distMult = this.getLizardfolkDistanceDamageBonus(
+                enemy.x,
+                enemy.y,
+                this.player.x,
+                this.player.y
+              );
+              const markBonus = (enemy.hunterMarkStacks ?? 0) > 0 ? 1.25 : 1.0;
+              const javelinDmg = Math.round(roll.damage * distMult * markBonus);
+              this.damageEnemy(enemy, javelinDmg, true, pr.x, pr.y, true, roll.isCrit);
+              this.slashes.push({
+                x: enemy.x,
+                y: enemy.y,
+                angle: pr.angle,
+                radius: 34,
+                arcSpread: 0.8,
+                color: '#34D399',
+                life: 0.18,
+                maxLife: 0.18,
+                flip: false,
+                kind: 'LIZARDFOLK_JAVELIN_WAKE',
+                isCrit: roll.isCrit,
+              });
+            } else if (pr.kind === 'PLAYER_IMPALING_SPEAR') {
+              enemy.stunTimer = Math.max(enemy.stunTimer, 1.8);
+              enemy.rootTimer = Math.max(enemy.rootTimer, 2.5);
+              this.shakeMag = Math.max(this.shakeMag, 6.5);
+              soundEngine.playBoneBreak();
+              this.slashes.push({
+                x: enemy.x,
+                y: enemy.y,
+                angle: pr.angle,
+                radius: 48,
+                arcSpread: 1.2,
+                color: '#059669',
+                life: 0.28,
+                maxLife: 0.28,
+                flip: false,
+                kind: 'LIZARDFOLK_IMPALE_BURST',
+                isCrit: true,
+              });
+              consumed = true;
+              break;
+            } else if (pr.kind === 'PLAYER_WORLD_PIERCER' || pr.kind === 'PLAYER_DRAGONFANG_HEAD') {
+              this.shakeMag = Math.max(this.shakeMag, 12);
+              soundEngine.playBossSlam();
+              this.shockwaves.push({
+                x: enemy.x,
+                y: enemy.y,
+                maxRadius: 85,
+                color: '#059669',
+                life: 0.28,
+                maxLife: 0.28,
+              });
+              this.slashes.push({
+                x: enemy.x,
+                y: enemy.y,
+                angle: pr.angle,
+                radius: 72,
+                arcSpread: Math.PI * 2,
+                color: '#34D399',
+                life: 0.32,
+                maxLife: 0.32,
+                flip: false,
+                kind: 'LIZARDFOLK_WORLD_PIERCER_BURST',
+                isCrit: true,
               });
             }
             this.spawnBurst(enemy.x, enemy.y, pr.color, 6, 80);
