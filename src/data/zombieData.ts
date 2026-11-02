@@ -816,8 +816,8 @@ export const ULTIMATE_SKILLS: Record<UltimateSkillId, UltimateSkillDef> = {
     cooldown: 22,
     energyRequired: 100,
     description:
-      'Awakens the primal spirit of the ancient hunter god, gaining tremendous attack speed, tracking spears, and spectral spirit beasts that aid in combat.',
-    detailLine: '10s Primal God Avatar · +50% Attack Speed, auto-tracking spears, & spectral beasts',
+      'Awakens the primal spirit of the ancient hunter god, gaining tremendous attack speed, tracking spears, and summoned ancestral hunter allies that unleash high-velocity ranged spectral javelins with fluid 60fps spear-throwing animations from tactical range.',
+    detailLine: '10s Primal God Avatar · Ranged Spectral Hunter Allies with 60fps Spear Throw Animations',
     accentColor: '#F59E0B',
   },
 };

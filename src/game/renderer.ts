@@ -92,6 +92,11 @@ export interface RenderPlayerState {
   lizardFocusStacks?: number;
   lizardHuntSpiritTimer?: number;
   lizardDragonfangTimer?: number;
+  lizardThrowAnimTimer?: number;
+  lizardThrowAnimDuration?: number;
+  lizardThrowStep?: number;
+  lizardHunterMarkTargetId?: number | null;
+  lizardHunterMarkTimer?: number;
   isDowned?: boolean;
   bleedoutTimer?: number;
   reviveProgress?: number;
@@ -863,6 +868,14 @@ export function renderGameWorld(input: WorldRenderInput): void {
     stoneRamparts,
     deathsPassageRifts,
     ghostMistZones,
+    gravityWells,
+    arcanePrisons,
+    astralSingularities,
+    elementalCascades,
+    spearCyclones,
+    rainOfJavelinsZones,
+    ancientHunterSpirits,
+    elementalSpirits,
     pickups,
     minions,
     enemies,
@@ -974,6 +987,42 @@ export function renderGameWorld(input: WorldRenderInput): void {
     }
   }
 
+  if (gravityWells) {
+    for (const well of gravityWells) {
+      drawGravityWellZone(ctx, well, time);
+    }
+  }
+
+  if (arcanePrisons) {
+    for (const prison of arcanePrisons) {
+      drawArcanePrisonZone(ctx, prison, time);
+    }
+  }
+
+  if (astralSingularities) {
+    for (const sing of astralSingularities) {
+      drawAstralSingularityZone(ctx, sing, time);
+    }
+  }
+
+  if (elementalCascades) {
+    for (const cascade of elementalCascades) {
+      drawElementalCascadeZone(ctx, cascade, time);
+    }
+  }
+
+  if (spearCyclones) {
+    for (const cyclone of spearCyclones) {
+      drawSpearCycloneZone(ctx, cyclone, time);
+    }
+  }
+
+  if (rainOfJavelinsZones) {
+    for (const zone of rainOfJavelinsZones) {
+      drawRainOfJavelinsGroundZone(ctx, zone, time);
+    }
+  }
+
   for (const ring of shockwaves) {
     const progress = 1 - ring.life / ring.maxLife;
     const currentR = Math.max(4, ring.maxRadius * progress);
@@ -1056,6 +1105,24 @@ export function renderGameWorld(input: WorldRenderInput): void {
       sortY: enemy.y,
       draw: () => drawEnemy(ctx, enemy, time),
     });
+  }
+
+  if (elementalSpirits) {
+    for (const spirit of elementalSpirits) {
+      drawList.push({
+        sortY: spirit.y,
+        draw: () => drawElementalSpirit(ctx, spirit, time),
+      });
+    }
+  }
+
+  if (ancientHunterSpirits) {
+    for (const hunter of ancientHunterSpirits) {
+      drawList.push({
+        sortY: hunter.y,
+        draw: () => drawAncientHunterSpirit(ctx, hunter, time),
+      });
+    }
   }
 
   if (pvpMatchState) {
@@ -1330,6 +1397,18 @@ export function renderGameWorld(input: WorldRenderInput): void {
   if (dragonsBarrages) {
     for (const barrage of dragonsBarrages) {
       drawDragonsBarrageSkyBolts(ctx, barrage, time);
+    }
+  }
+
+  if (elementalCascades) {
+    for (const cascade of elementalCascades) {
+      drawElementalCascadeSkyMeteors(ctx, cascade, time);
+    }
+  }
+
+  if (rainOfJavelinsZones) {
+    for (const zone of rainOfJavelinsZones) {
+      drawRainOfJavelinsSkyVolley(ctx, zone, time);
     }
   }
 
@@ -2922,6 +3001,980 @@ function drawDeathsPassageRift(
   ctx.restore();
 }
 
+function drawGravityWellZone(
+  ctx: CanvasRenderingContext2D,
+  well: GravityWellZone,
+  time: number
+): void {
+  const alpha = Math.min(1, well.life / 0.4);
+  ctx.save();
+  ctx.translate(well.x, well.y);
+  ctx.globalAlpha = alpha;
+
+  // 1. Deep gravitational void depression
+  const grad = ctx.createRadialGradient(0, 0, 4, 0, 0, well.radius);
+  grad.addColorStop(0, 'rgba(30, 10, 60, 0.92)');
+  grad.addColorStop(0.45, 'rgba(88, 28, 135, 0.45)');
+  grad.addColorStop(0.8, 'rgba(147, 51, 234, 0.18)');
+  grad.addColorStop(1, 'rgba(168, 85, 247, 0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(0, 0, well.radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 2. Spiraling accretion tentacles pulling inwards
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const arms = 6;
+  for (let i = 0; i < arms; i++) {
+    const baseA = (i / arms) * Math.PI * 2 - time * 6.5;
+    ctx.strokeStyle = i % 2 === 0 ? 'rgba(192, 132, 252, 0.72)' : 'rgba(129, 140, 248, 0.65)';
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let s = 0; s <= 14; s++) {
+      const t = s / 14;
+      const r = well.radius * (1 - t * 0.9);
+      const a = baseA + t * 2.2;
+      const px = Math.cos(a) * r;
+      const py = Math.sin(a) * r * 0.85;
+      if (s === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  // 3. Pulsating event horizon core
+  const corePulse = 10 + Math.sin(time * 16) * 2.8;
+  const cGrad = ctx.createRadialGradient(0, 0, 1, 0, 0, corePulse);
+  cGrad.addColorStop(0, '#FFFFFF');
+  cGrad.addColorStop(0.5, '#C084FC');
+  cGrad.addColorStop(1, 'rgba(88, 28, 135, 0)');
+  ctx.fillStyle = cGrad;
+  ctx.beginPath();
+  ctx.arc(0, 0, corePulse, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 4. Rotating perimeter gravitational boundary ring
+  ctx.strokeStyle = 'rgba(192, 132, 252, 0.55)';
+  ctx.lineWidth = 1.8;
+  ctx.setLineDash([10, 8]);
+  ctx.lineDashOffset = -time * 48;
+  ctx.beginPath();
+  ctx.arc(0, 0, well.radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawArcanePrisonZone(
+  ctx: CanvasRenderingContext2D,
+  prison: ArcanePrisonZone,
+  time: number
+): void {
+  const alpha = Math.min(1, prison.life / 0.4);
+  ctx.save();
+  ctx.translate(prison.x, prison.y);
+  ctx.globalAlpha = alpha;
+
+  // 1. Shimmering hex field ground
+  const grad = ctx.createRadialGradient(0, 0, 6, 0, 0, prison.radius);
+  grad.addColorStop(0, 'rgba(126, 34, 206, 0.18)');
+  grad.addColorStop(0.7, 'rgba(168, 85, 247, 0.12)');
+  grad.addColorStop(1, 'rgba(192, 132, 252, 0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(0, 0, prison.radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 2. 6 Glowing crystalline barrier columns around perimeter
+  const pillars = 6;
+  const pillarPoints: { x: number; y: number }[] = [];
+  for (let i = 0; i < pillars; i++) {
+    const a = (i / pillars) * Math.PI * 2;
+    const px = Math.cos(a) * prison.radius;
+    const py = Math.sin(a) * prison.radius * 0.88;
+    pillarPoints.push({ x: px, y: py });
+  }
+
+  // Laser barrier links between adjacent columns
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < pillars; i++) {
+    const p1 = pillarPoints[i];
+    const p2 = pillarPoints[(i + 1) % pillars];
+    ctx.strokeStyle = 'rgba(232, 121, 249, 0.85)';
+    ctx.lineWidth = 2.4 + Math.sin(time * 20 + i) * 0.8;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+
+    // Internal cross-hex containment beams
+    if (i % 2 === 0) {
+      const opp = pillarPoints[(i + 3) % pillars];
+      ctx.strokeStyle = 'rgba(192, 132, 252, 0.35)';
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([6, 6]);
+      ctx.lineDashOffset = -time * 30;
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(opp.x, opp.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // Draw 6 crystal energy pillars
+  for (let i = 0; i < pillars; i++) {
+    const pt = pillarPoints[i];
+    const pBob = Math.sin(time * 8 + i * 1.5) * 2;
+    ctx.save();
+    ctx.translate(pt.x, pt.y + pBob);
+
+    // Glowing column
+    ctx.fillStyle = '#F5D0FE';
+    ctx.strokeStyle = '#A855F7';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(0, -22);
+    ctx.lineTo(6, -8);
+    ctx.lineTo(4, 4);
+    ctx.lineTo(-4, 4);
+    ctx.lineTo(-6, -8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Core spark
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(0, -9, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawAstralSingularityZone(
+  ctx: CanvasRenderingContext2D,
+  sing: AstralSingularityZone,
+  time: number
+): void {
+  const alpha = Math.min(1, sing.life / 0.5);
+  const variant = sing.pathVariant ?? 'STANDARD';
+  const isBlackStar = variant === 'BLACK_STAR';
+  const isCelestialPrison = variant === 'CELESTIAL_PRISON';
+
+  ctx.save();
+  ctx.translate(sing.x, sing.y);
+  ctx.globalAlpha = alpha;
+
+  if (isBlackStar) {
+    // Path A: Black Star - Pitch-black event horizon with violet-ultraviolet accretion disk
+    const grad = ctx.createRadialGradient(0, 0, 8, 0, 0, sing.radius);
+    grad.addColorStop(0, '#000000');
+    grad.addColorStop(0.28, 'rgba(15, 3, 25, 0.98)');
+    grad.addColorStop(0.55, 'rgba(126, 34, 206, 0.55)');
+    grad.addColorStop(0.85, 'rgba(232, 121, 249, 0.22)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, sing.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Inward gravitational collapse rings
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const collapseT = (time * 3.5) % 1;
+    for (let r = 0; r < 3; r++) {
+      const ringT = (collapseT + r * 0.33) % 1;
+      const curR = sing.radius * (1 - ringT);
+      ctx.strokeStyle = `rgba(244, 114, 182, ${ringT * 0.75})`;
+      ctx.lineWidth = 2.8 * (1 - ringT * 0.4);
+      ctx.beginPath();
+      ctx.arc(0, 0, curR, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Black star center with blinding purple corona
+    ctx.strokeStyle = '#E879F9';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 18 + Math.sin(time * 18) * 3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = '#05010B';
+    ctx.beginPath();
+    ctx.arc(0, 0, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  } else if (isCelestialPrison) {
+    // Path B: Celestial Prison - Pocket dimension with constellation grid and floating mirror shards
+    const grad = ctx.createRadialGradient(0, 0, 10, 0, 0, sing.radius);
+    grad.addColorStop(0, 'rgba(30, 27, 75, 0.88)');
+    grad.addColorStop(0.5, 'rgba(67, 56, 202, 0.42)');
+    grad.addColorStop(0.85, 'rgba(168, 85, 247, 0.25)');
+    grad.addColorStop(1, 'rgba(99, 102, 241, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, sing.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Constellation lines & floating starry fragments
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const stars = 8;
+    const starPts: { x: number; y: number }[] = [];
+    for (let i = 0; i < stars; i++) {
+      const a = (i / stars) * Math.PI * 2 + time * 0.8;
+      const sr = sing.radius * (0.35 + ((i * 3) % 5) * 0.12);
+      starPts.push({ x: Math.cos(a) * sr, y: Math.sin(a) * sr * 0.85 });
+    }
+    ctx.strokeStyle = 'rgba(165, 180, 252, 0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < stars; i++) {
+      const next = starPts[(i * 3) % stars];
+      if (i === 0) ctx.moveTo(starPts[i].x, starPts[i].y);
+      else ctx.lineTo(next.x, next.y);
+    }
+    ctx.stroke();
+
+    for (const pt of starPts) {
+      ctx.fillStyle = '#F8FAFC';
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  } else {
+    // STANDARD Astral Singularity
+    const grad = ctx.createRadialGradient(0, 0, 6, 0, 0, sing.radius);
+    grad.addColorStop(0, 'rgba(59, 7, 100, 0.9)');
+    grad.addColorStop(0.48, 'rgba(147, 51, 234, 0.4)');
+    grad.addColorStop(0.82, 'rgba(192, 132, 252, 0.18)');
+    grad.addColorStop(1, 'rgba(168, 85, 247, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, sing.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 8 Swirling cosmic arms
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const arms = 8;
+    for (let i = 0; i < arms; i++) {
+      const baseA = (i / arms) * Math.PI * 2 - time * 5.2;
+      ctx.strokeStyle = i % 2 === 0 ? 'rgba(232, 121, 249, 0.7)' : 'rgba(96, 165, 250, 0.7)';
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      for (let s = 0; s <= 12; s++) {
+        const t = s / 12;
+        const r = sing.radius * (1 - t * 0.88);
+        const a = baseA + t * 2.5;
+        const px = Math.cos(a) * r;
+        const py = Math.sin(a) * r * 0.88;
+        if (s === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+
+    // Glowing core
+    const coreR = 14 + Math.sin(time * 14) * 3;
+    ctx.fillStyle = '#F8FAFC';
+    ctx.beginPath();
+    ctx.arc(0, 0, coreR * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawElementalCascadeZone(
+  ctx: CanvasRenderingContext2D,
+  cascade: ElementalCascadeZone,
+  time: number
+): void {
+  const alpha = Math.min(1, cascade.life / 0.4);
+  ctx.save();
+  ctx.translate(cascade.x, cascade.y);
+  ctx.globalAlpha = alpha;
+
+  // 1. Shifting elemental ground sigil
+  const grad = ctx.createRadialGradient(0, 0, 4, 0, 0, cascade.radius);
+  grad.addColorStop(0, 'rgba(239, 68, 68, 0.22)');
+  grad.addColorStop(0.35, 'rgba(56, 189, 248, 0.2)');
+  grad.addColorStop(0.7, 'rgba(234, 179, 8, 0.16)');
+  grad.addColorStop(1, 'rgba(168, 85, 247, 0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(0, 0, cascade.radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 2. Rotating elemental quadrant arcs (Fire, Frost, Lightning, Earth)
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const colors = ['#EF4444', '#38BDF8', '#FACC15', '#10B981'];
+  for (let q = 0; q < 4; q++) {
+    const a0 = (q * Math.PI) / 2 + time * 2.4;
+    ctx.strokeStyle = colors[q];
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.arc(0, 0, cascade.radius * 0.85, a0 + 0.12, a0 + Math.PI / 2 - 0.12);
+    ctx.stroke();
+
+    // Floating elemental node
+    const nx = Math.cos(a0 + Math.PI / 4) * cascade.radius * 0.85;
+    const ny = Math.sin(a0 + Math.PI / 4) * cascade.radius * 0.85;
+    ctx.fillStyle = colors[q];
+    ctx.beginPath();
+    ctx.arc(nx, ny, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawSpearCycloneZone(
+  ctx: CanvasRenderingContext2D,
+  cyclone: SpearCycloneZone,
+  time: number
+): void {
+  const alpha = Math.min(1, cyclone.life / 0.4);
+  ctx.save();
+  ctx.translate(cyclone.x, cyclone.y);
+  ctx.globalAlpha = alpha;
+
+  // 1. Emerald razor-wind vortex
+  const grad = ctx.createRadialGradient(0, 0, 4, 0, 0, cyclone.radius);
+  grad.addColorStop(0, 'rgba(16, 185, 129, 0.32)');
+  grad.addColorStop(0.6, 'rgba(5, 150, 105, 0.18)');
+  grad.addColorStop(1, 'rgba(4, 120, 87, 0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(0, 0, cyclone.radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 2. Spiraling wind blade streaks
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const windCount = 6;
+  for (let i = 0; i < windCount; i++) {
+    const a = (i / windCount) * Math.PI * 2 + time * 14;
+    ctx.strokeStyle = i % 2 === 0 ? '#34D399' : '#6EE7B7';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(0, 0, cyclone.radius * (0.45 + (i % 3) * 0.22), a, a + 0.95);
+    ctx.stroke();
+  }
+
+  // 3. Three spinning reptilian spears orbiting rapidly
+  const spearCount = 3;
+  for (let s = 0; s < spearCount; s++) {
+    const a = (s / spearCount) * Math.PI * 2 + time * 12;
+    const sx = Math.cos(a) * cyclone.radius * 0.72;
+    const sy = Math.sin(a) * cyclone.radius * 0.72 * 0.85;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(a + Math.PI / 2);
+
+    // Spear shaft
+    ctx.strokeStyle = '#78350F';
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(-16, 0);
+    ctx.lineTo(14, 0);
+    ctx.stroke();
+
+    // Flint spearhead
+    ctx.fillStyle = '#10B981';
+    ctx.strokeStyle = '#047857';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(22, 0);
+    ctx.lineTo(13, -4.5);
+    ctx.lineTo(13, 4.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Emerald trailing speed spark
+    ctx.fillStyle = '#6EE7B7';
+    ctx.beginPath();
+    ctx.arc(-18, 0, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawRainOfJavelinsGroundZone(
+  ctx: CanvasRenderingContext2D,
+  zone: RainOfJavelinsZone,
+  time: number
+): void {
+  const alpha = Math.min(1, zone.life / 0.5);
+  const variant = zone.pathVariant ?? 'STANDARD';
+  const isThousand = variant === 'THOUSAND_SPEARS';
+  const isCataclysm = variant === 'SPEARFALL_CATACLYSM';
+
+  ctx.save();
+  ctx.translate(zone.x, zone.y);
+  ctx.globalAlpha = alpha;
+
+  if (isCataclysm) {
+    // Path B: Spearfall Cataclysm - Volcanic shattered stone, seismic fissure rings, obsidian spikes
+    const grad = ctx.createRadialGradient(0, 0, 10, 0, 0, zone.radius);
+    grad.addColorStop(0, 'rgba(239, 68, 68, 0.35)');
+    grad.addColorStop(0.45, 'rgba(249, 115, 22, 0.22)');
+    grad.addColorStop(0.85, 'rgba(120, 53, 15, 0.18)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, zone.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Seismic ground crack lines
+    ctx.strokeStyle = '#F97316';
+    ctx.lineWidth = 2.2;
+    for (let c = 0; c < 5; c++) {
+      const ca = (c / 5) * Math.PI * 2 + zone.id;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(ca) * zone.radius * 0.45, Math.sin(ca) * zone.radius * 0.45);
+      ctx.lineTo(Math.cos(ca + 0.3) * zone.radius * 0.85, Math.sin(ca + 0.3) * zone.radius * 0.85);
+      ctx.stroke();
+    }
+  } else if (isThousand) {
+    // Path A: Thousand Spears of the Ancients - Golden/spiritual ancestral ground circle
+    const grad = ctx.createRadialGradient(0, 0, 10, 0, 0, zone.radius);
+    grad.addColorStop(0, 'rgba(234, 179, 8, 0.32)');
+    grad.addColorStop(0.5, 'rgba(16, 185, 129, 0.22)');
+    grad.addColorStop(0.85, 'rgba(5, 150, 105, 0.12)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, zone.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ancestral spiritual runic ring
+    ctx.strokeStyle = 'rgba(253, 224, 71, 0.75)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([12, 8]);
+    ctx.lineDashOffset = -time * 36;
+    ctx.beginPath();
+    ctx.arc(0, 0, zone.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  } else {
+    // STANDARD Rain of Javelins ground
+    const grad = ctx.createRadialGradient(0, 0, 8, 0, 0, zone.radius);
+    grad.addColorStop(0, 'rgba(16, 185, 129, 0.28)');
+    grad.addColorStop(0.6, 'rgba(5, 150, 105, 0.16)');
+    grad.addColorStop(1, 'rgba(4, 120, 87, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, zone.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.65)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 6]);
+    ctx.lineDashOffset = time * 32;
+    ctx.beginPath();
+    ctx.arc(0, 0, zone.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Draw impaled spears planted in the ground across the zone
+  const spearCount = isThousand ? 16 : isCataclysm ? 12 : 9;
+  for (let i = 0; i < spearCount; i++) {
+    const sa = i * 2.39996 + zone.id;
+    const sr = zone.radius * (0.2 + ((i * 0.28) % 0.72));
+    const sx = Math.cos(sa) * sr;
+    const sy = Math.sin(sa) * sr * 0.88;
+    const tilt = ((i % 5) - 2) * 0.18;
+    const vib = Math.sin(time * 32 + i * 4) * 1.2;
+
+    ctx.save();
+    ctx.translate(sx + vib, sy);
+    ctx.rotate(tilt);
+
+    // Spear shaft impaled into earth
+    ctx.strokeStyle = isCataclysm ? '#44403C' : isThousand ? '#FBBF24' : '#78350F';
+    ctx.lineWidth = isCataclysm ? 3.4 : 2.2;
+    ctx.beginPath();
+    ctx.moveTo(0, 4);
+    ctx.lineTo(0, -26);
+    ctx.stroke();
+
+    // Spearhead / tip
+    ctx.fillStyle = isCataclysm ? '#F97316' : isThousand ? '#6EE7B7' : '#10B981';
+    ctx.beginPath();
+    ctx.moveTo(0, -32);
+    ctx.lineTo(4, -25);
+    ctx.lineTo(-4, -25);
+    ctx.closePath();
+    ctx.fill();
+
+    // Spiritual wisp rising from spear
+    if (isThousand) {
+      ctx.fillStyle = 'rgba(253, 224, 71, 0.7)';
+      ctx.beginPath();
+      ctx.arc(0, -34 - Math.sin(time * 6 + i) * 4, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawElementalCascadeSkyMeteors(
+  ctx: CanvasRenderingContext2D,
+  cascade: ElementalCascadeZone,
+  time: number
+): void {
+  const alpha = Math.min(1, cascade.life / 0.35);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const meteorCount = 8;
+  const colors = ['#EF4444', '#38BDF8', '#FACC15', '#10B981'];
+
+  for (let i = 0; i < meteorCount; i++) {
+    const phase = (time * 4.2 + i * 0.31) % 1;
+    const angle = i * 2.39996 + cascade.id;
+    const r = cascade.radius * (0.15 + ((i * 0.29) % 0.75));
+    const impactX = cascade.x + Math.cos(angle) * r;
+    const impactY = cascade.y + Math.sin(angle) * r * 0.88;
+    const elemColor = colors[i % 4];
+
+    if (phase < 0.82) {
+      const fallT = phase / 0.82;
+      const startX = impactX - 60 * (1 - fallT);
+      const startY = impactY - 180 * (1 - fallT);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = elemColor;
+      ctx.lineWidth = 3.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(startX - 24, startY - 45);
+      ctx.lineTo(startX, startY);
+      ctx.stroke();
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(startX, startY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+
+function drawRainOfJavelinsSkyVolley(
+  ctx: CanvasRenderingContext2D,
+  zone: RainOfJavelinsZone,
+  time: number
+): void {
+  const alpha = Math.min(1, zone.life / 0.35);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const volleyCount = zone.pathVariant === 'THOUSAND_SPEARS' ? 14 : 9;
+
+  for (let i = 0; i < volleyCount; i++) {
+    const phase = (time * 5.0 + i * 0.23) % 1;
+    const angle = i * 2.39996 + zone.id;
+    const r = zone.radius * (0.15 + ((i * 0.28) % 0.78));
+    const impactX = zone.x + Math.cos(angle) * r;
+    const impactY = zone.y + Math.sin(angle) * r * 0.85;
+
+    if (phase < 0.82) {
+      const fallT = phase / 0.82;
+      const curX = impactX - 45 * (1 - fallT);
+      const curY = impactY - 200 * (1 - fallT);
+
+      ctx.save();
+      ctx.translate(curX, curY);
+      ctx.rotate(0.22); // slightly angled trajectory
+      ctx.strokeStyle = '#6EE7B7';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, 32);
+      ctx.stroke();
+
+      ctx.fillStyle = '#10B981';
+      ctx.beginPath();
+      ctx.moveTo(0, 38);
+      ctx.lineTo(4, 30);
+      ctx.lineTo(-4, 30);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+
+function drawElementalSpirit(
+  ctx: CanvasRenderingContext2D,
+  spirit: ElementalSpiritEntity,
+  time: number
+): void {
+  const alpha = Math.min(1, spirit.life / 0.4);
+  const bob = Math.sin(time * 6 + spirit.id) * 3.5;
+  const elem = spirit.element;
+  const color =
+    elem === 'FIRE'
+      ? '#EF4444'
+      : elem === 'ICE'
+      ? '#38BDF8'
+      : elem === 'LIGHTNING'
+      ? '#FACC15'
+      : '#10B981';
+
+  ctx.save();
+  ctx.translate(spirit.x, spirit.y + bob);
+  ctx.globalAlpha = alpha;
+
+  // Ground shadow
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.beginPath();
+  ctx.ellipse(0, 16 - bob, 12, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Floating elemental aura
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const auraGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, 22);
+  auraGrad.addColorStop(0, '#FFFFFF');
+  auraGrad.addColorStop(0.5, color);
+  auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = auraGrad;
+  ctx.beginPath();
+  ctx.arc(0, 0, 22, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Elemental spirit core body
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(0, 0, 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Glowing eyes
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.arc(-3, -2, 2, 0, Math.PI * 2);
+  ctx.arc(3, -2, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 3 Orbiting elemental motes
+  for (let m = 0; m < 3; m++) {
+    const ma = time * 5 + (m * Math.PI * 2) / 3;
+    const mx = Math.cos(ma) * 16;
+    const my = Math.sin(ma) * 9;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(mx, my, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawAncientHunterSpirit(
+  ctx: CanvasRenderingContext2D,
+  hunter: AncientHunterSpirit,
+  time: number
+): void {
+  const alpha = Math.min(1, hunter.life / 0.5);
+  const isFirstHunter = hunter.variant === 'FIRST_HUNTER';
+  const scale = isFirstHunter ? 1.45 : 1.05;
+  const bob = Math.sin(time * 5 + hunter.id) * 3;
+
+  ctx.save();
+  ctx.translate(hunter.x, hunter.y + bob);
+  ctx.scale(hunter.facingX * scale, scale);
+  ctx.globalAlpha = alpha * 0.92;
+
+  // Ground shadow
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+  ctx.beginPath();
+  ctx.ellipse(0, 18 - bob, isFirstHunter ? 18 : 13, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Spectral cyan-emerald ancestral glow
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const glowGrad = ctx.createRadialGradient(0, -6, 4, 0, -6, 36);
+  glowGrad.addColorStop(0, 'rgba(110, 231, 183, 0.65)');
+  glowGrad.addColorStop(0.55, 'rgba(16, 185, 129, 0.3)');
+  glowGrad.addColorStop(1, 'rgba(6, 78, 59, 0)');
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath();
+  ctx.arc(0, -6, 36, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Phantasmal undulating lizard tail
+  const tailWag = Math.sin(time * 6 + hunter.id) * 6;
+  ctx.save();
+  ctx.strokeStyle = isFirstHunter ? '#065F46' : '#047857';
+  ctx.lineWidth = isFirstHunter ? 6.2 : 4.4;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-8, 6);
+  ctx.quadraticCurveTo(-18, 10 + tailWag * 0.4, -28, 14 + tailWag);
+  ctx.stroke();
+  // Tail spines
+  ctx.strokeStyle = '#6EE7B7';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-16, 7);
+  ctx.lineTo(-20, 3);
+  ctx.moveTo(-23, 11);
+  ctx.lineTo(-27, 7);
+  ctx.stroke();
+  ctx.restore();
+
+  // Attack Animation Dynamics (60fps subpixel math)
+  const isAttacking = (hunter.attackAnimTimer ?? 0) > 0;
+  const animDur = hunter.attackAnimDuration || 0.38;
+  const progress = isAttacking ? 1 - Math.max(0, (hunter.attackAnimTimer ?? 0) / animDur) : 0;
+
+  // Calculate local aim angle bounded to natural throwing angles
+  const rawAim = hunter.aimAngle ?? (hunter.facingX >= 0 ? 0 : Math.PI);
+  const dirX = Math.cos(rawAim) * hunter.facingX;
+  const dirY = Math.sin(rawAim);
+  const localAim = Math.max(-1.15, Math.min(1.15, Math.atan2(dirY, Math.max(0.08, dirX))));
+
+  let torsoTilt = 0;
+  let handX = 12;
+  let handY = -4;
+  let spearAngle = localAim - 0.28;
+  let spearThrust = 0;
+  let spearAlpha = 1;
+  let eyeGlow = 2.2;
+  let gatheringRadius = 0;
+
+  if (isAttacking) {
+    if (progress < 0.42) {
+      // Phase 1: Windup & Drawback
+      const t = progress / 0.42;
+      const easeWind = Math.sin(t * Math.PI * 0.5);
+      torsoTilt = -0.22 * easeWind;
+      handX = 12 - 24 * easeWind;
+      handY = -4 - 10 * easeWind;
+      spearAngle = localAim - 0.5 * easeWind - 0.2;
+      spearThrust = -14 * easeWind;
+      eyeGlow = 2.2 + 1.8 * easeWind;
+      gatheringRadius = 8 * easeWind;
+    } else if (progress < 0.65) {
+      // Phase 2: Snap Throw Release
+      const t = (progress - 0.42) / 0.23;
+      const easeSnap = Math.sin(t * Math.PI * 0.5);
+      torsoTilt = 0.28 * (1 - easeSnap * 0.5);
+      handX = -12 + 38 * easeSnap;
+      handY = -14 + 18 * easeSnap * Math.sin(localAim);
+      spearAngle = localAim;
+      spearThrust = 16 + 26 * easeSnap;
+      eyeGlow = 3.6 - 1.2 * easeSnap;
+      if (t > 0.35) {
+        spearAlpha = Math.max(0, 1 - (t - 0.35) / 0.5);
+      }
+    } else {
+      // Phase 3: Follow-through and Materialize next spear
+      const t = (progress - 0.65) / 0.35;
+      torsoTilt = 0.14 * (1 - t);
+      handX = 26 - 14 * t;
+      handY = 4 - 8 * t;
+      spearAngle = localAim - 0.28 * (1 - t);
+      spearThrust = 0;
+      spearAlpha = t;
+      eyeGlow = 2.2;
+    }
+  } else {
+    // Idle ready stance with gentle float wave
+    spearAngle = localAim * 0.4 - 0.25 + Math.sin(time * 3 + hunter.id) * 0.05;
+    handX = 12 + Math.cos(time * 4) * 2;
+    handY = -4 + Math.sin(time * 4) * 2;
+  }
+
+  // Hunter reptilian body silhouette
+  ctx.save();
+  ctx.rotate(torsoTilt);
+  ctx.fillStyle = isFirstHunter ? '#065F46' : '#047857';
+  ctx.strokeStyle = '#6EE7B7';
+  ctx.lineWidth = 1.8;
+
+  // Torso
+  drawRoundedRect(ctx, -10, -10, 20, 22, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  // Back spines
+  ctx.fillStyle = '#34D399';
+  ctx.beginPath();
+  ctx.moveTo(-10, -8);
+  ctx.lineTo(-15, -12);
+  ctx.lineTo(-8, -4);
+  ctx.moveTo(-10, 0);
+  ctx.lineTo(-16, -2);
+  ctx.lineTo(-8, 4);
+  ctx.closePath();
+  ctx.fill();
+
+  // Hunter head & snout
+  ctx.beginPath();
+  ctx.moveTo(-7, -10);
+  ctx.lineTo(0, -23);
+  ctx.lineTo(14, -16);
+  ctx.lineTo(8, -8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Head crest frill
+  ctx.strokeStyle = '#34D399';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-4, -22);
+  ctx.lineTo(-2, -28);
+  ctx.lineTo(4, -20);
+  ctx.stroke();
+
+  // Glowing ancestor hunter eye
+  ctx.fillStyle = '#FDE047';
+  ctx.beginPath();
+  ctx.arc(5, -15, eyeGlow, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Pupil slit
+  ctx.fillStyle = '#78350F';
+  ctx.fillRect(4.5, -15 - eyeGlow * 0.7, 1.2, eyeGlow * 1.4);
+  ctx.restore();
+
+  // Arm & Spectral Throwing Spear
+  ctx.save();
+  ctx.translate(handX, handY);
+  ctx.rotate(spearAngle);
+
+  // Gathering energy aura at spearhead during windup
+  if (gatheringRadius > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(110, 231, 183, 0.85)';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(28 + spearThrust, 0, gatheringRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Spectral spear
+  if (spearAlpha > 0.04) {
+    ctx.save();
+    ctx.globalAlpha = alpha * spearAlpha;
+
+    // Outer glow aura
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.55)';
+    ctx.lineWidth = isFirstHunter ? 6.2 : 4.6;
+    ctx.beginPath();
+    ctx.moveTo(-22 + spearThrust, 0);
+    ctx.lineTo(26 + spearThrust, 0);
+    ctx.stroke();
+    ctx.restore();
+
+    // Spear Shaft
+    ctx.strokeStyle = isFirstHunter ? '#FDE047' : '#E2E8F0';
+    ctx.lineWidth = isFirstHunter ? 2.6 : 2.0;
+    ctx.beginPath();
+    ctx.moveTo(-22 + spearThrust, 0);
+    ctx.lineTo(26 + spearThrust, 0);
+    ctx.stroke();
+
+    // Barbed Ancestral Spearhead
+    ctx.fillStyle = '#6EE7B7';
+    ctx.strokeStyle = '#10B981';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(34 + spearThrust, 0);
+    ctx.lineTo(20 + spearThrust, -6);
+    ctx.lineTo(23 + spearThrust, -2);
+    ctx.lineTo(-2 + spearThrust, 0);
+    ctx.lineTo(23 + spearThrust, 2);
+    ctx.lineTo(20 + spearThrust, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Inner radiant runic edge
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.moveTo(32 + spearThrust, 0);
+    ctx.lineTo(24 + spearThrust, -1.8);
+    ctx.lineTo(24 + spearThrust, 1.8);
+    ctx.closePath();
+    ctx.fill();
+
+    // Trailing spectral ribbons
+    ctx.strokeStyle = 'rgba(110, 231, 183, 0.7)';
+    ctx.lineWidth = 1.2;
+    const ribWag = Math.sin(time * 12 + hunter.id) * 3;
+    ctx.beginPath();
+    ctx.moveTo(18 + spearThrust, 0);
+    ctx.quadraticCurveTo(8 + spearThrust, -5 + ribWag, -2 + spearThrust, -2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // Claws / Hand gripping
+  ctx.fillStyle = isFirstHunter ? '#047857' : '#065F46';
+  ctx.strokeStyle = '#6EE7B7';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(0, 0, 3.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.restore();
+
+  // Snap release muzzle ring FX at 60fps
+  if (isAttacking && progress >= 0.42 && progress < 0.62) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const snapT = (progress - 0.42) / 0.2;
+    ctx.strokeStyle = `rgba(110, 231, 183, ${1 - snapT})`;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(handX + Math.cos(spearAngle) * 26, handY + Math.sin(spearAngle) * 26, 6 + snapT * 18, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
 function drawGoblinAfterimage(ctx: CanvasRenderingContext2D, ghost: AfterimageEntity): void {
   const ratio = Math.max(0, ghost.life / ghost.maxLife);
   const alpha = ratio * 0.66;
@@ -3240,6 +4293,10 @@ function drawProp(
           ? '#C084FC'
           : activeCharId === CharacterId.Kobold
           ? '#FB7185'
+          : activeCharId === CharacterId.Slime
+          ? '#A855F7'
+          : activeCharId === CharacterId.Lizardfolk
+          ? '#10B981'
           : '#4ADE80';
       const shrineAuraColor =
         activeCharId === CharacterId.Skeleton
@@ -3252,6 +4309,10 @@ function drawProp(
           ? 'rgba(192, 132, 252, 0.6)'
           : activeCharId === CharacterId.Kobold
           ? 'rgba(251, 113, 133, 0.58)'
+          : activeCharId === CharacterId.Slime
+          ? 'rgba(168, 85, 247, 0.62)'
+          : activeCharId === CharacterId.Lizardfolk
+          ? 'rgba(16, 185, 129, 0.6)'
           : 'rgba(74, 222, 128, 0.55)';
       ctx.fillStyle = prop.opened ? '#64748B' : shrineCoreColor;
       ctx.beginPath();
@@ -8928,7 +9989,570 @@ function drawKoboldSlashVfx(ctx: CanvasRenderingContext2D, slash: SlashEffect): 
   ctx.restore();
 }
 
+function drawSlimeSlashVfx(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  const progress = Math.min(1, Math.max(0, 1 - slash.life / slash.maxLife));
+  const easeOut = 1 - Math.pow(1 - progress, 2.8);
+  const alpha = Math.max(0, 1 - Math.pow(progress, 1.8));
+
+  if (slash.kind === 'SLIME_ARCANE_WHIP') {
+    // Gelatinous whipping tentacle lash of purple arcane fluid with splash droplets
+    const r = slash.radius * (0.35 + easeOut * 0.72);
+    const half = (slash.arcSpread || 1.4) * 0.5;
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.rotate(slash.angle);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    // Outer luminous purple gel streak
+    ctx.strokeStyle = '#A855F7';
+    ctx.lineWidth = 7 * (1 - progress * 0.6);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, -half, half);
+    ctx.stroke();
+
+    // Inner bright violet core
+    ctx.strokeStyle = '#E9D5FF';
+    ctx.lineWidth = 3.2 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.94, -half * 0.9, half * 0.9);
+    ctx.stroke();
+
+    // Splashing gelatinous fluid droplets
+    const droplets = 5;
+    for (let d = 0; d < droplets; d++) {
+      const da = -half + (d / (droplets - 1)) * (half * 2);
+      const dr = r + (d % 2 === 0 ? 10 : 16) * easeOut;
+      ctx.fillStyle = d % 2 === 0 ? '#C084FC' : '#F5D0FE';
+      ctx.beginPath();
+      ctx.arc(Math.cos(da) * dr, Math.sin(da) * dr, 3.2 * (1 - progress * 0.5), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'SLIME_ORB_EXPLOSION') {
+    // Violet supernova burst with outward energy tendrils
+    const r = slash.radius * (0.3 + easeOut * 0.78);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    const grad = ctx.createRadialGradient(0, 0, 2, 0, 0, r);
+    grad.addColorStop(0, '#FFFFFF');
+    grad.addColorStop(0.4, 'rgba(192, 132, 252, 0.85)');
+    grad.addColorStop(0.8, 'rgba(126, 34, 206, 0.4)');
+    grad.addColorStop(1, 'rgba(126, 34, 206, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tendril spikes
+    for (let s = 0; s < 8; s++) {
+      const sa = (s * Math.PI) / 4 + progress * 0.8;
+      ctx.strokeStyle = s % 2 === 0 ? '#FFFFFF' : '#E879F9';
+      ctx.lineWidth = 2.8 * (1 - progress * 0.6);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(sa) * r * 0.3, Math.sin(sa) * r * 0.3);
+      ctx.lineTo(Math.cos(sa) * r * 1.15, Math.sin(sa) * r * 1.15);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'SLIME_PRISMATIC_BURST') {
+    // Prismatic rainbow crystal shattering burst
+    const r = slash.radius * (0.35 + easeOut * 0.75);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    const colors = ['#38BDF8', '#E879F9', '#FDE047', '#4ADE80'];
+    const shards = 8;
+    for (let i = 0; i < shards; i++) {
+      const sa = (i / shards) * Math.PI * 2 + progress * 1.2;
+      const c = colors[i % 4];
+      ctx.fillStyle = c;
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.2;
+      const dist = r * (0.4 + easeOut * 0.6);
+      const cx = Math.cos(sa) * dist;
+      const cy = Math.sin(sa) * dist;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(sa);
+      ctx.beginPath();
+      ctx.moveTo(8, 0);
+      ctx.lineTo(-4, -4);
+      ctx.lineTo(-8, 0);
+      ctx.lineTo(-4, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'SLIME_GRAVITY_PULSE') {
+    // Inward-imploding gravity ring
+    const r = slash.radius * (1 - easeOut * 0.45);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    ctx.strokeStyle = '#C084FC';
+    ctx.lineWidth = 5 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#38BDF8';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.75, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'SLIME_CASCADE_IMPACT') {
+    // Multi-elemental crater explosion
+    const r = slash.radius * (0.3 + easeOut * 0.75);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    ctx.strokeStyle = slash.color || '#F59E0B';
+    ctx.lineWidth = 4 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'SLIME_PRISON_RING') {
+    // Runic hex-ring
+    const r = slash.radius * (0.5 + easeOut * 0.55);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    ctx.strokeStyle = '#E879F9';
+    ctx.lineWidth = 4 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'SLIME_CATACLYSM_STORM') {
+    // Multi-element storm swirl (Fire, Frost, Lightning, Arcane)
+    const r = slash.radius * (0.3 + easeOut * 0.8);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.rotate(progress * Math.PI * 1.5);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    const stormColors = ['#EF4444', '#38BDF8', '#FACC15', '#A855F7'];
+    for (let c = 0; c < 4; c++) {
+      const a = (c * Math.PI) / 2;
+      ctx.strokeStyle = stormColors[c];
+      ctx.lineWidth = 4.5 * (1 - progress * 0.5);
+      ctx.beginPath();
+      ctx.arc(0, 0, r * (0.6 + c * 0.12), a, a + 1.2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'SLIME_SINGULARITY_BURST') {
+    // Devastating gravitational blast with inverted shockwaves
+    const r = slash.radius * (0.2 + easeOut * 0.88);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    const grad = ctx.createRadialGradient(0, 0, 4, 0, 0, r);
+    grad.addColorStop(0, '#FFFFFF');
+    grad.addColorStop(0.3, '#E879F9');
+    grad.addColorStop(0.7, '#67E8F9');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 3.5 * (1 - progress * 0.6);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.9, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'SLIME_OVERLOAD_NOVA') {
+    // Gigantic crystal core overload nova with radiant beams
+    const r = slash.radius * (0.25 + easeOut * 0.8);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    ctx.strokeStyle = '#C084FC';
+    ctx.lineWidth = 5 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    for (let i = 0; i < 12; i++) {
+      const a = (i * Math.PI * 2) / 12 + progress * 0.8;
+      ctx.strokeStyle = i % 2 === 0 ? '#FFFFFF' : '#38BDF8';
+      ctx.lineWidth = 2.8 * (1 - progress * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r * 0.4, Math.sin(a) * r * 0.4);
+      ctx.lineTo(Math.cos(a) * r * 1.25, Math.sin(a) * r * 1.25);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  // SLIME_MANA_EXPLOSION
+  const r = slash.radius * (0.28 + easeOut * 0.8);
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha;
+
+  ctx.strokeStyle = '#67E8F9';
+  ctx.lineWidth = 4 * (1 - progress * 0.5);
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#C084FC';
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.65, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLizardfolkSlashVfx(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  const progress = Math.min(1, Math.max(0, 1 - slash.life / slash.maxLife));
+  const easeOut = 1 - Math.pow(1 - progress, 2.8);
+  const alpha = Math.max(0, 1 - Math.pow(progress, 1.8));
+
+  if (slash.kind === 'LIZARDFOLK_SPEAR_THRUST') {
+    // High-speed penetrating thrust line with aerodynamic cone
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.rotate(slash.angle);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    const len = slash.radius * (0.5 + easeOut * 0.7);
+    ctx.strokeStyle = '#6EE7B7';
+    ctx.lineWidth = 5 * (1 - progress * 0.6);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-len * 0.4, 0);
+    ctx.lineTo(len * 0.6, 0);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2.4 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.moveTo(len * 0.65, 0);
+    ctx.lineTo(len * 0.35, -9);
+    ctx.lineTo(len * 0.35, 9);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'LIZARDFOLK_SPEAR_CLEAVE') {
+    // Wide sweeping crescent blade arc with emerald wind trail
+    const r = slash.radius * (0.4 + easeOut * 0.68);
+    const half = (slash.arcSpread || 1.3) * 0.5;
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.rotate(slash.angle);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    ctx.strokeStyle = '#10B981';
+    ctx.lineWidth = 6 * (1 - progress * 0.6);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, -half, half);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#6EE7B7';
+    ctx.lineWidth = 2.6 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.88, -half * 0.85, half * 0.85);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'LIZARDFOLK_JAVELIN_WAKE') {
+    // Supersonic javelin shockwave trail
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.rotate(slash.angle);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    const r = slash.radius * (0.3 + easeOut * 0.7);
+    ctx.strokeStyle = '#34D399';
+    ctx.lineWidth = 3.8 * (1 - progress * 0.6);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r, r * 0.35, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'LIZARDFOLK_IMPALE_BURST') {
+    // Heavy bone/iron pin impact with ground-shattering spikes
+    const r = slash.radius * (0.35 + easeOut * 0.72);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    ctx.strokeStyle = '#FBBF24';
+    ctx.lineWidth = 4 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2 + Math.PI / 4;
+      ctx.strokeStyle = '#10B981';
+      ctx.lineWidth = 2.8;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r * 0.2, Math.sin(a) * r * 0.2);
+      ctx.lineTo(Math.cos(a) * r * 1.1, Math.sin(a) * r * 1.1);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'LIZARDFOLK_HUNTING_MARK_FX') {
+    // Hunter's mark crosshair with sharp predator eye glyph
+    const r = slash.radius * (0.4 + easeOut * 0.6);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    ctx.strokeStyle = '#EF4444';
+    ctx.lineWidth = 2.6 * (1 - progress * 0.4);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * (r - 4), Math.sin(a) * (r - 4));
+      ctx.lineTo(Math.cos(a) * (r + 7), Math.sin(a) * (r + 7));
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'LIZARDFOLK_CYCLONE_SPIN') {
+    // Rapid emerald whirlwind spin ring
+    const r = slash.radius * (0.35 + easeOut * 0.72);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.rotate(progress * Math.PI * 2);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    ctx.strokeStyle = '#10B981';
+    ctx.lineWidth = 5 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#6EE7B7';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.75, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'LIZARDFOLK_RAIN_VOLLEY') {
+    // Skyward spear launch flash
+    const r = slash.radius * (0.3 + easeOut * 0.75);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    ctx.strokeStyle = '#34D399';
+    ctx.lineWidth = 4 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'LIZARDFOLK_WORLD_PIERCER_SHOCKWAVE') {
+    // Colossal ground-shattering seismic shockwave
+    const r = slash.radius * (0.2 + easeOut * 0.88);
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    ctx.strokeStyle = '#10B981';
+    ctx.lineWidth = 6 * (1 - progress * 0.6);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#FBBF24';
+    ctx.lineWidth = 3 * (1 - progress * 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.75, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'LIZARDFOLK_DRAGONFANG_BREATH') {
+    // Sweeping draconic firebreath cone
+    const r = slash.radius * (0.35 + easeOut * 0.75);
+    const half = (slash.arcSpread || 1.2) * 0.5;
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.rotate(slash.angle);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    const grad = ctx.createRadialGradient(0, 0, 4, 0, 0, r);
+    grad.addColorStop(0, '#FFFFFF');
+    grad.addColorStop(0.35, 'rgba(52, 211, 153, 0.85)');
+    grad.addColorStop(0.7, 'rgba(16, 185, 129, 0.45)');
+    grad.addColorStop(1, 'rgba(6, 78, 59, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, r, -half, half);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  if (slash.kind === 'LIZARDFOLK_FRACTURE_BEAM') {
+    // Dimensional lance fracture tear in reality
+    ctx.save();
+    ctx.translate(slash.x, slash.y);
+    ctx.rotate(slash.angle);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+
+    const len = slash.radius * (0.4 + easeOut * 0.8);
+    ctx.strokeStyle = '#34D399';
+    ctx.lineWidth = 5 * (1 - progress * 0.6);
+    ctx.beginPath();
+    ctx.moveTo(-len * 0.5, 0);
+    ctx.lineTo(len * 0.5, 0);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-len * 0.5, 0);
+    ctx.lineTo(len * 0.5, 0);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  // LIZARDFOLK_GREAT_HUNT_ROAR
+  const r = slash.radius * (0.28 + easeOut * 0.8);
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha;
+
+  ctx.strokeStyle = '#10B981';
+  ctx.lineWidth = 5 * (1 - progress * 0.5);
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#FDE047';
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawSlashArc(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  if (
+    slash.kind === 'SLIME_ARCANE_WHIP' ||
+    slash.kind === 'SLIME_ORB_EXPLOSION' ||
+    slash.kind === 'SLIME_PRISMATIC_BURST' ||
+    slash.kind === 'SLIME_GRAVITY_PULSE' ||
+    slash.kind === 'SLIME_CASCADE_IMPACT' ||
+    slash.kind === 'SLIME_PRISON_RING' ||
+    slash.kind === 'SLIME_CATACLYSM_STORM' ||
+    slash.kind === 'SLIME_SINGULARITY_BURST' ||
+    slash.kind === 'SLIME_OVERLOAD_NOVA' ||
+    slash.kind === 'SLIME_MANA_EXPLOSION'
+  ) {
+    drawSlimeSlashVfx(ctx, slash);
+    return;
+  }
+  if (
+    slash.kind === 'LIZARDFOLK_SPEAR_THRUST' ||
+    slash.kind === 'LIZARDFOLK_SPEAR_CLEAVE' ||
+    slash.kind === 'LIZARDFOLK_JAVELIN_WAKE' ||
+    slash.kind === 'LIZARDFOLK_IMPALE_BURST' ||
+    slash.kind === 'LIZARDFOLK_HUNTING_MARK_FX' ||
+    slash.kind === 'LIZARDFOLK_CYCLONE_SPIN' ||
+    slash.kind === 'LIZARDFOLK_RAIN_VOLLEY' ||
+    slash.kind === 'LIZARDFOLK_WORLD_PIERCER_SHOCKWAVE' ||
+    slash.kind === 'LIZARDFOLK_DRAGONFANG_BREATH' ||
+    slash.kind === 'LIZARDFOLK_FRACTURE_BEAM' ||
+    slash.kind === 'LIZARDFOLK_GREAT_HUNT_ROAR'
+  ) {
+    drawLizardfolkSlashVfx(ctx, slash);
+    return;
+  }
   if (
     slash.kind === 'KOBOLD_MUZZLE_FLASH' ||
     slash.kind === 'KOBOLD_PIERCING_LANCE' ||
@@ -9461,6 +11085,325 @@ function drawProjectile(ctx: CanvasRenderingContext2D, proj: ProjectileEntity, t
     ctx.lineTo(6, 4);
     ctx.closePath();
     ctx.fill();
+  } else if (proj.kind === 'PLAYER_ARCANE_ORB') {
+    // Concentrated swirling arcane sphere with energy corona & orbital sparks
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const grad = ctx.createRadialGradient(0, 0, 1, 0, 0, proj.radius * 1.5);
+    grad.addColorStop(0, '#FFFFFF');
+    grad.addColorStop(0.4, 'rgba(192, 132, 252, 0.95)');
+    grad.addColorStop(0.8, 'rgba(126, 34, 206, 0.45)');
+    grad.addColorStop(1, 'rgba(126, 34, 206, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, proj.radius * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Supersonic trailing wake
+    ctx.strokeStyle = 'rgba(192, 132, 252, 0.7)';
+    ctx.lineWidth = proj.radius * 0.9;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-proj.radius * 2.2, 0);
+    ctx.lineTo(0, 0);
+    ctx.stroke();
+
+    // Orbiting mini mana motes
+    for (let m = 0; m < 3; m++) {
+      const ma = time * 12 + (m * Math.PI * 2) / 3;
+      const mx = Math.cos(ma) * proj.radius * 1.2;
+      const my = Math.sin(ma) * proj.radius * 0.7;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(mx, my, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  } else if (proj.kind === 'PLAYER_PRISMATIC_SHARD') {
+    // Faceted glowing crystal shard with rainbow trail
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    // Diamond shard crystal
+    ctx.fillStyle = '#FFFFFF';
+    ctx.strokeStyle = proj.color || '#38BDF8';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(2, -5.5);
+    ctx.lineTo(-12, 0);
+    ctx.lineTo(2, 5.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Prismatic refracted slipstream
+    ctx.strokeStyle = 'rgba(232, 121, 249, 0.75)';
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-22, 0);
+    ctx.lineTo(-2, 0);
+    ctx.stroke();
+    ctx.restore();
+  } else if (proj.kind === 'PLAYER_ELEMENTAL_CASCADE_METEOR') {
+    // Cascading elemental comet meteor
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = proj.color;
+    ctx.lineWidth = proj.radius * 1.1;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-28, 0);
+    ctx.lineTo(0, 0);
+    ctx.stroke();
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(0, 0, proj.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  } else if (proj.kind === 'PLAYER_JAVELIN' || proj.kind === 'PLAYER_TRIPLE_SPEAR') {
+    // Aerodynamic wooden/bronze javelin with emerald feather fletching and supersonic slipstream
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(110, 231, 183, 0.7)';
+    ctx.lineWidth = 3.2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-28, 0);
+    ctx.lineTo(8, 0);
+    ctx.stroke();
+    ctx.restore();
+
+    // Spear wooden shaft
+    ctx.strokeStyle = '#78350F';
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(-18, 0);
+    ctx.lineTo(14, 0);
+    ctx.stroke();
+
+    // Emerald feather fletching
+    ctx.fillStyle = '#10B981';
+    ctx.beginPath();
+    ctx.moveTo(-18, 0);
+    ctx.lineTo(-24, -4);
+    ctx.lineTo(-20, 0);
+    ctx.lineTo(-24, 4);
+    ctx.closePath();
+    ctx.fill();
+
+    // Flint/bronze spearhead
+    ctx.fillStyle = '#34D399';
+    ctx.strokeStyle = '#065F46';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(22, 0);
+    ctx.lineTo(13, -4.5);
+    ctx.lineTo(13, 4.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else if (proj.kind === 'PLAYER_IMPALING_SPEAR') {
+    // Heavy barbed bone-and-iron harpoon
+    ctx.save();
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.7)';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-32, 0);
+    ctx.lineTo(10, 0);
+    ctx.stroke();
+
+    // Heavy iron shaft
+    ctx.strokeStyle = '#44403C';
+    ctx.lineWidth = 3.4;
+    ctx.beginPath();
+    ctx.moveTo(-20, 0);
+    ctx.lineTo(16, 0);
+    ctx.stroke();
+
+    // Barbed harpoon spearhead with rear hooks
+    ctx.fillStyle = '#F59E0B';
+    ctx.beginPath();
+    ctx.moveTo(26, 0);
+    ctx.lineTo(14, -6);
+    ctx.lineTo(17, -2);
+    ctx.lineTo(14, 0);
+    ctx.lineTo(17, 2);
+    ctx.lineTo(14, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  } else if (proj.kind === 'PLAYER_WORLD_PIERCER') {
+    // Massive luminous emerald enchanted lance with dimensional shockwaves
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    // Colossal slipstream aura
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.85)';
+    ctx.lineWidth = 9;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-50, 0);
+    ctx.lineTo(30, 0);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 3.6;
+    ctx.beginPath();
+    ctx.moveTo(-45, 0);
+    ctx.lineTo(36, 0);
+    ctx.stroke();
+
+    // Shockwave rings along the shaft
+    for (let ring = 0; ring < 3; ring++) {
+      const rx = -35 + ring * 22;
+      ctx.strokeStyle = '#FDE047';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.ellipse(rx, 0, 5, 12, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Gigantic lance head
+    ctx.fillStyle = '#10B981';
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(48, 0);
+    ctx.lineTo(26, -9);
+    ctx.lineTo(30, 0);
+    ctx.lineTo(26, 9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  } else if (proj.kind === 'PLAYER_CYCLONE_SPEAR') {
+    // High-speed spinning spear with circular motion blur
+    ctx.save();
+    ctx.rotate(time * 26 + proj.id);
+    ctx.strokeStyle = '#10B981';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-18, 0);
+    ctx.lineTo(18, 0);
+    ctx.stroke();
+
+    ctx.fillStyle = '#6EE7B7';
+    ctx.beginPath();
+    ctx.moveTo(24, 0);
+    ctx.lineTo(16, -4.5);
+    ctx.lineTo(16, 4.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-24, 0);
+    ctx.lineTo(-16, -4.5);
+    ctx.lineTo(-16, 4.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  } else if (proj.kind === 'PLAYER_SPECTRAL_HUNT_SPEAR') {
+    // Ethereal cyan-emerald ancestor spirit lance
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Rhythmic sine wave wake ribbons at 60fps
+    const ribbonWave = Math.sin(time * 24 + proj.id) * 2.5;
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.4)';
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-42, ribbonWave);
+    ctx.lineTo(8, 0);
+    ctx.stroke();
+
+    // Luminous emerald-cyan shaft
+    ctx.strokeStyle = 'rgba(110, 231, 183, 0.9)';
+    ctx.lineWidth = 3.6;
+    ctx.beginPath();
+    ctx.moveTo(-36, 0);
+    ctx.lineTo(20, 0);
+    ctx.stroke();
+
+    // Core golden-white beam
+    ctx.strokeStyle = '#FEF08A';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(-24, 0);
+    ctx.lineTo(22, 0);
+    ctx.stroke();
+
+    // Barbed ancestral arrowhead
+    ctx.fillStyle = '#6EE7B7';
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(32, 0);
+    ctx.lineTo(16, -6.5);
+    ctx.lineTo(20, -2);
+    ctx.lineTo(4, 0);
+    ctx.lineTo(20, 2);
+    ctx.lineTo(16, 6.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // White hot tip
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.moveTo(32, 0);
+    ctx.lineTo(22, -2.5);
+    ctx.lineTo(22, 2.5);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  } else if (proj.kind === 'PLAYER_DRAGONFANG_HEAD') {
+    // Flying spectral dragon head phantom with flaming jaws
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const mouthOpen = 5 + Math.sin(time * 16) * 3;
+
+    // Glowing draconic slipstream
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.75)';
+    ctx.lineWidth = 10;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-36, 0);
+    ctx.lineTo(4, 0);
+    ctx.stroke();
+
+    // Dragon upper snout
+    ctx.fillStyle = '#10B981';
+    ctx.strokeStyle = '#6EE7B7';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(-12, -4);
+    ctx.lineTo(8, -10);
+    ctx.lineTo(26, -3);
+    ctx.lineTo(12, -mouthOpen);
+    ctx.lineTo(0, -2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Dragon lower jaw
+    ctx.beginPath();
+    ctx.moveTo(-8, 3);
+    ctx.lineTo(12, mouthOpen);
+    ctx.lineTo(20, 2);
+    ctx.lineTo(0, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Blazing golden dragon eye
+    ctx.fillStyle = '#FDE047';
+    ctx.beginPath();
+    ctx.arc(6, -6, 2.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   } else {
     ctx.fillStyle = proj.color;
     ctx.strokeStyle = '#120F17';
@@ -9489,6 +11432,8 @@ function drawWarmLightPools(
   const isGnome = player.characterId === CharacterId.Gnome;
   const isGhost = player.characterId === CharacterId.Ghost;
   const isKobold = player.characterId === CharacterId.Kobold;
+  const isSlime = player.characterId === CharacterId.Slime;
+  const isLizard = player.characterId === CharacterId.Lizardfolk;
   const pGrad = ctx.createRadialGradient(player.x, player.y, 4, player.x, player.y, 95);
   pGrad.addColorStop(
     0,
@@ -9502,6 +11447,10 @@ function drawWarmLightPools(
       ? 'rgba(192, 132, 252, 0.11)'
       : isKobold
       ? 'rgba(251, 113, 133, 0.09)'
+      : isSlime
+      ? 'rgba(168, 85, 247, 0.12)'
+      : isLizard
+      ? 'rgba(16, 185, 129, 0.10)'
       : 'rgba(74, 222, 128, 0.07)'
   );
   pGrad.addColorStop(
@@ -9516,6 +11465,10 @@ function drawWarmLightPools(
       ? 'rgba(192, 132, 252, 0)'
       : isKobold
       ? 'rgba(251, 113, 133, 0)'
+      : isSlime
+      ? 'rgba(168, 85, 247, 0)'
+      : isLizard
+      ? 'rgba(16, 185, 129, 0)'
       : 'rgba(74, 222, 128, 0)'
   );
   ctx.fillStyle = pGrad;

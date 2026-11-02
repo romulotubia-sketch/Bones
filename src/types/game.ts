@@ -393,6 +393,9 @@ export interface ProjectileEntity {
   orbitAngle?: number;
   orbitRadius?: number;
   homing?: boolean;
+  targetEnemyId?: number | null;
+  isHuntingMarkEmpowered?: boolean;
+  homingTurnRate?: number;
   blastRadius?: number;
   elementKind?: 'FIRE' | 'FROST' | 'LIGHTNING';
   isFinisherBolt?: boolean;
@@ -543,6 +546,12 @@ export interface AncientHunterSpirit {
   attackCooldown: number;
   facingX: number;
   variant: 'FIRST_HUNTER' | 'WILD_HUNT';
+  attackAnimTimer?: number;
+  attackAnimDuration?: number;
+  hasFiredProjectile?: boolean;
+  aimAngle?: number;
+  recoilOffset?: number;
+  strafeAngle?: number;
 }
 
 export interface ElementalSpiritEntity {

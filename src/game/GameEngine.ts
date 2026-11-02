@@ -11,6 +11,9 @@ import {
 } from '../data/zombieData';
 import {
   AfterimageEntity,
+  AncientHunterSpirit,
+  ArcanePrisonZone,
+  AstralSingularityZone,
   CharacterId,
   CharacterUpgradeRanks,
   CrossbowTurretEntity,
@@ -18,6 +21,8 @@ import {
   DeathsPassageRift,
   DragonsBarrageZone,
   EarthenGraspZone,
+  ElementalCascadeZone,
+  ElementalSpiritEntity,
   EnemyEntity,
   EnemyKind,
   DifficultyConfig,
@@ -27,6 +32,7 @@ import {
   FloatingPopup,
   GamePhase,
   GhostMistZone,
+  GravityWellZone,
   GuildCompanionRenderState,
   GuildSaveData,
   HudSnapshot,
@@ -38,6 +44,7 @@ import {
   PickupOrb,
   PoisonCloudEntity,
   ProjectileEntity,
+  RainOfJavelinsZone,
   RoomKind,
   RunBlessing,
   ShockwaveRing,
@@ -46,6 +53,7 @@ import {
   SlashEffect,
   SnareTrapEntity,
   SoulTether,
+  SpearCycloneZone,
   StoneRampartEntity,
   UltimateSkillId,
   DeathsEmbraceEffect,
@@ -4258,7 +4266,12 @@ export class GameEngine {
       p.manualAimHoldTimer = Math.max(0, p.manualAimHoldTimer - dt);
     }
     const joyMag = Math.hypot(this.joyX, this.joyY);
-    const autoLockRange = p.characterId === CharacterId.Kobold ? 420 : 305;
+    const autoLockRange =
+      p.characterId === CharacterId.Kobold ||
+      p.characterId === CharacterId.Slime ||
+      p.characterId === CharacterId.Lizardfolk
+        ? 450
+        : 305;
     const nearestEnemy = this.findNearestEnemy(p.x, p.y, autoLockRange);
     if (this.activeSkillAim && !this.activeSkillAim.isCancelling) {
       p.aimAngle = this.activeSkillAim.angle;
@@ -5050,18 +5063,19 @@ export class GameEngine {
       return;
     }
 
-    // === LIZARDFOLK SPEAR HUNTER BASIC ATTACK (THRUST / CLEAVE / POWER JAVELIN) ===
+    // === LIZARDFOLK SPEAR HUNTER BASIC ATTACK (ALL-RANGED JAVELIN COMBO: QUICK TOSS / TWIN JAVELINS / GREAT IMPALER) ===
     if (profile.id === CharacterId.Lizardfolk) {
       const lizardCd = profile.baseAttackCooldown / (1 + ranks.pathE * 0.05);
       p.basicAttackCooldown = Math.max(0.12, lizardCd);
 
       const lizardStep = p.lizardComboStep;
-      const isThrowFinisher = lizardStep === 2;
+      const isFinisher = lizardStep === 2;
+      const isTwin = lizardStep === 1;
       p.lizardComboStep = (lizardStep + 1) % 3;
       p.comboFlip = lizardStep % 2 === 1;
-      p.lizardSpearLungeOffset = isThrowFinisher ? 12 : 7;
-      p.squashX = isThrowFinisher ? 1.25 : 1.15;
-      p.squashY = isThrowFinisher ? 0.8 : 0.88;
+      p.lizardSpearLungeOffset = isFinisher ? 16 : isTwin ? 11 : 9;
+      p.squashX = isFinisher ? 1.28 : isTwin ? 1.22 : 1.18;
+      p.squashY = isFinisher ? 0.78 : isTwin ? 0.82 : 0.84;
 
       // Hunter's Instinct: 5 stacks guarantees 100% critical strike and resets Piercing Javelin cooldown!
       let guaranteedCrit = false;
@@ -5076,114 +5090,239 @@ export class GameEngine {
         this.spawnPopup(p.x, p.y - 32, 'HUNTER FOCUS CRIT!', '#10B981', 1.15);
       }
 
+      soundEngine.playArrow();
       if (this.isInCoop()) {
         this.networkManager?.sendCastSkill('BASIC', p.x, p.y, p.aimAngle, 'BASIC');
       }
 
-      if (isThrowFinisher) {
-        // Step 2: Power Piercing Javelin throw
-        soundEngine.playArrow();
-        const muzzleX = p.x + Math.cos(p.aimAngle) * 22;
-        const muzzleY = p.y - 2 + Math.sin(p.aimAngle) * 22;
+      const muzzleDist = isFinisher ? 24 : isTwin ? 22 : 20;
+      const muzzleX = p.x + Math.cos(p.aimAngle) * muzzleDist;
+      const muzzleY = p.y - 2 + Math.sin(p.aimAngle) * muzzleDist;
 
+      if (isFinisher) {
+        // Step 2: Great Impaling Harpoon / Power Javelin (high-velocity piercing throw that punches through lines)
+        this.shakeMag = Math.max(this.shakeMag, 3.4);
         this.slashes.push({
           x: muzzleX,
           y: muzzleY,
           angle: p.aimAngle,
-          radius: 54,
-          arcSpread: 0.8,
-          color: '#10B981',
-          life: 0.2,
-          maxLife: 0.2,
+          radius: 56,
+          arcSpread: 0.85,
+          color: guaranteedCrit ? '#FDE047' : '#34D399',
+          life: 0.22,
+          maxLife: 0.22,
           flip: false,
           kind: 'LIZARDFOLK_JAVELIN_WAKE',
-          isCrit: guaranteedCrit,
+          isCrit: true,
+          scale: 1.35,
         });
 
+        // 8 high-velocity emerald & amber slipstream shards
+        for (let i = 0; i < 8; i++) {
+          if (this.particles.length > 240) break;
+          const sa = p.aimAngle + (Math.random() - 0.5) * 0.7;
+          const spd = 180 + Math.random() * 110;
+          this.particles.push({
+            x: muzzleX,
+            y: muzzleY,
+            vx: Math.cos(sa) * spd,
+            vy: Math.sin(sa) * spd,
+            size: 3.0,
+            color: i % 2 === 0 ? '#10B981' : '#FDE047',
+            life: 0.22,
+            maxLife: 0.22,
+            gravity: 0,
+            fade: true,
+            kind: 'SLASH_STREAK',
+            rot: sa,
+            len: 16,
+            thick: 2.4,
+            drag: 4.8,
+          });
+        }
+
         const javelinDmg =
-          profile.baseAttackDamage * 1.5 * this.getPhysicalDamageMultiplier();
+          profile.baseAttackDamage * 1.6 * this.getPhysicalDamageMultiplier();
         this.projectiles.push({
           id: allocEntityId(),
           fromPlayer: true,
           x: muzzleX,
           y: muzzleY,
-          vx: Math.cos(p.aimAngle) * 780,
-          vy: Math.sin(p.aimAngle) * 780,
-          radius: 9,
+          vx: Math.cos(p.aimAngle) * 890,
+          vy: Math.sin(p.aimAngle) * 890,
+          radius: 10,
           damage: javelinDmg,
-          life: 0.65,
-          color: '#10B981',
+          life: 0.72,
+          color: guaranteedCrit ? '#FDE047' : '#10B981',
           kind: 'PLAYER_JAVELIN',
           angle: p.aimAngle,
           pierce: true,
           hitEnemyIds: new Set<number>(),
         });
-        return;
-      } else {
-        // Step 0 & 1: Precision spear thrust / sweeping cleave
-        soundEngine.playSlash(lizardStep);
-        const reach = (lizardStep === 0 ? 82 : 72) * (1 + ranks.pathB * 0.04);
-        const spread = lizardStep === 0 ? 1.05 : 1.72;
-        const originX = p.x + Math.cos(p.aimAngle) * 16;
-        const originY = p.y + Math.sin(p.aimAngle) * 16;
+      } else if (isTwin) {
+        // Step 1: Twin Barbed Javelins (dual diverging trajectory spears)
+        const spreadOffset = 0.085;
+        const twinAngles = [p.aimAngle - spreadOffset, p.aimAngle + spreadOffset];
+        const javelinDmg =
+          profile.baseAttackDamage * 0.75 * this.getPhysicalDamageMultiplier();
 
-        const createdSlash: SlashEffect = {
-          x: originX,
-          y: originY,
-          angle: p.aimAngle,
-          radius: reach,
-          arcSpread: spread,
-          color: guaranteedCrit ? '#FDE047' : '#10B981',
-          life: 0.16,
-          maxLife: 0.16,
-          flip: p.comboFlip,
-          kind: lizardStep === 0 ? 'LIZARDFOLK_SPEAR_THRUST' : 'LIZARDFOLK_SPEAR_CLEAVE',
-          isCrit: guaranteedCrit,
-        };
-        this.slashes.push(createdSlash);
+        for (let t = 0; t < twinAngles.length; t++) {
+          const tAngle = twinAngles[t];
+          const tMuzzleX = p.x + Math.cos(tAngle) * muzzleDist;
+          const tMuzzleY = p.y - 2 + Math.sin(tAngle) * muzzleDist;
 
-        // Jade/emerald hunter razor streaks
+          this.slashes.push({
+            x: tMuzzleX,
+            y: tMuzzleY,
+            angle: tAngle,
+            radius: 36,
+            arcSpread: 0.75,
+            color: '#34D399',
+            life: 0.16,
+            maxLife: 0.16,
+            flip: t === 1,
+            kind: 'LIZARDFOLK_JAVELIN_WAKE',
+            isCrit: guaranteedCrit,
+          });
+
+          this.projectiles.push({
+            id: allocEntityId(),
+            fromPlayer: true,
+            x: tMuzzleX,
+            y: tMuzzleY,
+            vx: Math.cos(tAngle) * 840,
+            vy: Math.sin(tAngle) * 840,
+            radius: 7.2,
+            damage: javelinDmg,
+            life: 0.62,
+            color: '#10B981',
+            kind: 'PLAYER_JAVELIN',
+            angle: tAngle,
+            pierce: guaranteedCrit,
+            hitEnemyIds: new Set<number>(),
+          });
+        }
+
+        // 6 jade razor streaks
         for (let i = 0; i < 6; i++) {
           if (this.particles.length > 240) break;
-          const dir = p.aimAngle + (Math.random() - 0.5) * spread;
-          const spd = 160 + Math.random() * 90;
+          const sa = p.aimAngle + (Math.random() - 0.5) * 0.9;
+          const spd = 150 + Math.random() * 80;
           this.particles.push({
-            x: originX,
-            y: originY,
-            vx: Math.cos(dir) * spd,
-            vy: Math.sin(dir) * spd,
-            size: 2.6,
+            x: muzzleX,
+            y: muzzleY,
+            vx: Math.cos(sa) * spd,
+            vy: Math.sin(sa) * spd,
+            size: 2.5,
             color: i % 2 === 0 ? '#10B981' : '#6EE7B7',
             life: 0.18,
             maxLife: 0.18,
             gravity: 0,
             fade: true,
             kind: 'SLASH_STREAK',
-            rot: dir,
-            len: 14,
+            rot: sa,
+            len: 12,
+            thick: 2,
+            drag: 5.2,
+          });
+        }
+      } else {
+        // Step 0: Swift Hunting Dart / Light Javelin (fast aerodynamic spear toss)
+        this.slashes.push({
+          x: muzzleX,
+          y: muzzleY,
+          angle: p.aimAngle,
+          radius: 38,
+          arcSpread: 0.75,
+          color: guaranteedCrit ? '#FDE047' : '#10B981',
+          life: 0.16,
+          maxLife: 0.16,
+          flip: false,
+          kind: 'LIZARDFOLK_JAVELIN_WAKE',
+          isCrit: guaranteedCrit,
+        });
+
+        // 5 emerald slipstream sparks
+        for (let i = 0; i < 5; i++) {
+          if (this.particles.length > 240) break;
+          const sa = p.aimAngle + (Math.random() - 0.5) * 0.65;
+          const spd = 140 + Math.random() * 70;
+          this.particles.push({
+            x: muzzleX,
+            y: muzzleY,
+            vx: Math.cos(sa) * spd,
+            vy: Math.sin(sa) * spd,
+            size: 2.6,
+            color: i % 2 === 0 ? '#10B981' : '#34D399',
+            life: 0.18,
+            maxLife: 0.18,
+            gravity: 0,
+            fade: true,
+            kind: 'SLASH_STREAK',
+            rot: sa,
+            len: 13,
             thick: 2,
             drag: 5.0,
           });
         }
 
-        const rawDmg = profile.baseAttackDamage * this.getPhysicalDamageMultiplier();
-        for (const enemy of [...this.world.enemies]) {
-          if (!enemy || enemy.hp <= 0) continue;
-          const dist = Math.hypot(enemy.x - p.x, enemy.y - p.y);
-          if (dist <= reach + enemy.radius) {
-            const angleToEnemy = Math.atan2(enemy.y - p.y, enemy.x - p.x);
-            let diff = Math.abs(angleToEnemy - p.aimAngle);
-            while (diff > Math.PI) diff = Math.abs(diff - Math.PI * 2);
-            if (diff <= spread * 0.55) {
-              const distBonus = this.getLizardfolkDistanceDamageBonus(enemy.x, enemy.y, p.x, p.y);
-              const roll = this.rollPhysicalAttack(rawDmg * distBonus, 0.2, guaranteedCrit);
-              this.damageEnemy(enemy, roll.damage, true, p.x, p.y, false, roll.isCrit);
+        const javelinDmg =
+          profile.baseAttackDamage * 1.05 * this.getPhysicalDamageMultiplier();
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x: muzzleX,
+          y: muzzleY,
+          vx: Math.cos(p.aimAngle) * 820,
+          vy: Math.sin(p.aimAngle) * 820,
+          radius: 7.8,
+          damage: javelinDmg,
+          life: 0.65,
+          color: '#10B981',
+          kind: 'PLAYER_JAVELIN',
+          angle: p.aimAngle,
+          pierce: guaranteedCrit,
+          hitEnemyIds: new Set<number>(),
+        });
+      }
+
+      // Universal Relic Blessing: Stormbound Reliquary — every 4th basic attack chains spectral lightning!
+      if (this.activeBlessingIds.has('relic_storm_reliquary')) {
+        p.stormReliquaryCount++;
+        if (p.stormReliquaryCount >= 4) {
+          p.stormReliquaryCount = 0;
+          const arcTargets = [...this.world.enemies]
+            .filter((e) => e && e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) <= 285)
+            .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))
+            .slice(0, 2);
+          if (arcTargets.length > 0) {
+            const arcDmg = Math.round(18 * this.getPhysicalDamageMultiplier());
+            let prevX = p.x;
+            let prevY = p.y - 8;
+            for (const target of arcTargets) {
+              this.slashes.push({
+                x: target.x,
+                y: target.y,
+                fromX: prevX,
+                fromY: prevY,
+                angle: Math.atan2(target.y - prevY, target.x - prevX),
+                radius: 0,
+                arcSpread: 0,
+                color: '#67E8F9',
+                life: 0.22,
+                maxLife: 0.22,
+                flip: false,
+                kind: 'GNOME_MAGNETIC_ARC',
+              });
+              this.damageEnemy(target, arcDmg, false, prevX, prevY);
+              this.spawnBurst(target.x, target.y, '#67E8F9', 5, 75);
+              prevX = target.x;
+              prevY = target.y;
             }
           }
         }
-        this.hitDestructibleProps(p.x, p.y, reach);
-        return;
       }
+      return;
     }
 
     let cd = profile.baseAttackCooldown;
@@ -10790,11 +10929,17 @@ export class GameEngine {
               vx: 0,
               vy: 0,
               targetEnemyId: null,
-              life: 8.5,
-              maxLife: 8.5,
-              attackCooldown: 0.2 + i * 0.15,
+              life: 9.5,
+              maxLife: 9.5,
+              attackCooldown: 0.15 + i * 0.12,
               facingX: 1,
               variant: 'WILD_HUNT',
+              attackAnimTimer: 0,
+              attackAnimDuration: 0.32,
+              hasFiredProjectile: false,
+              aimAngle: 0,
+              recoilOffset: 0,
+              strafeAngle: (i / 4) * Math.PI * 2,
             });
           }
           this.spawnPopup(p.x, p.y - 42, 'WILD HUNT PROCESSION!', '#10B981', 1.25);
@@ -10807,11 +10952,17 @@ export class GameEngine {
             vx: 0,
             vy: 0,
             targetEnemyId: null,
-            life: 9.5,
-            maxLife: 9.5,
-            attackCooldown: 0.3,
+            life: 10.5,
+            maxLife: 10.5,
+            attackCooldown: 0.2,
             facingX: p.facingX,
             variant: 'FIRST_HUNTER',
+            attackAnimTimer: 0,
+            attackAnimDuration: 0.40,
+            hasFiredProjectile: false,
+            aimAngle: p.aimAngle,
+            recoilOffset: 0,
+            strafeAngle: 0,
           });
           const title = isFirstHunter ? 'THE FIRST HUNTER!' : 'SPIRIT OF THE GREAT HUNT!';
           this.spawnPopup(p.x, p.y - 42, title, '#34D399', 1.25);
@@ -12467,7 +12618,30 @@ export class GameEngine {
                 life: 0.32,
                 maxLife: 0.32,
                 flip: false,
-                kind: 'LIZARDFOLK_WORLD_PIERCER_BURST',
+                kind: 'LIZARDFOLK_WORLD_PIERCER_SHOCKWAVE',
+                isCrit: true,
+              });
+            } else if (pr.kind === 'PLAYER_SPECTRAL_HUNT_SPEAR') {
+              soundEngine.playCrit();
+              this.shockwaves.push({
+                x: enemy.x,
+                y: enemy.y,
+                maxRadius: 46,
+                color: '#34D399',
+                life: 0.22,
+                maxLife: 0.22,
+              });
+              this.slashes.push({
+                x: enemy.x,
+                y: enemy.y,
+                angle: pr.angle,
+                radius: 44,
+                arcSpread: 1.1,
+                color: '#10B981',
+                life: 0.22,
+                maxLife: 0.22,
+                flip: false,
+                kind: 'LIZARDFOLK_IMPALE_BURST',
                 isCrit: true,
               });
             }
@@ -13313,6 +13487,542 @@ export class GameEngine {
 
       if (rift.life <= 0) {
         this.deathsPassageRifts.splice(i, 1);
+      }
+    }
+  }
+
+  private triggerElementalConvergenceBurst(): void {
+    const p = this.player;
+    const ang = Math.random() * Math.PI * 2;
+    const burstDmg = Math.round(24 * this.getPlagueOrSkillMultiplier());
+    this.projectiles.push({
+      id: allocEntityId(),
+      fromPlayer: true,
+      x: p.x,
+      y: p.y - 8,
+      vx: Math.cos(ang) * 680,
+      vy: Math.sin(ang) * 680,
+      radius: 8,
+      damage: burstDmg,
+      life: 0.6,
+      color: Math.random() < 0.5 ? '#38BDF8' : '#FBBF24',
+      kind: 'PLAYER_ARCANE_ORB',
+      angle: ang,
+      pierce: true,
+      blastRadius: 45,
+      hitEnemyIds: new Set<number>(),
+    });
+  }
+
+  private triggerLivingSpellbookCast(): void {
+    const p = this.player;
+    soundEngine.playWhoosh();
+    const target = this.findNearestEnemy(p.x, p.y, 420);
+    const ang = target ? Math.atan2(target.y - p.y, target.x - p.x) : p.aimAngle;
+    const bookDmg = Math.round(36 * this.getPlagueOrSkillMultiplier());
+    this.projectiles.push({
+      id: allocEntityId(),
+      fromPlayer: true,
+      x: p.x,
+      y: p.y - 12,
+      vx: Math.cos(ang) * 750,
+      vy: Math.sin(ang) * 750,
+      radius: 10,
+      damage: bookDmg,
+      life: 0.75,
+      color: '#F59E0B',
+      kind: 'PLAYER_ARCANE_ORB',
+      angle: ang,
+      pierce: false,
+      blastRadius: 65,
+      hitEnemyIds: new Set<number>(),
+    });
+    this.spawnBurst(p.x, p.y - 12, '#F59E0B', 6, 75);
+  }
+
+  private updateGravityWells(dt: number): void {
+    for (let i = this.gravityWells.length - 1; i >= 0; i--) {
+      const well = this.gravityWells[i];
+      well.life -= dt;
+      well.tickTimer -= dt;
+      if (well.life <= 0) {
+        this.gravityWells.splice(i, 1);
+        continue;
+      }
+      for (const enemy of this.world.enemies) {
+        if (!enemy || enemy.hp <= 0 || enemy.kind === EnemyKind.TrainingDummy) continue;
+        const dx = well.x - enemy.x;
+        const dy = well.y - enemy.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 12 && dist <= well.radius + enemy.radius) {
+          const pullForce = enemy.kind === EnemyKind.SkeletonBoss ? 90 : 210;
+          const resolved = this.resolveWorldCollision(
+            enemy.x + (dx / dist) * pullForce * dt,
+            enemy.y + (dy / dist) * pullForce * dt,
+            enemy.radius
+          );
+          enemy.x = resolved.x;
+          enemy.y = resolved.y;
+        }
+      }
+      if (well.tickTimer <= 0) {
+        well.tickTimer = 0.28;
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (Math.hypot(enemy.x - well.x, enemy.y - well.y) <= well.radius + enemy.radius) {
+            this.damageEnemy(enemy, well.pullDamage, false, well.x, well.y);
+          }
+        }
+      }
+    }
+  }
+
+  private updateArcanePrisons(dt: number): void {
+    for (let i = this.arcanePrisons.length - 1; i >= 0; i--) {
+      const prison = this.arcanePrisons[i];
+      prison.life -= dt;
+      prison.tickTimer -= dt;
+      if (prison.life <= 0) {
+        this.arcanePrisons.splice(i, 1);
+        continue;
+      }
+      for (const enemy of this.world.enemies) {
+        if (!enemy || enemy.hp <= 0 || enemy.kind === EnemyKind.TrainingDummy) continue;
+        const dist = Math.hypot(enemy.x - prison.x, enemy.y - prison.y);
+        if (dist <= prison.radius + enemy.radius) {
+          enemy.rootTimer = Math.max(enemy.rootTimer, Math.min(0.6, prison.life));
+        }
+      }
+      if (prison.tickTimer <= 0) {
+        prison.tickTimer = 0.35;
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (Math.hypot(enemy.x - prison.x, enemy.y - prison.y) <= prison.radius + enemy.radius) {
+            this.damageEnemy(enemy, prison.damagePerTick, false, prison.x, prison.y);
+          }
+        }
+      }
+    }
+  }
+
+  private updateAstralSingularities(dt: number): void {
+    for (let i = this.astralSingularities.length - 1; i >= 0; i--) {
+      const sing = this.astralSingularities[i];
+      sing.life -= dt;
+      sing.tickTimer -= dt;
+      if (!sing.detonated && sing.life > 0.3) {
+        for (const enemy of this.world.enemies) {
+          if (!enemy || enemy.hp <= 0 || enemy.kind === EnemyKind.TrainingDummy) continue;
+          const dx = sing.x - enemy.x;
+          const dy = sing.y - enemy.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > 14 && dist <= sing.radius + enemy.radius + 40) {
+            const pullForce = enemy.kind === EnemyKind.SkeletonBoss ? 110 : 250;
+            const resolved = this.resolveWorldCollision(
+              enemy.x + (dx / dist) * pullForce * dt,
+              enemy.y + (dy / dist) * pullForce * dt,
+              enemy.radius
+            );
+            enemy.x = resolved.x;
+            enemy.y = resolved.y;
+          }
+        }
+        if (sing.tickTimer <= 0) {
+          sing.tickTimer = 0.25;
+          for (const enemy of [...this.world.enemies]) {
+            if (!enemy || enemy.hp <= 0) continue;
+            if (Math.hypot(enemy.x - sing.x, enemy.y - sing.y) <= sing.radius + enemy.radius) {
+              this.damageEnemy(enemy, sing.pullDamage, false, sing.x, sing.y);
+            }
+          }
+        }
+      }
+      if (!sing.detonated && sing.life <= 0.3) {
+        sing.detonated = true;
+        soundEngine.playBossSlam();
+        this.shakeMag = Math.max(this.shakeMag, 14);
+        this.slashes.push({
+          x: sing.x,
+          y: sing.y,
+          angle: 0,
+          radius: sing.radius * 1.15,
+          arcSpread: Math.PI * 2,
+          color: '#C084FC',
+          life: 0.45,
+          maxLife: 0.45,
+          flip: false,
+          kind: 'SLIME_SINGULARITY_BURST',
+        });
+        this.shockwaves.push({
+          x: sing.x,
+          y: sing.y,
+          maxRadius: sing.radius * 1.2,
+          color: '#818CF8',
+          life: 0.35,
+          maxLife: 0.35,
+        });
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (Math.hypot(enemy.x - sing.x, enemy.y - sing.y) <= sing.radius * 1.15 + enemy.radius) {
+            this.damageEnemy(enemy, sing.explosionDamage, true, sing.x, sing.y, true, true);
+          }
+        }
+        this.hitDestructibleProps(sing.x, sing.y, sing.radius * 1.1);
+      }
+      if (sing.life <= 0) {
+        this.astralSingularities.splice(i, 1);
+      }
+    }
+  }
+
+  private updateElementalCascades(dt: number): void {
+    for (let i = this.elementalCascades.length - 1; i >= 0; i--) {
+      const c = this.elementalCascades[i];
+      c.life -= dt;
+      c.tickTimer -= dt;
+      if (c.life <= 0) {
+        this.elementalCascades.splice(i, 1);
+        continue;
+      }
+      if (c.tickTimer <= 0 && c.dropsRemaining > 0) {
+        c.tickTimer = 0.28;
+        c.dropsRemaining--;
+        soundEngine.playWhoosh();
+        const dropAngle = Math.random() * Math.PI * 2;
+        const dropDist = Math.random() * (c.radius * 0.85);
+        const dx = c.x + Math.cos(dropAngle) * dropDist;
+        const dy = c.y + Math.sin(dropAngle) * dropDist;
+        this.slashes.push({
+          x: dx,
+          y: dy,
+          angle: 0,
+          radius: 36,
+          arcSpread: Math.PI * 2,
+          color: '#38BDF8',
+          life: 0.25,
+          maxLife: 0.25,
+          flip: false,
+          kind: 'SLIME_CASCADE_IMPACT',
+        });
+        this.spawnBurst(dx, dy, '#38BDF8', 5, 65);
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (Math.hypot(enemy.x - dx, enemy.y - dy) <= 38 + enemy.radius) {
+            this.damageEnemy(enemy, c.damagePerDrop, true, dx, dy, false);
+          }
+        }
+      }
+    }
+  }
+
+  private updateSpearCyclones(dt: number): void {
+    for (let i = this.spearCyclones.length - 1; i >= 0; i--) {
+      const cyclone = this.spearCyclones[i];
+      cyclone.life -= dt;
+      cyclone.tickTimer -= dt;
+      if (cyclone.life <= 0) {
+        this.spearCyclones.splice(i, 1);
+        continue;
+      }
+      if (cyclone.returnToPlayer && cyclone.life < cyclone.maxLife * 0.5) {
+        const dx = this.player.x - cyclone.x;
+        const dy = this.player.y - cyclone.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 15) {
+          cyclone.x += (dx / dist) * 220 * dt;
+          cyclone.y += (dy / dist) * 220 * dt;
+        }
+      }
+      if (cyclone.tickTimer <= 0) {
+        cyclone.tickTimer = 0.22;
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (Math.hypot(enemy.x - cyclone.x, enemy.y - cyclone.y) <= cyclone.radius + enemy.radius) {
+            this.damageEnemy(enemy, cyclone.damagePerTick, true, cyclone.x, cyclone.y, false);
+          }
+        }
+      }
+    }
+  }
+
+  private updateRainOfJavelins(dt: number): void {
+    for (let i = this.rainOfJavelinsZones.length - 1; i >= 0; i--) {
+      const zone = this.rainOfJavelinsZones[i];
+      zone.life -= dt;
+      zone.tickTimer -= dt;
+      if (zone.life <= 0) {
+        this.rainOfJavelinsZones.splice(i, 1);
+        continue;
+      }
+      if (zone.tickTimer <= 0) {
+        zone.tickTimer = 0.24;
+        soundEngine.playArrow();
+        const dropAngle = Math.random() * Math.PI * 2;
+        const dropDist = Math.random() * (zone.radius * 0.85);
+        const jx = zone.x + Math.cos(dropAngle) * dropDist;
+        const jy = zone.y + Math.sin(dropAngle) * dropDist;
+        this.slashes.push({
+          x: jx,
+          y: jy,
+          angle: Math.PI * 0.5,
+          radius: 38,
+          arcSpread: 0.8,
+          color: '#10B981',
+          life: 0.2,
+          maxLife: 0.2,
+          flip: false,
+          kind: 'LIZARDFOLK_JAVELIN_WAKE',
+        });
+        this.spawnBurst(jx, jy, '#34D399', 5, 75);
+        for (const enemy of [...this.world.enemies]) {
+          if (!enemy || enemy.hp <= 0) continue;
+          if (Math.hypot(enemy.x - jx, enemy.y - jy) <= 40 + enemy.radius) {
+            this.damageEnemy(enemy, zone.damagePerVolley, true, jx, jy, false);
+          }
+        }
+      }
+    }
+  }
+
+  private updateAncientHunters(dt: number): void {
+    const isFirstHunterActive = this.activeBlessingIds.has('lizard_ult_hunt_a');
+
+    for (let i = this.ancientHunters.length - 1; i >= 0; i--) {
+      const h = this.ancientHunters[i];
+      h.life -= dt;
+      h.attackCooldown -= dt;
+      if (h.recoilOffset && h.recoilOffset > 0) {
+        h.recoilOffset = Math.max(0, h.recoilOffset - dt * 45);
+      }
+      if (h.attackAnimTimer && h.attackAnimTimer > 0) {
+        h.attackAnimTimer = Math.max(0, h.attackAnimTimer - dt);
+      }
+
+      if (h.life <= 0) {
+        this.spawnBurst(h.x, h.y, '#10B981', 8, 75);
+        this.shockwaves.push({
+          x: h.x,
+          y: h.y,
+          maxRadius: 36,
+          color: '#6EE7B7',
+          life: 0.2,
+          maxLife: 0.2,
+        });
+        this.ancientHunters.splice(i, 1);
+        continue;
+      }
+
+      const isFirstHunter = h.variant === 'FIRST_HUNTER';
+      const target = this.findNearestEnemy(h.x, h.y, 560);
+
+      // 1. Ranged Positioning & Tactical AI Movement
+      if (target) {
+        h.targetEnemyId = target.id;
+        const dx = target.x - h.x;
+        const dy = target.y - h.y;
+        const dist = Math.hypot(dx, dy);
+        h.facingX = dx >= 0 ? 1 : -1;
+        h.aimAngle = Math.atan2(dy, dx);
+
+        const minSkirmishDist = isFirstHunter ? 140 : 110;
+        const maxEngagementDist = isFirstHunter ? 280 : 240;
+
+        let desiredVx = 0;
+        let desiredVy = 0;
+
+        if (dist > maxEngagementDist) {
+          // Approach enemy smoothly to enter optimal ranged javelin range
+          const speed = isFirstHunter ? 220 : 250;
+          desiredVx = (dx / dist) * speed;
+          desiredVy = (dy / dist) * speed;
+        } else if (dist < minSkirmishDist) {
+          // Back-pedal / skirmish away to keep attacks strictly ranged!
+          const speed = isFirstHunter ? 190 : 210;
+          desiredVx = (-dx / dist) * speed;
+          desiredVy = (-dy / dist) * speed;
+        } else {
+          // In sweet spot: strafe orbit around target for dynamic ranged combat
+          h.strafeAngle = (h.strafeAngle || 0) + dt * 1.6;
+          const perpX = -dy / dist;
+          const perpY = dx / dist;
+          const orbitDir = (h.id % 2 === 0) ? 1 : -1;
+          const strafeSpeed = isFirstHunter ? 75 : 95;
+          desiredVx = perpX * orbitDir * strafeSpeed;
+          desiredVy = perpY * orbitDir * strafeSpeed;
+        }
+
+        // Apply smooth inertia
+        h.vx += (desiredVx - h.vx) * Math.min(1, dt * 8);
+        h.vy += (desiredVy - h.vy) * Math.min(1, dt * 8);
+        h.x += h.vx * dt;
+        h.y += h.vy * dt;
+
+        // 2. Ranged Attack Trigger
+        if (h.attackCooldown <= 0 && dist <= 520 && (!h.attackAnimTimer || h.attackAnimTimer <= 0)) {
+          const animDur = isFirstHunter ? 0.40 : 0.32;
+          h.attackAnimTimer = animDur;
+          h.attackAnimDuration = animDur;
+          h.hasFiredProjectile = false;
+          h.aimAngle = Math.atan2(dy, dx);
+          h.attackCooldown = isFirstHunter ? 0.72 : 0.48;
+
+          // Subtle gathering particles at spearhead
+          this.spawnBurst(h.x + h.facingX * 14, h.y - 12, '#34D399', 3, 40);
+        }
+      } else {
+        // No enemy in range: hover protectively near player
+        h.targetEnemyId = null;
+        const pdx = this.player.x - h.x;
+        const pdy = this.player.y - h.y;
+        const pDist = Math.hypot(pdx, pdy);
+        if (pDist > 110) {
+          const followSpeed = 210;
+          h.vx += ((pdx / pDist) * followSpeed - h.vx) * Math.min(1, dt * 6);
+          h.vy += ((pdy / pDist) * followSpeed - h.vy) * Math.min(1, dt * 6);
+          h.x += h.vx * dt;
+          h.y += h.vy * dt;
+          h.facingX = pdx >= 0 ? 1 : -1;
+          h.aimAngle = Math.atan2(pdy, pdx);
+        } else {
+          h.vx *= 0.85;
+          h.vy *= 0.85;
+        }
+      }
+
+      // 3. Attack Animation Frame & Projectile Release at Throw Snap
+      if ((h.attackAnimTimer ?? 0) > 0 && !h.hasFiredProjectile) {
+        const totalDur = h.attackAnimDuration || 0.35;
+        const progress = 1 - (h.attackAnimTimer! / totalDur);
+
+        // Snap release at 42% of the throw animation cycle
+        if (progress >= 0.42) {
+          h.hasFiredProjectile = true;
+          h.recoilOffset = isFirstHunter ? 14 : 8;
+
+          let fireAngle = h.aimAngle ?? (h.facingX >= 0 ? 0 : Math.PI);
+          if (target) {
+            fireAngle = Math.atan2(target.y - h.y, target.x - h.x);
+            h.aimAngle = fireAngle;
+          }
+
+          soundEngine.playSlash(isFirstHunter ? 2 : 1);
+
+          const spawnX = h.x + Math.cos(fireAngle) * 32;
+          const spawnY = h.y + Math.sin(fireAngle) * 32 - 10;
+
+          if (isFirstHunter) {
+            // Colossal Piercing Ancestral Greatspear
+            const dmg = Math.round(54 * this.getPhysicalDamageMultiplier());
+            this.projectiles.push({
+              id: allocEntityId(),
+              x: spawnX,
+              y: spawnY,
+              vx: Math.cos(fireAngle) * 950,
+              vy: Math.sin(fireAngle) * 950,
+              radius: 16,
+              damage: dmg,
+              life: 1.15,
+              color: '#34D399',
+              kind: 'PLAYER_SPECTRAL_HUNT_SPEAR',
+              angle: fireAngle,
+              pierce: true,
+              fromPlayer: true,
+              hitEnemyIds: new Set<number>(),
+            });
+
+            // If Path A is awakened: twin flanking spectral javelins
+            if (isFirstHunterActive) {
+              for (const spr of [-0.22, 0.22]) {
+                const sprAngle = fireAngle + spr;
+                this.projectiles.push({
+                  id: allocEntityId(),
+                  x: spawnX,
+                  y: spawnY,
+                  vx: Math.cos(sprAngle) * 880,
+                  vy: Math.sin(sprAngle) * 880,
+                  radius: 12,
+                  damage: Math.round(dmg * 0.5),
+                  life: 0.95,
+                  color: '#6EE7B7',
+                  kind: 'PLAYER_SPECTRAL_HUNT_SPEAR',
+                  angle: sprAngle,
+                  pierce: false,
+                  fromPlayer: true,
+                  hitEnemyIds: new Set<number>(),
+                });
+              }
+            }
+
+            this.shockwaves.push({
+              x: spawnX,
+              y: spawnY,
+              maxRadius: 40,
+              color: '#6EE7B7',
+              life: 0.2,
+              maxLife: 0.2,
+            });
+          } else {
+            // Rapid Barbed Spirit Javelin
+            const dmg = Math.round(30 * this.getPhysicalDamageMultiplier());
+            this.projectiles.push({
+              id: allocEntityId(),
+              x: spawnX,
+              y: spawnY,
+              vx: Math.cos(fireAngle) * 920,
+              vy: Math.sin(fireAngle) * 920,
+              radius: 12,
+              damage: dmg,
+              life: 0.92,
+              color: '#10B981',
+              kind: 'PLAYER_SPECTRAL_HUNT_SPEAR',
+              angle: fireAngle,
+              pierce: false,
+              fromPlayer: true,
+              hitEnemyIds: new Set<number>(),
+            });
+
+            this.shockwaves.push({
+              x: spawnX,
+              y: spawnY,
+              maxRadius: 24,
+              color: '#10B981',
+              life: 0.16,
+              maxLife: 0.16,
+            });
+          }
+
+          this.spawnBurst(spawnX, spawnY, '#10B981', 6, 80);
+        }
+      }
+    }
+  }
+
+  private updateElementalSpirits(dt: number): void {
+    for (let i = this.elementalSpirits.length - 1; i >= 0; i--) {
+      const s = this.elementalSpirits[i];
+      s.life -= dt;
+      s.attackCooldown -= dt;
+      if (s.life <= 0) {
+        this.elementalSpirits.splice(i, 1);
+        continue;
+      }
+      const target = this.findNearestEnemy(s.x, s.y, 450);
+      if (target) {
+        const dx = target.x - s.x;
+        const dy = target.y - s.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 30) {
+          s.vx = (dx / dist) * 240;
+          s.vy = (dy / dist) * 240;
+          s.x += s.vx * dt;
+          s.y += s.vy * dt;
+        }
+        if (s.attackCooldown <= 0 && dist <= 80) {
+          s.attackCooldown = 0.6;
+          soundEngine.playWhoosh();
+          const strikeDmg = Math.round(22 * this.getPlagueOrSkillMultiplier());
+          this.damageEnemy(target, strikeDmg, true, s.x, s.y, false);
+        }
       }
     }
   }
@@ -14834,6 +15544,14 @@ export class GameEngine {
       stoneRamparts: this.stoneRamparts,
       deathsPassageRifts: this.deathsPassageRifts,
       ghostMistZones: this.ghostMistZones,
+      gravityWells: this.gravityWells,
+      arcanePrisons: this.arcanePrisons,
+      astralSingularities: this.astralSingularities,
+      elementalCascades: this.elementalCascades,
+      spearCyclones: this.spearCyclones,
+      rainOfJavelinsZones: this.rainOfJavelinsZones,
+      ancientHunterSpirits: this.ancientHunters,
+      elementalSpirits: this.elementalSpirits,
       pickups: this.pickups,
       minions: this.minions,
       enemies: this.world.enemies,

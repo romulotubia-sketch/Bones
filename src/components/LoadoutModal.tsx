@@ -33,6 +33,7 @@ import { GnomeAttackPreview } from './GnomeAttackPreview';
 import { GoblinAttackPreview } from './GoblinAttackPreview';
 import { KoboldAttackPreview } from './KoboldAttackPreview';
 import { LizardfolkAttackPreview } from './LizardfolkAttackPreview';
+import { SpiritOfTheGreatHuntPreview } from './SpiritOfTheGreatHuntPreview';
 import { SkeletonAttackPreview } from './SkeletonAttackPreview';
 import { SlimeAttackPreview } from './SlimeAttackPreview';
 import { ZombieAttackPreview } from './ZombieAttackPreview';
@@ -653,28 +654,52 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
               </div>
             )}
 
-            {/* Lizardfolk Basic Attack & Spear Thrusts 60fps Animation Preview */}
+            {/* Lizardfolk Basic Attack & Ranged Spear Throws 60fps Animation Preview */}
             {isLizardfolk && (
               <div className="pt-3 border-t border-[#282336] space-y-1.5">
                 <div className="flex items-center justify-between">
                   <div className="text-[11px] font-semibold text-[#6EE7B7] flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-[#10B981]" />
-                    <span>Basic Attack · Hunter's Spear Thrust &amp; Javelin (60fps FX)</span>
+                    <span>Basic Attack · All-Ranged Javelin Volley (60fps FX)</span>
                   </div>
-                  <span className="text-[10px] text-[#34D399] font-mono-num">3-Hit Thrust &amp; Throw</span>
+                  <span className="text-[10px] text-[#34D399] font-mono-num">All-Ranged 3-Hit</span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-[#10241A] border border-[#1F543C] space-y-2">
                   <p className="text-[11px] text-[#D1EBE0] leading-snug">
-                    Swift two-hand reptilian spear thrusts with tail counter-balance, culminating in a 3rd-hit high-velocity Piercing Javelin throw that punctures enemy lines.
+                    Swift long-range throwing spear combo: quick hunting dart, dual barbed javelins, and a 3rd-hit Great Impaling Harpoon that punches through enemy lines with distance damage scaling.
                   </p>
                   <div className="flex items-center gap-2.5 pt-0.5">
                     <div className="relative w-24 h-16 bg-[#081710] rounded-lg border border-[#276F4E] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
                       <LizardfolkAttackPreview />
                     </div>
                     <div className="text-[10px] text-[#6EE7B7] space-y-0.5 font-mono-num leading-tight">
-                      <div>Thrust Reach: 75 · Javelin: 380px</div>
-                      <div>3rd Throw: +25% DMG &amp; 100% Pierce</div>
-                      <div>All 8 Skills: 60fps Spear Art FX</div>
+                      <div>Ranged Reach: 530px Throwing Spears</div>
+                      <div>Combo: Quick Toss · Twin Fangs · Great Harpoon</div>
+                      <div>All Attacks 100% Ranged · 60fps Spear FX</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Spirit of the Great Hunt Summoned Ally Ranged Spear Throw Preview */}
+                <div className="p-2.5 rounded-xl bg-[#0C2419] border border-[#1E5C40] space-y-2 mt-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[11px] font-semibold text-[#A7F3D0] flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#34D399]" />
+                      <span>Spirit of the Great Hunt · Summoned Ally (Ranged Throw)</span>
+                    </div>
+                    <span className="text-[10px] text-[#FDE047] font-mono-num">60fps Throw Anim</span>
+                  </div>
+                  <p className="text-[11px] text-[#D1EBE0] leading-snug">
+                    Summoned ancestral hunter spirit keeps tactical distance and hurls high-velocity piercing spectral spears with 60fps arm windup, snap throw, and recoil recovery animations.
+                  </p>
+                  <div className="flex items-center gap-2.5 pt-0.5">
+                    <div className="relative w-28 h-17 bg-[#081710] rounded-lg border border-[#276F4E] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                      <SpiritOfTheGreatHuntPreview />
+                    </div>
+                    <div className="text-[10px] text-[#6EE7B7] space-y-0.5 font-mono-num leading-tight">
+                      <div>Ranged Distance: 180px–280px Skirmish AI</div>
+                      <div>Animation: Windup · Snap Thrust · Materialize</div>
+                      <div>Projectiles: High-Velocity Piercing Spectral Spears</div>
                     </div>
                   </div>
                 </div>
