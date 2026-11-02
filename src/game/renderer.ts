@@ -7191,6 +7191,613 @@ function drawZombieBasicAttack(ctx: CanvasRenderingContext2D, slash: SlashEffect
   ctx.restore();
 }
 
+/**
+ * Transformed Abomination Basic Attack (Combo Hit 1 & 2):
+ * Monstrous 4-pronged jagged mutant bone claw cleave tearing deep toxic fissures in the earth.
+ * Features 60fps additive lime/emerald plasma wake, serrated ivory spurs, and flying acidic droplets.
+ */
+function drawZombieAbominationCleave(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
+  const easeOut = 1 - Math.pow(1 - progress, 3);
+  const alpha = Math.max(0, 1 - Math.pow(progress, 2.0));
+  const scale = slash.scale ?? 1.45;
+  const radius = slash.radius * scale;
+  const half = slash.arcSpread * 0.5;
+
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.rotate(slash.angle);
+  if (slash.flip) {
+    ctx.scale(1, -1);
+  }
+
+  // 1. Toxic Miasma Vapor Wake (Additive luminous green/purple underglow)
+  const wakeHead = 1 - Math.pow(1 - Math.min(1, progress * 1.5), 3);
+  const wakeTail = Math.pow(Math.max(0, (progress - 0.15) / 0.85), 2.1);
+  const wStart = -half + slash.arcSpread * wakeTail;
+  const wEnd = -half + slash.arcSpread * wakeHead;
+
+  if (wEnd - wStart > 0.04) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha * 0.45;
+    ctx.strokeStyle = '#84CC16';
+    ctx.lineWidth = 36 * scale * (1 - progress * 0.35);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.85, wStart, wEnd);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#22C55E';
+    ctx.lineWidth = 20 * scale * (1 - progress * 0.3);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.88, wStart, wEnd);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 2. Four Colossal Jagged Mutant Talon Gouges
+  const talonOffsets = [1.08, 0.94, 0.79, 0.63];
+  const talonDelays = [0, 0.035, 0.07, 0.105];
+  const talonThickness = [14.0, 16.5, 13.5, 11.0];
+
+  for (let c = 0; c < 4; c++) {
+    const localP = Math.max(0, Math.min(1, (progress - talonDelays[c]) / (1 - talonDelays[c])));
+    if (localP <= 0) continue;
+
+    const headP = 1 - Math.pow(1 - Math.min(1, localP * 1.6), 3);
+    const tailP = Math.pow(Math.max(0, (localP - 0.12) / 0.88), 2.2);
+    const startAng = -half + slash.arcSpread * tailP;
+    const endAng = -half + slash.arcSpread * headP;
+    if (endAng - startAng <= 0.03) continue;
+
+    const tRadius = radius * talonOffsets[c] * (0.94 + headP * 0.08);
+    const maxW = talonThickness[c] * scale * (1 - localP * 0.45);
+    const steps = 22;
+
+    // Outer contour with organic bone jaggedness
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const a = startAng + (endAng - startAng) * t;
+      const jag = Math.sin(t * Math.PI * 7 + c * 2.4) * 2.2 * scale;
+      const r = tRadius + jag;
+      const px = Math.cos(a) * r;
+      const py = Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    for (let i = steps; i >= 0; i--) {
+      const t = i / steps;
+      const a = startAng + (endAng - startAng) * t;
+      const profile = Math.sin(Math.pow(t, 0.68) * Math.PI);
+      const r = Math.max(8, tRadius - maxW * profile);
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+
+    // Intense radioactive neon underglow
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha * 0.72;
+    ctx.fillStyle = c % 2 === 0 ? '#BEF264' : '#A3E635';
+    ctx.fill();
+    ctx.restore();
+
+    // Heavy mutated infected flesh & calcified ivory bone fill
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.95;
+    ctx.fillStyle = c === 1 || c === 2 ? '#ECFCCB' : '#84CC16';
+    ctx.fill();
+    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = `rgba(15, 23, 14, ${alpha * 0.88})`;
+    ctx.stroke();
+    ctx.restore();
+
+    // Jagged Calcified Bone Talon Spearhead at the front of each furrow
+    if (localP < 0.65) {
+      const tipX = Math.cos(endAng) * tRadius;
+      const tipY = Math.sin(endAng) * tRadius;
+      const tipLen = (1 - localP / 0.65) * 14.0 * scale;
+      ctx.save();
+      ctx.translate(tipX, tipY);
+      ctx.rotate(endAng + Math.PI * 0.5);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.moveTo(-tipLen, 0);
+      ctx.lineTo(0, -tipLen * 0.38);
+      ctx.lineTo(tipLen * 1.5, 0);
+      ctx.lineTo(0, tipLen * 0.38);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // 3. Fissure Fracture Cracks erupting radially
+  if (progress > 0.15 && progress < 0.85) {
+    const crackAlpha = (1 - Math.abs(progress - 0.5) * 2.8) * alpha;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, crackAlpha) * 0.75;
+    ctx.strokeStyle = '#BEF264';
+    ctx.lineWidth = 1.8 * scale;
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const cAng = -half + (slash.arcSpread * (i + 0.5)) / 5;
+      const cr1 = radius * 0.65;
+      const cr2 = radius * 1.12;
+      ctx.moveTo(Math.cos(cAng) * cr1, Math.sin(cAng) * cr1);
+      const midAng = cAng + (i % 2 === 0 ? 0.08 : -0.08);
+      ctx.lineTo(Math.cos(midAng) * (cr1 + cr2) * 0.5, Math.sin(midAng) * (cr1 + cr2) * 0.5);
+      ctx.lineTo(Math.cos(cAng) * cr2, Math.sin(cAng) * cr2);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Transformed Abomination Finisher (Combo Hit 3 - Earthshatter Slam):
+ * Cataclysmic two-handed mutant fist ground impact cracking deep volcanic toxic fissures,
+ * erupting calcified bone monolith spikes, expanding corrosive shockwave, and bubbling acid craters.
+ */
+function drawZombieAbominationSlam(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
+  const easeOut = 1 - Math.pow(1 - progress, 3);
+  const alpha = Math.max(0, 1 - Math.pow(progress, 1.85));
+  const scale = slash.scale ?? 1.65;
+  const radius = slash.radius * scale;
+
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.rotate(slash.angle);
+
+  // 1. Pulsating Toxic Shockwave Oval
+  const shockR = radius * (0.32 + easeOut * 0.75);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha * 0.6;
+  ctx.strokeStyle = '#BEF264';
+  ctx.lineWidth = 12 * scale * (1 - progress * 0.55);
+  ctx.beginPath();
+  ctx.ellipse(radius * 0.45, 0, shockR, shockR * 0.65, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#22C55E';
+  ctx.lineWidth = 6 * scale * (1 - progress * 0.4);
+  ctx.beginPath();
+  ctx.ellipse(radius * 0.45, 0, shockR * 1.15, shockR * 0.75, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // 2. Boiling Radioactive Toxic Sludge Crater (Dark necrotic pool with bright neon veins)
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.45;
+  ctx.fillStyle = '#14532D';
+  ctx.beginPath();
+  ctx.ellipse(radius * 0.45, 0, radius * 0.68 * (0.8 + easeOut * 0.2), radius * 0.42 * (0.8 + easeOut * 0.2), 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#84CC16';
+  ctx.globalAlpha = alpha * 0.35;
+  ctx.beginPath();
+  ctx.ellipse(radius * 0.45, 0, radius * 0.45 * (0.8 + easeOut * 0.2), radius * 0.28 * (0.8 + easeOut * 0.2), 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // 3. Deep Jagged Ground Fissures Splitting Earth
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.95;
+  const fissureCount = 7;
+  for (let f = 0; f < fissureCount; f++) {
+    const fAngle = ((f - (fissureCount - 1) * 0.5) / fissureCount) * 1.45;
+    const fLen = radius * (0.65 + (f % 3) * 0.22) * Math.min(1, progress * 2.2);
+    const fx0 = radius * 0.25;
+    const fy0 = 0;
+    const fx1 = fx0 + Math.cos(fAngle) * fLen;
+    const fy1 = fy0 + Math.sin(fAngle) * fLen;
+
+    // Core fissure line
+    ctx.strokeStyle = '#ECFCCB';
+    ctx.lineWidth = (3.5 + (f === 3 ? 2 : 0)) * scale * (1 - progress * 0.3);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(fx0, fy0);
+    const midX = (fx0 + fx1) * 0.5 + ((f % 2 === 0 ? 1 : -1) * 8 * scale);
+    const midY = (fy0 + fy1) * 0.5 + ((f % 2 === 0 ? -1 : 1) * 6 * scale);
+    ctx.quadraticCurveTo(midX, midY, fx1, fy1);
+    ctx.stroke();
+
+    // Dark ground fracture shadow
+    ctx.strokeStyle = `rgba(10, 20, 12, ${alpha * 0.85})`;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 4. Erupting Jagged Calcified Bone Monolith Spikes
+  const spikeCount = 6;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  for (let s = 0; s < spikeCount; s++) {
+    const sProgress = Math.max(0, Math.min(1, (progress - s * 0.04) / 0.7));
+    if (sProgress <= 0) continue;
+    const sGrowth = 1 - Math.pow(1 - Math.min(1, sProgress * 1.8), 3);
+    const sAng = -0.65 + (s / (spikeCount - 1)) * 1.3;
+    const sDist = radius * (0.55 + (s % 2) * 0.25);
+    const sx = radius * 0.28 + Math.cos(sAng) * sDist;
+    const sy = Math.sin(sAng) * sDist * 0.65;
+    const spikeH = (s % 2 === 0 ? 28 : 22) * scale * sGrowth * (1 - progress * 0.25);
+    const spikeW = (s % 2 === 0 ? 8 : 6.5) * scale;
+
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(sAng * 0.45);
+
+    // Bone Spike Silhouette
+    ctx.beginPath();
+    ctx.moveTo(-spikeW * 0.5, 0);
+    ctx.lineTo(0, -spikeH);
+    ctx.lineTo(spikeW * 0.5, 0);
+    ctx.closePath();
+
+    ctx.fillStyle = s % 2 === 0 ? '#F7FEE7' : '#ECFCCB';
+    ctx.fill();
+    ctx.strokeStyle = `rgba(18, 30, 16, ${alpha * 0.9})`;
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    // Glowing Green Bile Vein up the spike
+    ctx.strokeStyle = '#84CC16';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -spikeH * 0.75);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // 5. White Hot Core Flash
+  if (progress < 0.35) {
+    const cAlpha = (1 - progress / 0.35) * alpha;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = cAlpha * 0.85;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(radius * 0.35, 0, 32 * scale * (1 - progress * 0.4), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Transformed Skeleton Bone Colossus Cleave (Hit 1 & 2):
+ * Colossal 140-degree sweeping ivory greatsword cleave with sub-zero frost spikes & glacial azure flares.
+ */
+function drawSkeletonColossusCleave(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
+  const alpha = Math.max(0, 1 - Math.pow(progress, 2.1));
+  const scale = slash.scale ?? 1.45;
+  const radius = slash.radius * scale;
+  const half = slash.arcSpread * 0.5;
+
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.rotate(slash.angle);
+  if (slash.flip) ctx.scale(1, -1);
+
+  // Sub-zero frost wake
+  const headP = 1 - Math.pow(1 - Math.min(1, progress * 1.55), 3);
+  const tailP = Math.pow(Math.max(0, (progress - 0.14) / 0.86), 2.1);
+  const startAng = -half + slash.arcSpread * tailP;
+  const endAng = -half + slash.arcSpread * headP;
+
+  if (endAng - startAng > 0.04) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha * 0.65;
+    ctx.strokeStyle = '#38BDF8';
+    ctx.lineWidth = 26 * scale * (1 - progress * 0.35);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.9, startAng, endAng);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#BAE6FD';
+    ctx.lineWidth = 12 * scale * (1 - progress * 0.3);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.92, startAng, endAng);
+    ctx.stroke();
+    ctx.restore();
+
+    // Titanic Ivory Bone Blade Edge with Serrated Teeth
+    const steps = 24;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const a = startAng + (endAng - startAng) * t;
+      // Serrated bone teeth
+      const tooth = Math.sin(t * Math.PI * 9) * 3.5 * scale;
+      const r = radius * 0.95 + tooth;
+      const px = Math.cos(a) * r;
+      const py = Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    for (let i = steps; i >= 0; i--) {
+      const t = i / steps;
+      const a = startAng + (endAng - startAng) * t;
+      const profile = Math.sin(Math.pow(t, 0.7) * Math.PI);
+      const r = Math.max(6, radius * 0.95 - 20 * scale * profile);
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#F8FAFC';
+    ctx.fill();
+    ctx.lineWidth = 2.0;
+    ctx.strokeStyle = `rgba(15, 23, 42, ${alpha * 0.85})`;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Transformed Skeleton Bone Colossus Finisher (Hit 3 - Colossus Great Slam):
+ * Cataclysmic glacial ivory greatsword cleave shattering frozen dimensional fissures.
+ */
+function drawSkeletonColossusGreatSlam(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  drawSkeletonColossusCleave(ctx, { ...slash, scale: (slash.scale ?? 1.45) * 1.15 });
+
+  const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
+  const easeOut = 1 - Math.pow(1 - progress, 3);
+  const alpha = Math.max(0, 1 - Math.pow(progress, 1.8));
+  const scale = slash.scale ?? 1.6;
+  const radius = slash.radius * scale;
+
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.rotate(slash.angle);
+
+  // Glacial frost shockwave ring
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha * 0.7;
+  ctx.strokeStyle = '#7DD3FC';
+  ctx.lineWidth = 8 * scale * (1 - progress * 0.5);
+  ctx.beginPath();
+  ctx.ellipse(radius * 0.5, 0, radius * 0.8 * easeOut, radius * 0.45 * easeOut, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+/**
+ * Transformed Gnome Mountain's Heart Fist Cleave (Hit 1 & 2):
+ * Molten basalt golem fist strike with glowing magma veins & radiant volcanic embers.
+ */
+function drawGnomeMountainFistCleave(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
+  const alpha = Math.max(0, 1 - Math.pow(progress, 2.0));
+  const scale = slash.scale ?? 1.45;
+  const radius = slash.radius * scale;
+  const half = slash.arcSpread * 0.5;
+
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.rotate(slash.angle);
+  if (slash.flip) ctx.scale(1, -1);
+
+  const headP = 1 - Math.pow(1 - Math.min(1, progress * 1.55), 3);
+  const tailP = Math.pow(Math.max(0, (progress - 0.14) / 0.86), 2.1);
+  const startAng = -half + slash.arcSpread * tailP;
+  const endAng = -half + slash.arcSpread * headP;
+
+  if (endAng - startAng > 0.04) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha * 0.7;
+    ctx.strokeStyle = '#F97316';
+    ctx.lineWidth = 28 * scale * (1 - progress * 0.35);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.88, startAng, endAng);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#FDE047';
+    ctx.lineWidth = 14 * scale * (1 - progress * 0.3);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.9, startAng, endAng);
+    ctx.stroke();
+    ctx.restore();
+
+    // Dark Basalt Rock Crust with Magma Veins
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = '#78716C';
+    ctx.lineWidth = 8 * scale * (1 - progress * 0.25);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.86, startAng, endAng);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Transformed Gnome Mountain's Heart Finisher (Hit 3 - Tectonic Earthshatter):
+ * Earth-shattering volcanic magma crater smash cracking basalt fissures.
+ */
+function drawGnomeTectonicEarthshatter(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  drawGnomeMountainFistCleave(ctx, { ...slash, scale: (slash.scale ?? 1.45) * 1.15 });
+
+  const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
+  const easeOut = 1 - Math.pow(1 - progress, 3);
+  const alpha = Math.max(0, 1 - Math.pow(progress, 1.8));
+  const scale = slash.scale ?? 1.6;
+  const radius = slash.radius * scale;
+
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.rotate(slash.angle);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha * 0.8;
+  ctx.strokeStyle = '#F97316';
+  ctx.lineWidth = 10 * scale * (1 - progress * 0.5);
+  ctx.beginPath();
+  ctx.ellipse(radius * 0.45, 0, radius * 0.75 * easeOut, radius * 0.45 * easeOut, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+/**
+ * Transformed Ghost Eternal Nightmare Reaper Cleave (Hit 1 & 2):
+ * Massive curved reaper blade of void darkness, tearing ethereal cyan & violet reality rifts.
+ */
+function drawGhostNightmareReaperCleave(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
+  const alpha = Math.max(0, 1 - Math.pow(progress, 2.0));
+  const scale = slash.scale ?? 1.4;
+  const radius = slash.radius * scale;
+  const half = slash.arcSpread * 0.5;
+
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.rotate(slash.angle);
+  if (slash.flip) ctx.scale(1, -1);
+
+  const headP = 1 - Math.pow(1 - Math.min(1, progress * 1.6), 3);
+  const tailP = Math.pow(Math.max(0, (progress - 0.12) / 0.88), 2.2);
+  const startAng = -half + slash.arcSpread * tailP;
+  const endAng = -half + slash.arcSpread * headP;
+
+  if (endAng - startAng > 0.04) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha * 0.75;
+    ctx.strokeStyle = '#A855F7';
+    ctx.lineWidth = 26 * scale * (1 - progress * 0.35);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.9, startAng, endAng);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#67E8F9';
+    ctx.lineWidth = 12 * scale * (1 - progress * 0.3);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.92, startAng, endAng);
+    ctx.stroke();
+    ctx.restore();
+
+    // Void Shadow Core
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.9;
+    ctx.strokeStyle = '#0F172A';
+    ctx.lineWidth = 7 * scale * (1 - progress * 0.25);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.88, startAng, endAng);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Transformed Ghost Eternal Nightmare Finisher (Hit 3 - Abyssal Void Tear):
+ * Horrifying dimensional void rupture that pulls in shadow wisps.
+ */
+function drawGhostAbyssalVoidTear(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  drawGhostNightmareReaperCleave(ctx, { ...slash, scale: (slash.scale ?? 1.4) * 1.15 });
+
+  const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
+  const easeOut = 1 - Math.pow(1 - progress, 3);
+  const alpha = Math.max(0, 1 - Math.pow(progress, 1.8));
+  const scale = slash.scale ?? 1.55;
+  const radius = slash.radius * scale;
+
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.rotate(slash.angle);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha * 0.8;
+  ctx.strokeStyle = '#C084FC';
+  ctx.lineWidth = 9 * scale * (1 - progress * 0.5);
+  ctx.beginPath();
+  ctx.ellipse(radius * 0.45, 0, radius * 0.75 * easeOut, radius * 0.42 * easeOut, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+/**
+ * Transformed Lizardfolk Primal Greatspear (during Spirit of the Great Hunt):
+ * Radiant emerald-gold celestial greatspear release with roaring spectral beast crest.
+ */
+function drawLizardfolkPrimalGreatspear(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
+  const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
+  const easeOut = 1 - Math.pow(1 - progress, 3);
+  const alpha = Math.max(0, 1 - Math.pow(progress, 2.0));
+  const scale = slash.scale ?? 1.4;
+  const radius = slash.radius * scale;
+  const half = (slash.arcSpread || 1.15) * 0.5;
+
+  ctx.save();
+  ctx.translate(slash.x, slash.y);
+  ctx.rotate(slash.angle);
+
+  // Outer celestial emerald shock crescent
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha * 0.85;
+  ctx.strokeStyle = '#10B981';
+  ctx.lineWidth = 8 * scale * (1 - progress * 0.5);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * (0.4 + easeOut * 0.6), -half, half);
+  ctx.stroke();
+
+  // Auric gold inner filament
+  ctx.strokeStyle = '#FDE047';
+  ctx.lineWidth = 4 * scale * (1 - progress * 0.45);
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * (0.38 + easeOut * 0.62) * 0.86, -half * 0.85, half * 0.85);
+  ctx.stroke();
+
+  // Forward Primal Spearhead Thrust
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.moveTo(0, -3.5 * scale);
+  ctx.lineTo(radius * 1.35 * easeOut, 0);
+  ctx.lineTo(0, 3.5 * scale);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  ctx.restore();
+}
+
 function drawZombiePoisonBurst(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
   const progress = Math.max(0, Math.min(1, 1 - slash.life / slash.maxLife));
   const easeOut = 1 - Math.pow(1 - progress, 3);
@@ -10613,6 +11220,11 @@ function drawLizardfolkSlashVfx(ctx: CanvasRenderingContext2D, slash: SlashEffec
     return;
   }
 
+  if (slash.kind === 'LIZARDFOLK_PRIMAL_GREATSPEAR') {
+    drawLizardfolkPrimalGreatspear(ctx, slash);
+    return;
+  }
+
   if (slash.kind === 'LIZARDFOLK_MARK_TRANSFER') {
     // Primal Hunting Mark Transfer: golden-amber laser tether linking fallen prey to newly marked target
     ctx.save();
@@ -10900,6 +11512,14 @@ function drawSlashArc(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
     drawKoboldSlashVfx(ctx, slash);
     return;
   }
+  if (slash.kind === 'GHOST_NIGHTMARE_REAPER_CLEAVE') {
+    drawGhostNightmareReaperCleave(ctx, slash);
+    return;
+  }
+  if (slash.kind === 'GHOST_ABYSSAL_VOID_TEAR') {
+    drawGhostAbyssalVoidTear(ctx, slash);
+    return;
+  }
   if (slash.kind === 'GHOST_BASIC_ARC') {
     drawGhostBasicArc(ctx, slash);
     return;
@@ -10952,6 +11572,14 @@ function drawSlashArc(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
     drawGhostRestlessSurge(ctx, slash);
     return;
   }
+  if (slash.kind === 'SKELETON_COLOSSUS_CLEAVE') {
+    drawSkeletonColossusCleave(ctx, slash);
+    return;
+  }
+  if (slash.kind === 'SKELETON_COLOSSUS_GREAT_SLAM') {
+    drawSkeletonColossusGreatSlam(ctx, slash);
+    return;
+  }
   if (slash.kind === 'SKELETON_BASIC_ATTACK') {
     drawSkeletonBasicAttack(ctx, slash);
     return;
@@ -10994,6 +11622,14 @@ function drawSlashArc(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
   }
   if (slash.kind === 'SKELETON_IMPACT_FLASH') {
     drawSkeletonImpactFlash(ctx, slash);
+    return;
+  }
+  if (slash.kind === 'ZOMBIE_ABOMINATION_CLEAVE') {
+    drawZombieAbominationCleave(ctx, slash);
+    return;
+  }
+  if (slash.kind === 'ZOMBIE_ABOMINATION_SLAM') {
+    drawZombieAbominationSlam(ctx, slash);
     return;
   }
   if (slash.kind === 'ZOMBIE_BASIC_ATTACK') {
@@ -11054,6 +11690,14 @@ function drawSlashArc(ctx: CanvasRenderingContext2D, slash: SlashEffect): void {
   }
   if (slash.kind === 'GOBLIN_SHADOW_TRACE') {
     drawGoblinShadowTrace(ctx, slash);
+    return;
+  }
+  if (slash.kind === 'GNOME_MOUNTAIN_FIST_CLEAVE') {
+    drawGnomeMountainFistCleave(ctx, slash);
+    return;
+  }
+  if (slash.kind === 'GNOME_TECTONIC_EARTHSHATTER') {
+    drawGnomeTectonicEarthshatter(ctx, slash);
     return;
   }
   if (slash.kind === 'GNOME_BASIC_ATTACK') {

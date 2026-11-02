@@ -816,7 +816,7 @@ export const ULTIMATE_SKILLS: Record<UltimateSkillId, UltimateSkillDef> = {
     cooldown: 22,
     energyRequired: 100,
     description:
-      'Awakens the primal spirit of the ancient hunter god, gaining tremendous attack speed, tracking spears, and summoned ancestral hunter allies that unleash high-velocity ranged spectral javelins with fluid 60fps spear-throwing animations from tactical range.',
+      'Channels the primal spirit of the ancient hunter god, gaining tremendous attack speed, tracking spears, and summoned ancestral hunter allies that unleash high-velocity ranged spectral javelins with fluid 60fps spear-throwing animations from tactical range.',
     detailLine: '10s Primal God Avatar · Ranged Spectral Hunter Allies with 60fps Spear Throw Animations',
     accentColor: '#F59E0B',
   },
@@ -3014,57 +3014,6 @@ export const CHARACTER_STATUE_BLESSINGS: Record<CharacterId, RunBlessing[]> = {
       category: 'Spear Cyclone',
       description: 'Spear Cyclone adds 2 additional orbiting spears (6 total) and draws nearby enemies into its orbit.',
       requiredNormalSkill: NormalSkillId.SpearCyclone,
-    },
-    // Awakening Paths: Rain of Javelins
-    {
-      id: 'lizard_ult_rain_path_a',
-      characterId: CharacterId.Lizardfolk,
-      name: 'Path A – Thousand Spears of the Ancients',
-      category: 'Awakening · Ancestral Army',
-      description: 'Blankets the entire arena in ancestral spears; each spear impact summons a spectral tribal warrior that strikes nearby foes.',
-      requiredUltimateSkill: UltimateSkillId.RainOfJavelins,
-    },
-    {
-      id: 'lizard_ult_rain_path_b',
-      characterId: CharacterId.Lizardfolk,
-      name: 'Path B – Spearfall Cataclysm',
-      category: 'Awakening · Titan Spear',
-      description: 'The falling spears converge into a titanic colossal spear that impacts like a meteor, shattering the earth with seismic shockwaves.',
-      requiredUltimateSkill: UltimateSkillId.RainOfJavelins,
-    },
-    // Awakening Paths: World Piercer
-    {
-      id: 'lizard_ult_world_piercer_path_a',
-      characterId: CharacterId.Lizardfolk,
-      name: 'Path A – Dragonfang',
-      category: 'Awakening · Spectral Dragon',
-      description: 'Imbues the colossal spear with ancient dragon spirit energy; a giant flaming dragon maw engulfs the spear, searing everything in its wake.',
-      requiredUltimateSkill: UltimateSkillId.WorldPiercer,
-    },
-    {
-      id: 'lizard_ult_world_piercer_path_b',
-      characterId: CharacterId.Lizardfolk,
-      name: 'Path B – Absolute Penetration',
-      category: 'Awakening · Armor Shatter',
-      description: 'Tears the dimensional fabric, shattering enemy armor to 0%, obliterating shields, and triggering sonic shockwaves at each penetration.',
-      requiredUltimateSkill: UltimateSkillId.WorldPiercer,
-    },
-    // Awakening Paths: Spirit of the Great Hunt
-    {
-      id: 'lizard_ult_hunt_path_a',
-      characterId: CharacterId.Lizardfolk,
-      name: 'Path A – The First Hunter',
-      category: 'Awakening · Triple Split & Execute',
-      description: 'Channels the primordial founder of the hunt: every spear splits into 3 homing spears, and basic attacks instantly execute low-HP targets.',
-      requiredUltimateSkill: UltimateSkillId.SpiritOfTheGreatHunt,
-    },
-    {
-      id: 'lizard_ult_hunt_path_b',
-      characterId: CharacterId.Lizardfolk,
-      name: 'Path B – Wild Hunt Procession',
-      category: 'Awakening · Ghostly Pack',
-      description: 'Calls forth the spectral hunting procession—phantom raptors and ghost wolves rush the arena, mauling foes while spears rain automatically.',
-      requiredUltimateSkill: UltimateSkillId.SpiritOfTheGreatHunt,
     },
   ],
 };

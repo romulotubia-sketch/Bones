@@ -5126,20 +5126,20 @@ export class GameEngine {
       const muzzleX = p.x + Math.cos(p.aimAngle) * muzzleDist;
       const muzzleY = p.y - 2 + Math.sin(p.aimAngle) * muzzleDist;
 
-      // Throw release snap wave
+      const isSpiritTransformed = (p.lizardHuntSpiritTimer ?? 0) > 0;
       this.slashes.push({
         x: muzzleX,
         y: muzzleY,
         angle: p.aimAngle,
-        radius: isFinisher ? 48 : 34,
-        arcSpread: 0.85,
-        color: isMarkEmpowered ? '#F59E0B' : guaranteedCrit ? '#FDE047' : '#10B981',
-        life: 0.16,
-        maxLife: 0.16,
+        radius: isSpiritTransformed ? (isFinisher ? 64 : 46) : (isFinisher ? 48 : 34),
+        arcSpread: isSpiritTransformed ? 1.15 : 0.85,
+        color: isSpiritTransformed ? '#34D399' : isMarkEmpowered ? '#F59E0B' : guaranteedCrit ? '#FDE047' : '#10B981',
+        life: isSpiritTransformed ? 0.22 : 0.16,
+        maxLife: isSpiritTransformed ? 0.22 : 0.16,
         flip: p.comboFlip,
-        kind: 'LIZARDFOLK_THROW_SNAP',
-        isCrit: guaranteedCrit || isFinisher,
-        scale: isFinisher ? 1.3 : 1.0,
+        kind: isSpiritTransformed ? 'LIZARDFOLK_PRIMAL_GREATSPEAR' : 'LIZARDFOLK_THROW_SNAP',
+        isCrit: guaranteedCrit || isFinisher || isSpiritTransformed,
+        scale: isSpiritTransformed ? (isFinisher ? 1.55 : 1.35) : (isFinisher ? 1.3 : 1.0),
       });
 
       if (isFinisher) {
@@ -5541,11 +5541,19 @@ export class GameEngine {
         ? 0.24
         : 0.175
       : isZombie
-      ? isZombieFinisher
+      ? p.abominationTimer > 0
+        ? isZombieFinisher
+          ? 0.28
+          : 0.21
+        : isZombieFinisher
         ? 0.23
         : 0.18
       : isSkel
-      ? isSkelFinisher
+      ? p.colossusTimer > 0
+        ? isSkelFinisher
+          ? 0.25
+          : 0.18
+        : isSkelFinisher
         ? 0.19
         : 0.145
       : 0.14;
@@ -5558,32 +5566,48 @@ export class GameEngine {
       arcSpread: spread,
       color: isSkel
         ? p.colossusTimer > 0
-          ? '#7DD3FC'
+          ? '#BAE6FD'
           : '#38BDF8'
         : isGob
         ? gobVenomActive
           ? '#A3E635'
           : '#FBBF24'
         : isGnome
-        ? p.mountainHeartTimer > 0 || isGnomeFinisher
+        ? p.mountainHeartTimer > 0
+          ? '#F97316'
+          : isGnomeFinisher
           ? '#FDBA74'
           : '#FB923C'
         : isGhost
-        ? p.restlessTimer > 0 || isGhostFinisher
+        ? p.nightmareTimer > 0
+          ? '#A855F7'
+          : p.restlessTimer > 0 || isGhostFinisher
           ? '#67E8F9'
           : '#C084FC'
-        : p.abominationTimer > 0 || isZombieFinisher
+        : p.abominationTimer > 0
+        ? isZombieFinisher
+          ? '#BEF264'
+          : '#A3E635'
+        : isZombieFinisher
         ? '#A3E635'
         : '#4ADE80',
       life: slashDuration,
       maxLife: slashDuration,
       flip: p.comboFlip,
       kind: isZombie
-        ? isZombieFinisher
+        ? p.abominationTimer > 0
+          ? isZombieFinisher
+            ? 'ZOMBIE_ABOMINATION_SLAM'
+            : 'ZOMBIE_ABOMINATION_CLEAVE'
+          : isZombieFinisher
           ? 'ZOMBIE_SAVAGE_REND'
           : 'ZOMBIE_BASIC_ATTACK'
         : isSkel
-        ? isSkelFinisher
+        ? p.colossusTimer > 0
+          ? isSkelFinisher
+            ? 'SKELETON_COLOSSUS_GREAT_SLAM'
+            : 'SKELETON_COLOSSUS_CLEAVE'
+          : isSkelFinisher
           ? 'SKELETON_TWIN_CLEAVE'
           : 'SKELETON_BASIC_ATTACK'
         : isGob
@@ -5591,23 +5615,41 @@ export class GameEngine {
           ? 'GOBLIN_TWIN_CROSS'
           : 'GOBLIN_BASIC_ATTACK'
         : isGnome
-        ? isGnomeFinisher
+        ? p.mountainHeartTimer > 0
+          ? isGnomeFinisher
+            ? 'GNOME_TECTONIC_EARTHSHATTER'
+            : 'GNOME_MOUNTAIN_FIST_CLEAVE'
+          : isGnomeFinisher
           ? 'GNOME_SEISMIC_SLAM'
           : 'GNOME_BASIC_ATTACK'
         : isGhost
-        ? isGhostFinisher
+        ? p.nightmareTimer > 0
+          ? isGhostFinisher
+            ? 'GHOST_ABYSSAL_VOID_TEAR'
+            : 'GHOST_NIGHTMARE_REAPER_CLEAVE'
+          : isGhostFinisher
           ? 'GHOST_VORTEX_REND'
           : 'GHOST_BASIC_ARC'
         : 'DEFAULT',
       scale:
         isZombie && p.abominationTimer > 0
-          ? 1.38
+          ? isZombieFinisher
+            ? 1.68
+            : 1.5
           : isSkel && p.colossusTimer > 0
-          ? 1.32
+          ? isSkelFinisher
+            ? 1.6
+            : 1.42
           : isGob && p.stolenMightTimer > 0
           ? 1.14
           : isGnome && p.mountainHeartTimer > 0
-          ? 1.34
+          ? isGnomeFinisher
+            ? 1.62
+            : 1.44
+          : isGhost && p.nightmareTimer > 0
+          ? isGhostFinisher
+            ? 1.52
+            : 1.36
           : isGhost && p.restlessTimer > 0
           ? 1.18
           : 1.0,
@@ -5616,9 +5658,50 @@ export class GameEngine {
         isZombieFinisher ||
         isGobFinisher ||
         isGnomeFinisher ||
-        isGhostFinisher,
+        isGhostFinisher ||
+        p.abominationTimer > 0 ||
+        p.colossusTimer > 0 ||
+        p.mountainHeartTimer > 0 ||
+        p.nightmareTimer > 0,
     };
     this.slashes.push(createdSlash);
+
+    // Dynamic ground shockwave & tactile screen punch during ultimate transformations
+    if (isZombie && p.abominationTimer > 0) {
+      soundEngine.playBossSlam();
+      this.shakeMag = Math.max(this.shakeMag, isZombieFinisher ? 7.2 : 4.4);
+      this.hitstopTimer = Math.max(this.hitstopTimer, isZombieFinisher ? 0.075 : 0.05);
+      this.shockwaves.push({
+        x: originX + Math.cos(p.aimAngle) * (reach * 0.45),
+        y: originY + Math.sin(p.aimAngle) * (reach * 0.45),
+        maxRadius: isZombieFinisher ? 78 : 52,
+        color: isZombieFinisher ? '#A3E635' : '#4ADE80',
+        life: isZombieFinisher ? 0.35 : 0.24,
+        maxLife: isZombieFinisher ? 0.35 : 0.24,
+      });
+    } else if (isSkel && p.colossusTimer > 0) {
+      soundEngine.playBossSlam();
+      this.shakeMag = Math.max(this.shakeMag, isSkelFinisher ? 6.5 : 3.8);
+      this.shockwaves.push({
+        x: originX + Math.cos(p.aimAngle) * (reach * 0.42),
+        y: originY + Math.sin(p.aimAngle) * (reach * 0.42),
+        maxRadius: isSkelFinisher ? 74 : 48,
+        color: '#7DD3FC',
+        life: isSkelFinisher ? 0.32 : 0.22,
+        maxLife: isSkelFinisher ? 0.32 : 0.22,
+      });
+    } else if (isGnome && p.mountainHeartTimer > 0) {
+      soundEngine.playBossSlam();
+      this.shakeMag = Math.max(this.shakeMag, isGnomeFinisher ? 7.0 : 4.0);
+      this.shockwaves.push({
+        x: originX + Math.cos(p.aimAngle) * (reach * 0.42),
+        y: originY + Math.sin(p.aimAngle) * (reach * 0.42),
+        maxRadius: isGnomeFinisher ? 76 : 50,
+        color: '#F97316',
+        life: isGnomeFinisher ? 0.34 : 0.22,
+        maxLife: isGnomeFinisher ? 0.34 : 0.22,
+      });
+    }
 
     // Ghost Basic Attack: 60fps swirling ectoplasm sparks & astral wisp trails
     if (isGhost) {
@@ -10834,9 +10917,6 @@ export class GameEngine {
         p.squashX = 1.35;
         p.squashY = 0.7;
 
-        const isThousandSpears = this.activeBlessingIds.has('lizard_ult_rain_a');
-        const isCataclysm = this.activeBlessingIds.has('lizard_ult_rain_b');
-
         const focusTarget = manual ? null : this.findNearestEnemy(p.x, p.y, 310);
         const zx = manual
           ? (manual.targetX ?? p.x + Math.cos(p.aimAngle) * 95)
@@ -10849,8 +10929,8 @@ export class GameEngine {
           ? focusTarget.y
           : p.y + Math.sin(p.aimAngle) * 95;
 
-        const rainRadius = isThousandSpears ? 260 : 205;
-        const rainLife = isThousandSpears ? 4.5 : 3.6;
+        const rainRadius = 205;
+        const rainLife = 3.6;
 
         this.rainOfJavelinsZones.push({
           id: allocEntityId(),
@@ -10860,14 +10940,8 @@ export class GameEngine {
           life: rainLife,
           maxLife: rainLife,
           tickTimer: 0.08,
-          damagePerVolley: Math.round(
-            (isCataclysm ? 28 : 22) * this.getPhysicalDamageMultiplier()
-          ),
-          pathVariant: isThousandSpears
-            ? 'THOUSAND_SPEARS'
-            : isCataclysm
-            ? 'SPEARFALL_CATACLYSM'
-            : 'STANDARD',
+          damagePerVolley: Math.round(22 * this.getPhysicalDamageMultiplier()),
+          pathVariant: 'STANDARD',
         });
 
         this.slashes.push({
@@ -10891,12 +10965,7 @@ export class GameEngine {
           maxLife: 0.35,
         });
 
-        const rainTitle = isThousandSpears
-          ? 'THOUSAND SPEARS OF THE ANCIENTS!'
-          : isCataclysm
-          ? 'SPEARFALL CATACLYSM!'
-          : 'RAIN OF JAVELINS!';
-        this.spawnPopup(zx, zy - 38, rainTitle, '#10B981', 1.22);
+        this.spawnPopup(zx, zy - 38, 'RAIN OF JAVELINS!', '#10B981', 1.22);
         break;
       }
 
@@ -10912,105 +10981,38 @@ export class GameEngine {
         this.hitstopTimer = 0.06;
         this.shakeMag = 16;
 
-        const isDragonfang = this.activeBlessingIds.has('lizard_ult_piercer_a');
-        const isAbsolutePen = this.activeBlessingIds.has('lizard_ult_piercer_b');
-
         const muzzleX = p.x + Math.cos(angle) * 24;
         const muzzleY = p.y - 2 + Math.sin(angle) * 24;
 
-        if (isDragonfang) {
-          // Path A – Dragonfang: Spear manifests a gigantic roaring dragon phantom head
-          this.slashes.push({
-            x: muzzleX,
-            y: muzzleY,
-            angle,
-            radius: 120,
-            arcSpread: 1.2,
-            color: '#F97316',
-            life: 0.4,
-            maxLife: 0.4,
-            flip: false,
-            kind: 'LIZARDFOLK_DRAGONFANG_BREATH',
-          });
-          this.projectiles.push({
-            id: allocEntityId(),
-            fromPlayer: true,
-            x: muzzleX,
-            y: muzzleY,
-            vx: Math.cos(angle) * 980,
-            vy: Math.sin(angle) * 980,
-            radius: 20,
-            damage: Math.round(110 * this.getPhysicalDamageMultiplier()),
-            life: 0.95,
-            color: '#F97316',
-            kind: 'PLAYER_DRAGONFANG_HEAD',
-            angle,
-            pierce: true,
-            hitEnemyIds: new Set<number>(),
-          });
-          this.spawnPopup(p.x, p.y - 40, 'WORLD PIERCER: DRAGONFANG!', '#F97316', 1.25);
-        } else if (isAbsolutePen) {
-          // Path B – Absolute Penetration: Dimensional fracture beam
-          this.slashes.push({
-            x: muzzleX,
-            y: muzzleY,
-            angle,
-            radius: 140,
-            arcSpread: 0.5,
-            color: '#10B981',
-            life: 0.45,
-            maxLife: 0.45,
-            flip: false,
-            kind: 'LIZARDFOLK_FRACTURE_BEAM',
-          });
-          this.projectiles.push({
-            id: allocEntityId(),
-            fromPlayer: true,
-            x: muzzleX,
-            y: muzzleY,
-            vx: Math.cos(angle) * 1250,
-            vy: Math.sin(angle) * 1250,
-            radius: 16,
-            damage: Math.round(120 * this.getPhysicalDamageMultiplier()),
-            life: 0.95,
-            color: '#34D399',
-            kind: 'PLAYER_WORLD_PIERCER',
-            angle,
-            pierce: true,
-            hitEnemyIds: new Set<number>(),
-          });
-          this.spawnPopup(p.x, p.y - 40, 'ABSOLUTE PENETRATION!', '#34D399', 1.25);
-        } else {
-          this.slashes.push({
-            x: muzzleX,
-            y: muzzleY,
-            angle,
-            radius: 95,
-            arcSpread: 0.8,
-            color: '#10B981',
-            life: 0.35,
-            maxLife: 0.35,
-            flip: false,
-            kind: 'LIZARDFOLK_WORLD_PIERCER_SHOCKWAVE',
-          });
-          this.projectiles.push({
-            id: allocEntityId(),
-            fromPlayer: true,
-            x: muzzleX,
-            y: muzzleY,
-            vx: Math.cos(angle) * 1100,
-            vy: Math.sin(angle) * 1100,
-            radius: 15,
-            damage: Math.round(95 * this.getPhysicalDamageMultiplier()),
-            life: 0.9,
-            color: '#10B981',
-            kind: 'PLAYER_WORLD_PIERCER',
-            angle,
-            pierce: true,
-            hitEnemyIds: new Set<number>(),
-          });
-          this.spawnPopup(p.x, p.y - 40, 'WORLD PIERCER!', '#10B981', 1.2);
-        }
+        this.slashes.push({
+          x: muzzleX,
+          y: muzzleY,
+          angle,
+          radius: 95,
+          arcSpread: 0.8,
+          color: '#10B981',
+          life: 0.35,
+          maxLife: 0.35,
+          flip: false,
+          kind: 'LIZARDFOLK_WORLD_PIERCER_SHOCKWAVE',
+        });
+        this.projectiles.push({
+          id: allocEntityId(),
+          fromPlayer: true,
+          x: muzzleX,
+          y: muzzleY,
+          vx: Math.cos(angle) * 1100,
+          vy: Math.sin(angle) * 1100,
+          radius: 15,
+          damage: Math.round(95 * this.getPhysicalDamageMultiplier()),
+          life: 0.9,
+          color: '#10B981',
+          kind: 'PLAYER_WORLD_PIERCER',
+          angle,
+          pierce: true,
+          hitEnemyIds: new Set<number>(),
+        });
+        this.spawnPopup(p.x, p.y - 40, 'WORLD PIERCER!', '#10B981', 1.2);
         break;
       }
 
@@ -11022,9 +11024,6 @@ export class GameEngine {
         p.lizardHuntSpiritTimer = 9.0;
         p.squashX = 1.35;
         p.squashY = 0.72;
-
-        const isFirstHunter = this.activeBlessingIds.has('lizard_ult_hunt_a');
-        const isWildHunt = this.activeBlessingIds.has('lizard_ult_hunt_b');
 
         this.slashes.push({
           x: p.x,
@@ -11047,57 +11046,26 @@ export class GameEngine {
           maxLife: 0.35,
         });
 
-        if (isWildHunt) {
-          // Path B – Wild Hunt Procession: Pack of 4 spirits charging
-          for (let i = 0; i < 4; i++) {
-            const ang = (i / 4) * Math.PI * 2;
-            const sx = p.x + Math.cos(ang) * 55;
-            const sy = p.y + Math.sin(ang) * 45;
-            this.ancientHunters.push({
-              id: allocEntityId(),
-              x: sx,
-              y: sy,
-              vx: 0,
-              vy: 0,
-              targetEnemyId: null,
-              life: 9.5,
-              maxLife: 9.5,
-              attackCooldown: 0.15 + i * 0.12,
-              facingX: 1,
-              variant: 'WILD_HUNT',
-              attackAnimTimer: 0,
-              attackAnimDuration: 0.32,
-              hasFiredProjectile: false,
-              aimAngle: 0,
-              recoilOffset: 0,
-              strafeAngle: (i / 4) * Math.PI * 2,
-            });
-          }
-          this.spawnPopup(p.x, p.y - 42, 'WILD HUNT PROCESSION!', '#10B981', 1.25);
-        } else {
-          // Path A – The First Hunter: Towering ancestor hunter phantom
-          this.ancientHunters.push({
-            id: allocEntityId(),
-            x: p.x + Math.cos(p.aimAngle) * 45,
-            y: p.y + Math.sin(p.aimAngle) * 45,
-            vx: 0,
-            vy: 0,
-            targetEnemyId: null,
-            life: 10.5,
-            maxLife: 10.5,
-            attackCooldown: 0.2,
-            facingX: p.facingX,
-            variant: 'FIRST_HUNTER',
-            attackAnimTimer: 0,
-            attackAnimDuration: 0.40,
-            hasFiredProjectile: false,
-            aimAngle: p.aimAngle,
-            recoilOffset: 0,
-            strafeAngle: 0,
-          });
-          const title = isFirstHunter ? 'THE FIRST HUNTER!' : 'SPIRIT OF THE GREAT HUNT!';
-          this.spawnPopup(p.x, p.y - 42, title, '#34D399', 1.25);
-        }
+        this.ancientHunters.push({
+          id: allocEntityId(),
+          x: p.x + Math.cos(p.aimAngle) * 45,
+          y: p.y + Math.sin(p.aimAngle) * 45,
+          vx: 0,
+          vy: 0,
+          targetEnemyId: null,
+          life: 10.5,
+          maxLife: 10.5,
+          attackCooldown: 0.2,
+          facingX: p.facingX,
+          variant: 'FIRST_HUNTER',
+          attackAnimTimer: 0,
+          attackAnimDuration: 0.4,
+          hasFiredProjectile: false,
+          aimAngle: p.aimAngle,
+          recoilOffset: 0,
+          strafeAngle: 0,
+        });
+        this.spawnPopup(p.x, p.y - 42, 'SPIRIT OF THE GREAT HUNT!', '#34D399', 1.25);
         break;
       }
     }
@@ -13978,8 +13946,6 @@ export class GameEngine {
   }
 
   private updateAncientHunters(dt: number): void {
-    const isFirstHunterActive = this.activeBlessingIds.has('lizard_ult_hunt_a');
-
     for (let i = this.ancientHunters.length - 1; i >= 0; i--) {
       const h = this.ancientHunters[i];
       h.life -= dt;
@@ -14122,29 +14088,6 @@ export class GameEngine {
               fromPlayer: true,
               hitEnemyIds: new Set<number>(),
             });
-
-            // If Path A is awakened: twin flanking spectral javelins
-            if (isFirstHunterActive) {
-              for (const spr of [-0.22, 0.22]) {
-                const sprAngle = fireAngle + spr;
-                this.projectiles.push({
-                  id: allocEntityId(),
-                  x: spawnX,
-                  y: spawnY,
-                  vx: Math.cos(sprAngle) * 880,
-                  vy: Math.sin(sprAngle) * 880,
-                  radius: 12,
-                  damage: Math.round(dmg * 0.5),
-                  life: 0.95,
-                  color: '#6EE7B7',
-                  kind: 'PLAYER_SPECTRAL_HUNT_SPEAR',
-                  angle: sprAngle,
-                  pierce: false,
-                  fromPlayer: true,
-                  hitEnemyIds: new Set<number>(),
-                });
-              }
-            }
 
             this.shockwaves.push({
               x: spawnX,

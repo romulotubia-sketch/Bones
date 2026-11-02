@@ -474,13 +474,13 @@ export const LoadoutModal: React.FC<LoadoutModalProps> = ({
                     Smooth 3-talon decaying claw swipe with flung venom droplets and spore puffs; every 3rd swing unleashes a virulent rend applying double infection stacks.
                   </p>
                   <div className="flex items-center gap-2.5 pt-0.5">
-                    <div className="relative w-24 h-16 bg-[#091812] rounded-lg border border-[#28573D] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                    <div className="relative w-32 h-18 bg-[#091812] rounded-lg border border-[#28573D] overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
                       <ZombieAttackPreview />
                     </div>
                     <div className="text-[10px] text-[#86EFAC] space-y-0.5 font-mono-num leading-tight">
-                      <div>Reach: 62 · 72 on 3rd (94 Abomination)</div>
-                      <div>3rd Strike: +20% DMG &amp; 2x Infection</div>
-                      <div>Effects: 3-Talon Rake &amp; Spore Burst</div>
+                      <div>Normal Reach: 62 · 72 on 3rd</div>
+                      <div>Abomination: 94 · 104 Earthshatter</div>
+                      <div>Click preview to switch Form</div>
                     </div>
                   </div>
                 </div>
